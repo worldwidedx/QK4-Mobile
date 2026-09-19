@@ -134,7 +134,9 @@ int main(int argc, char *argv[]) {
     setupFonts();
 
     MainWindow window;
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_IOS)
+    window.showFullScreen();
+#elif defined(Q_OS_ANDROID)
     if (K4Styles::isCompactLayout()) {
         // Phones already size the compact console around Android's usable
         // landscape viewport. QMainWindow::showFullScreen() hides the system
