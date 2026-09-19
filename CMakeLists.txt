@@ -97,6 +97,21 @@ endif()
 
 add_subdirectory(src/ft8)
 
+# TLS-PSK backend for the K4 link. QSslSocket only works where Qt's OpenSSL
+# TLS backend plus an OpenSSL runtime are available (Android, Windows, macOS,
+# Linux); platforms without it (iOS, which ships only Secure Transport) drive
+# OpenSSL directly instead (see src/network/psktlssocket_openssl.cpp). The
+# PskTlsSocket wrapper (src/network/psktlssocket.h) hides the difference from
+# TcpClient so the rest of the app is backend-agnostic.
+if(IOS)
+    set(_qk4_psk_openssl_default ON)
+else()
+    set(_qk4_psk_openssl_default OFF)
+endif()
+option(QK4_PSK_TLS_OPENSSL "Use OpenSSL directly for TLS-PSK instead of QSslSocket" ${_qk4_psk_openssl_default})
+unset(_qk4_psk_openssl_default)
+set(QK4_OPENSSL_ROOT "" CACHE PATH "OpenSSL install prefix (include/, lib/) used when QK4_PSK_TLS_OPENSSL is ON")
+
 # Platform-specific dependency handling
 if(ANDROID)
     # Android: HID/MIDI hardware features are disabled, Opus is still required for RX/TX audio.
@@ -157,6 +172,7 @@ set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/network/tcpclient.cpp
+    src/network/psktlssocket.h
     src/network/protocol.cpp
     src/network/kpa1500client.cpp
     src/network/catserver.cpp
@@ -233,6 +249,12 @@ set(SOURCES
     src/ui/baloverlay.cpp
     src/ui/wheelaccumulator.cpp
 )
+
+if(QK4_PSK_TLS_OPENSSL)
+    list(APPEND SOURCES src/network/psktlssocket_openssl.cpp)
+else()
+    list(APPEND SOURCES src/network/psktlssocket_qssl.cpp)
+endif()
 
 if(ANDROID)
     # Keep class availability on Android via no-op implementations.
@@ -424,6 +446,25 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Link GuiPrivate if found via CMake, otherwise private headers are included manually
 if(QT_GUI_PRIVATE_FOUND)
     target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::GuiPrivate)
+endif()
+
+# Static OpenSSL for the psktlssocket_openssl.cpp TLS-PSK backend.
+if(QK4_PSK_TLS_OPENSSL)
+    if(NOT QK4_OPENSSL_ROOT)
+        message(FATAL_ERROR "QK4_PSK_TLS_OPENSSL requires QK4_OPENSSL_ROOT (prefix with include/ and lib/).")
+    endif()
+    foreach(_qk4_ssl_file "include/openssl/ssl.h" "lib/libssl.a" "lib/libcrypto.a")
+        if(NOT EXISTS "${QK4_OPENSSL_ROOT}/${_qk4_ssl_file}")
+            message(FATAL_ERROR "Missing ${QK4_OPENSSL_ROOT}/${_qk4_ssl_file}.")
+        endif()
+    endforeach()
+    unset(_qk4_ssl_file)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE QK4_PSK_TLS_OPENSSL)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${QK4_OPENSSL_ROOT}/include")
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        "${QK4_OPENSSL_ROOT}/lib/libssl.a"
+        "${QK4_OPENSSL_ROOT}/lib/libcrypto.a"
+    )
 endif()
 
 # macOS frameworks for KPOD hotplug detection (IOKit)
