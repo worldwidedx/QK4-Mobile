@@ -1,5 +1,8 @@
 #include "sidecontrolpanel.h"
 #include "dualcontrolbutton.h"
+#include "adjustoverlay.h"
+#include "monoverlay.h"
+#include "baloverlay.h"
 #include "duallinepanelbutton.h"
 #include "k4styles.h"
 #include "../settings/radiosettings.h"
@@ -14,6 +17,8 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <functional>
+#include <QCoreApplication>
 
 SideControlPanel::SideControlPanel(QWidget *parent) : QWidget(parent) {
     m_longPressTimer = new QTimer(this);
@@ -110,7 +115,13 @@ void SideControlPanel::setupUi() {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PopupButtonSpacing,
                                K4Styles::Dimensions::PaddingSmall, K4Styles::Dimensions::PopupButtonSpacing);
+    // Tighter inter-row spacing on the Android tablet reclaims the vertical
+    // room needed to keep the bottom MAIN/SUB sliders on-screen.
+#if defined(Q_OS_ANDROID)
+    layout->setSpacing(K4Styles::isCompactLayout() ? 4 : 2);
+#else
     layout->setSpacing(4); // Default spacing between buttons in a group
+#endif
 
     auto addAdjustmentRow = [this, layout](DualControlButton *button, QSlider *&slider, const QString &color) {
         auto *row = new QWidget(this);
@@ -124,67 +135,92 @@ void SideControlPanel::setupUi() {
         slider->setStyleSheet(K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, color));
         slider->installEventFilter(this);
         rowLayout->addWidget(slider, 1);
+        // iPad (macOS-style column): the thin per-tile rail is replaced by the
+        // long-press adjust popup, matching QK4 on macOS which has no rail.
+        // The slider stays wired (radio echoes keep it in sync) but hidden.
+        if (!K4Styles::isCompactLayout()) {
+            slider->hide();
+            rowLayout->addStretch(1);
+            rowLayout->setAlignment(button, Qt::AlignHCenter);
+        }
         layout->addWidget(row);
     };
 
-    // ===== Receiver AF controls: always first in the phone CTRL bank =====
-    m_volumeLabel = new QLabel("A AF", this);
+    // ===== Receiver AF + local mic controls =====
+    // Compact (phone CTRL bank): these lead the scrollable page. Regular
+    // (iPad): they move to the bottom of the always-visible column and the
+    // volumes are labelled MAIN/SUB, matching QK4 on macOS and the radio.
+    const bool afAtTop = K4Styles::isCompactLayout();
+    auto *afGroup = new QWidget(this);
+    auto *afLayout = new QVBoxLayout(afGroup);
+    afLayout->setContentsMargins(0, 0, 0, 0);
+    afLayout->setSpacing(4);
+
+    m_volumeLabel = new QLabel(afAtTop ? "A AF" : "MAIN", afGroup);
     m_volumeLabel->setStyleSheet(
         QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::VfoACyan));
     m_volumeLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(m_volumeLabel);
+    afLayout->addWidget(m_volumeLabel);
 
-    m_volumeSlider = new QSlider(Qt::Horizontal, this);
+    m_volumeSlider = new QSlider(Qt::Horizontal, afGroup);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(RadioSettings::instance()->volume());
     m_volumeSlider->setMinimumHeight(K4Styles::isCompactLayout() ? 32 : 24);
     m_volumeSlider->setStyleSheet(
         K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::VfoACyan));
     m_volumeSlider->installEventFilter(this);
-    layout->addWidget(m_volumeSlider);
+    afLayout->addWidget(m_volumeSlider);
     connect(m_volumeSlider, &QSlider::valueChanged, this, &SideControlPanel::volumeChanged);
 
-    m_subVolumeLabel = new QLabel("B AF", this);
+    m_subVolumeLabel = new QLabel(afAtTop ? "B AF" : "SUB", afGroup);
     m_subVolumeLabel->setStyleSheet(
         QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::VfoBGreen));
     m_subVolumeLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(m_subVolumeLabel);
+    afLayout->addWidget(m_subVolumeLabel);
 
-    m_subVolumeSlider = new QSlider(Qt::Horizontal, this);
+    m_subVolumeSlider = new QSlider(Qt::Horizontal, afGroup);
     m_subVolumeSlider->setRange(0, 100);
     m_subVolumeSlider->setValue(RadioSettings::instance()->subVolume());
     m_subVolumeSlider->setMinimumHeight(K4Styles::isCompactLayout() ? 32 : 24);
     m_subVolumeSlider->setStyleSheet(
         K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::VfoBGreen));
     m_subVolumeSlider->installEventFilter(this);
-    layout->addWidget(m_subVolumeSlider);
+    afLayout->addWidget(m_subVolumeSlider);
     connect(m_subVolumeSlider, &QSlider::valueChanged, this, &SideControlPanel::subVolumeChanged);
 
     // Local input gain is intentionally separate from the K4 MIC control.
     // It scales the phone/headset microphone stream before Opus encoding.
-    m_phoneMicGainLabel = new QLabel("PHONE MIC", this);
-    m_phoneMicGainLabel->setStyleSheet(
-        QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
-    m_phoneMicGainLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(m_phoneMicGainLabel);
+    // On iPad the K4 MIC gain is adjusted from the MIC/CMP tile, so this
+    // duplicate-looking PHONE MIC rail is omitted there; it stays on the
+    // phone layout where the tiles are less prominent.
+    if (K4Styles::isCompactLayout()) {
+        m_phoneMicGainLabel = new QLabel("PHONE MIC", afGroup);
+        m_phoneMicGainLabel->setStyleSheet(
+            QString("color: %1; font-size: 10px; font-weight: bold;").arg(K4Styles::Colors::AccentAmber));
+        m_phoneMicGainLabel->setAlignment(Qt::AlignCenter);
+        afLayout->addWidget(m_phoneMicGainLabel);
 
-    m_phoneMicGainSlider = new QSlider(Qt::Horizontal, this);
-    m_phoneMicGainSlider->setRange(0, 100);
-    m_phoneMicGainSlider->setValue(RadioSettings::instance()->micGain());
-    m_phoneMicGainSlider->setMinimumHeight(K4Styles::isCompactLayout() ? 32 : 24);
-    m_phoneMicGainSlider->setStyleSheet(
-        K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
-    m_phoneMicGainSlider->installEventFilter(this);
-    layout->addWidget(m_phoneMicGainSlider);
-    connect(m_phoneMicGainSlider, &QSlider::valueChanged, this, &SideControlPanel::phoneMicGainChanged);
+        m_phoneMicGainSlider = new QSlider(Qt::Horizontal, afGroup);
+        m_phoneMicGainSlider->setRange(0, 100);
+        m_phoneMicGainSlider->setValue(RadioSettings::instance()->micGain());
+        m_phoneMicGainSlider->setMinimumHeight(32);
+        m_phoneMicGainSlider->setStyleSheet(
+            K4Styles::sliderHorizontal(K4Styles::Colors::DarkBackground, K4Styles::Colors::AccentAmber));
+        m_phoneMicGainSlider->installEventFilter(this);
+        afLayout->addWidget(m_phoneMicGainSlider);
+        connect(m_phoneMicGainSlider, &QSlider::valueChanged, this, &SideControlPanel::phoneMicGainChanged);
+    }
 
-    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+    if (afAtTop) {
+        layout->addWidget(afGroup);
+        layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+    }
 
     // ===== TX Function Buttons (2x3 grid) =====
     auto *txGrid = new QGridLayout();
     txGrid->setContentsMargins(0, 0, 0, 0);
     txGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-    txGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    txGrid->setVerticalSpacing(K4Styles::isCompactLayout() ? K4Styles::Dimensions::PopupButtonSpacing : 2);
 
     // Row 0: TUNE, XMIT
     txGrid->addWidget(createTxFunctionButton("TUNE", "TUNE LP", m_tuneBtn), 0, 0);
@@ -220,6 +256,43 @@ void SideControlPanel::setupUi() {
     // ===== Spacing after TX buttons =====
     layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
 
+    // MON / NORM / BAL each sit under the control pair they act on, matching
+    // the K4 front panel. Full-width so they never crowd each other; taller on
+    // the iPad for touch, compact-mini on the phone.
+#if defined(Q_OS_ANDROID)
+    // Android tablet: a compact MON/NORM/BAL height (independent of the shared
+    // ButtonHeightSmall, which the right panel needs at full size) so the left
+    // column fits.
+    const int swBtnHeight = K4Styles::isCompactLayout() ? K4Styles::Dimensions::ButtonHeightMini : 22;
+#else
+    const int swBtnHeight = K4Styles::isCompactLayout() ? K4Styles::Dimensions::ButtonHeightMini
+                                                        : K4Styles::Dimensions::ButtonHeightSmall;
+#endif
+    auto addSwButton = [this, layout, swBtnHeight](QPushButton *&btn, const QString &text) {
+        btn = new QPushButton(text, this);
+        btn->setFixedHeight(swBtnHeight);
+        btn->setStyleSheet(K4Styles::compactButton());
+        if (K4Styles::isCompactLayout()) {
+            layout->addWidget(btn);
+        } else {
+            // Align the button's visible box with the DualControlButton tiles
+            // above. Their painted box is inset inside the 90px widget by
+            // barWidth(5)+margin(1)+2 on the left and margin(1) on the right
+            // (see DualControlButton::paintEvent); a plain button paints to its
+            // own edge, so inset it by the same amounts to line the boxes up.
+            constexpr int tileBoxLeft = 5 + 1 + 2;
+            const int tileBoxWidth = K4Styles::Dimensions::MenuBarButtonWidth - tileBoxLeft - 1;
+            btn->setFixedWidth(tileBoxWidth);
+            auto *row = new QWidget(this);
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(tileBoxLeft, 0, 0, 0);
+            rowLayout->setSpacing(0);
+            rowLayout->addWidget(btn);
+            rowLayout->addStretch(1);
+            layout->addWidget(row);
+        }
+    };
+
     // ===== Group 1: Global (CW/Power) - Orange bar =====
     m_wpmBtn = new DualControlButton(this);
     m_wpmBtn->setPrimaryLabel("WPM");
@@ -238,6 +311,14 @@ void SideControlPanel::setupUi() {
     m_pwrBtn->setContext(DualControlButton::Global);
     m_pwrBtn->setShowIndicator(false); // Second button starts inactive
     addAdjustmentRow(m_pwrBtn, m_pwrSlider, K4Styles::Colors::AccentAmber);
+
+    // MON: monitor level, under the WPM/PWR (MIC/PWR/CMP/DLY) group. Tablet
+    // only -- there is no useful MON function on a remote phone interface (no
+    // local sidetone speaker to monitor).
+    if (!K4Styles::isCompactLayout()) {
+        addSwButton(m_monBtn, QStringLiteral("MON"));
+        m_monBtn->setToolTip(QStringLiteral("Monitor (sidetone / TX audio) level"));
+    }
 
     // ===== Spacing between groups =====
     layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
@@ -261,15 +342,25 @@ void SideControlPanel::setupUi() {
     m_shiftBtn->setShowIndicator(false); // Second button starts inactive
     addAdjustmentRow(m_shiftBtn, m_shiftSlider, K4Styles::Colors::VfoACyan);
 
-    // NORM affects only the filter passband, so keep it in the filter group.
-    m_normBtn = new QPushButton(QStringLiteral("NORM"), this);
-    m_normBtn->setFixedHeight(32);
-    m_normBtn->setStyleSheet(K4Styles::compactButton());
-    m_normBtn->setAccessibleName(QStringLiteral("Normalize receive filter passband"));
-    m_normBtn->setToolTip(QStringLiteral("Restore the current mode's nominal filter passband"));
-    m_normBtn->installEventFilter(this);
-    layout->addWidget(m_normBtn);
-    connect(m_normBtn, &QPushButton::clicked, this, &SideControlPanel::normalizeFilterRequested);
+    // NORM: normalize the filter passband, under the BW/SHFT (HI/LO) group.
+    // Phone keeps the original v1.0.5 button -- a taller touch target with an
+    // event filter that swallows an accidental scroll starting on the button
+    // (see eventFilter()) -- instead of the tablet's compact sw-button style.
+    if (K4Styles::isCompactLayout()) {
+        m_normBtn = new QPushButton(QStringLiteral("NORM"), this);
+        m_normBtn->setFixedHeight(32);
+        m_normBtn->setStyleSheet(K4Styles::compactButton());
+        m_normBtn->setAccessibleName(QStringLiteral("Normalize receive filter passband"));
+        m_normBtn->setToolTip(QStringLiteral("Restore the current mode's nominal filter passband"));
+        m_normBtn->installEventFilter(this);
+        layout->addWidget(m_normBtn);
+        connect(m_normBtn, &QPushButton::clicked, this, &SideControlPanel::normalizeFilterRequested);
+    } else {
+        addSwButton(m_normBtn, QStringLiteral("NORM"));
+        m_normBtn->setAccessibleName(QStringLiteral("Normalize receive filter passband"));
+        m_normBtn->setToolTip(QStringLiteral("Restore the current mode's nominal filter passband"));
+        connect(m_normBtn, &QPushButton::clicked, this, &SideControlPanel::normalizeFilterRequested);
+    }
 
     // ===== Spacing between groups =====
     layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
@@ -293,6 +384,47 @@ void SideControlPanel::setupUi() {
     m_subSqlBtn->setShowIndicator(false); // Second button starts inactive
     addAdjustmentRow(m_subSqlBtn, m_subSqlSlider, K4Styles::Colors::VfoBGreen);
 
+    // BAL: sub-RX audio balance, under the M.RF/S.SQL (M.SQL/S.RF) group.
+    // Tablet only -- BAL already has MAIN/SUB AF sliders on the phone.
+    if (!K4Styles::isCompactLayout()) {
+        addSwButton(m_balBtn, QStringLiteral("BAL"));
+        m_balBtn->setToolTip(QStringLiteral("Sub-RX audio balance"));
+    }
+
+    // Overlays cover their control groups; construct after all groups exist so
+    // raise() in showOverGroup lands them on top. Tablet only -- MON/BAL don't
+    // exist on the phone, so there is nothing for these overlays to attach to.
+    if (!K4Styles::isCompactLayout()) {
+        m_monOverlay = new MonOverlay(this);
+        m_balOverlay = new BalOverlay(this);
+
+        connect(m_monBtn, &QPushButton::clicked, this, [this]() {
+            emit monClicked();
+            if (m_monOverlay->isVisible())
+                m_monOverlay->hide();
+            else
+                m_monOverlay->showOverGroup(m_wpmBtn, m_pwrBtn);
+        });
+        connect(m_balBtn, &QPushButton::clicked, this, [this]() {
+            emit balClicked();
+            if (m_balOverlay->isVisible())
+                m_balOverlay->hide();
+            else
+                m_balOverlay->showOverGroup(m_mainRfBtn, m_subSqlBtn);
+        });
+        connect(m_monOverlay, &MonOverlay::levelChangeRequested,
+                this, &SideControlPanel::monLevelChangeRequested);
+        connect(m_balOverlay, &BalOverlay::balanceChangeRequested,
+                this, &SideControlPanel::balChangeRequested);
+    }
+
+    // Regular (iPad): MAIN/SUB volumes and PHONE MIC sit at the bottom of the
+    // column, as on QK4 for macOS, instead of leading it.
+    if (!afAtTop) {
+        layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+        layout->addWidget(afGroup);
+    }
+
     // ===== Stretch to push status/icons to bottom =====
     layout->addStretch();
 
@@ -309,6 +441,26 @@ void SideControlPanel::setupUi() {
     m_voltageCurrentLabel = new QLabel("--.-V  -.-A", this);
     m_voltageCurrentLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(K4Styles::Colors::TextWhite));
     layout->addWidget(m_voltageCurrentLabel);
+
+#if defined(Q_OS_ANDROID)
+    // On the Android tablet the top status bar already shows time / power-SWR /
+    // voltage-current, so hide these duplicates here (kept as members so the
+    // radio-state setters still update them harmlessly). The version line below
+    // stays — it isn't in the top bar. Compact phone keeps all of them.
+    if (!K4Styles::isCompactLayout()) {
+        m_timeLabel->hide();
+        m_powerSwrLabel->hide();
+        m_voltageCurrentLabel->hide();
+    }
+#endif
+
+    // App version, lower-left, matching QK4 on macOS. Regular/tablet only --
+    // this is a new element, and the phone console stays exactly as v1.0.5.
+    if (!K4Styles::isCompactLayout()) {
+        auto *versionLabel = new QLabel(QString("v%1").arg(QCoreApplication::applicationVersion()), this);
+        versionLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(K4Styles::Colors::InactiveGray));
+        layout->addWidget(versionLabel);
+    }
 
     layout->addSpacing(K4Styles::Dimensions::PopupButtonSpacing);
 
@@ -429,6 +581,60 @@ void SideControlPanel::setupUi() {
     configureAdjustmentSlider(m_shiftBtn, m_shiftSlider);
     configureAdjustmentSlider(m_mainRfBtn, m_mainRfSlider);
     configureAdjustmentSlider(m_subSqlBtn, m_subSqlSlider);
+
+    // iPad: a long-press on any value tile opens the touch adjust popup.
+    for (DualControlButton *btn : {m_wpmBtn, m_pwrBtn, m_bwBtn, m_shiftBtn, m_mainRfBtn, m_subSqlBtn}) {
+        connect(btn, &DualControlButton::adjustRequested, this, [this, btn]() { openAdjustOverlay(btn); });
+    }
+}
+
+void SideControlPanel::openAdjustOverlay(DualControlButton *button) {
+    if (!button)
+        return;
+
+    if (!m_adjustOverlay) {
+        m_adjustOverlay = new AdjustOverlay(window());
+        connect(m_adjustOverlay->slider(), &QSlider::valueChanged, this, [this](int value) {
+            QSlider *s = m_adjustOverlay->slider();
+            const int previous = s->property("lastRadioValue").toInt();
+            s->setProperty("lastRadioValue", value);
+            const int delta = value - previous;
+            if (delta == 0 || !m_adjustButton)
+                return;
+            // Route through the same per-control handlers the tiles/rail use.
+            if (m_adjustButton == m_wpmBtn)
+                onWpmScrolled(delta);
+            else if (m_adjustButton == m_pwrBtn)
+                onPwrScrolled(delta);
+            else if (m_adjustButton == m_bwBtn)
+                onBwScrolled(delta);
+            else if (m_adjustButton == m_shiftBtn)
+                onShiftScrolled(delta);
+            else if (m_adjustButton == m_mainRfBtn)
+                onMainRfScrolled(delta);
+            else if (m_adjustButton == m_subSqlBtn)
+                onSubSqlScrolled(delta);
+        });
+    }
+
+    m_adjustButton = button;
+    configureAdjustmentSlider(button, m_adjustOverlay->slider());
+    m_adjustOverlay->configure(button->primaryLabel(), button->context());
+
+    // Show the readout in the control's real units (kHz for the filter
+    // controls, seconds for DLY) instead of the raw slider integer.
+    const auto kHzFromHz = [](double hz) { return QString::number(hz / 1000.0, 'f', 2); };
+    std::function<QString(int)> fmt; // empty => raw integer
+    if (button == m_bwBtn)
+        fmt = m_bwIsPrimary ? std::function<QString(int)>([kHzFromHz](int v) { return kHzFromHz(v * 50.0); })   // BW
+                            : std::function<QString(int)>([kHzFromHz](int v) { return kHzFromHz(v * 10.0); });  // HI
+    else if (button == m_shiftBtn)
+        fmt = [kHzFromHz](int v) { return kHzFromHz(v * 10.0); }; // SHFT / LO (10 Hz units)
+    else if (button == m_pwrBtn && !m_pwrIsPrimary)
+        fmt = [](int v) { return QString::number(v / 100.0, 'f', 2); }; // DLY seconds
+    m_adjustOverlay->setValueFormatter(fmt);
+
+    m_adjustOverlay->showOver(button);
 }
 
 void SideControlPanel::configureAdjustmentSlider(DualControlButton *button, QSlider *slider) {
@@ -881,19 +1087,53 @@ void SideControlPanel::setCurrent(double amps) {
 
 QWidget *SideControlPanel::createTxFunctionButton(const QString &mainText, const QString &subText,
                                                   QPushButton *&btnOut) {
+    const bool compact = K4Styles::isCompactLayout();
     // Container widget for button + sub-text label
     auto *container = new QWidget(this);
     auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, K4Styles::Dimensions::SeparatorHeight + 1, 0, K4Styles::Dimensions::SeparatorHeight + 1);
-    layout->setSpacing(K4Styles::Dimensions::PaddingSmall);
+    if (compact) {
+        // Unchanged from v1.0.5.
+        layout->setContentsMargins(0, K4Styles::Dimensions::SeparatorHeight + 1, 0,
+                                   K4Styles::Dimensions::SeparatorHeight + 1);
+        layout->setSpacing(K4Styles::Dimensions::PaddingSmall);
+    } else {
+        // Tight gap above the amber label so it clearly belongs to the button it
+        // sits under, with a larger gap below to the next row (matches macOS).
+        layout->setContentsMargins(0, 1, 0, 3);
+        layout->setSpacing(1);
+    }
 
-    // Keep both the primary and amber alternate action inside one touch target.
-    auto *btn = new DualLinePanelButton(mainText, subText, container);
-    btn->setFixedHeight(42);
+    // Phone keeps both labels inside one touch target. iPad matches the radio
+    // and macOS: white primary on the button, amber alternate on the case
+    // (a QLabel below the button).
+    QPushButton *btn;
+    if (compact) {
+        btn = new DualLinePanelButton(mainText, subText, container);
+        btn->setFixedHeight(42);
+    } else {
+        btn = new QPushButton(mainText, container);
+        btn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
+    }
     btn->setCursor(Qt::PointingHandCursor);
-    btn->setStyleSheet(K4Styles::sidePanelButtonLight());
+    // A two-line label (e.g. "ATU\nTUNE") clips inside the single-line tile
+    // height; drop its font a touch and remove padding so both lines fit and
+    // read clearly without growing the (already tight) left column.
+    QString btnStyle = K4Styles::sidePanelButtonLight();
+    if (!compact && mainText.contains('\n'))
+        btnStyle += QStringLiteral(" QPushButton { font-size: 10px; padding: 0px; }");
+    btn->setStyleSheet(btnStyle);
     btnOut = btn;
     layout->addWidget(btn);
+
+    if (!compact) {
+        auto *subLabel = new QLabel(subText, container);
+        subLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeSmall));
+        subLabel->setAlignment(Qt::AlignCenter);
+        subLabel->setFixedHeight(12);
+        layout->addWidget(subLabel);
+    }
 
     return container;
 }
@@ -1069,4 +1309,19 @@ void SideControlPanel::triggerSecondary(QObject *watched) {
     else if (watched == m_voxBtn) emit qskClicked();
     else if (watched == m_antBtn) emit remAntClicked();
     else if (watched == m_rxAntBtn) emit subAntClicked();
+}
+
+void SideControlPanel::updateMonitorLevel(int mode, int level) {
+    if (m_monOverlay && m_monOverlay->mode() == mode)
+        m_monOverlay->setValue(level);
+}
+
+void SideControlPanel::updateMonitorMode(int mode) {
+    if (m_monOverlay)
+        m_monOverlay->setMode(mode);
+}
+
+void SideControlPanel::updateBalance(int mode, int offset) {
+    if (m_balOverlay)
+        m_balOverlay->setBalance(mode, offset);
 }

@@ -8,6 +8,9 @@
 #include <QTimer>
 
 class DualControlButton;
+class AdjustOverlay;
+class MonOverlay;
+class BalOverlay;
 class QGridLayout;
 class QScrollArea;
 
@@ -95,6 +98,14 @@ public:
     // Cancel an alternate-action hold when a containing phone panel begins scrolling.
     void cancelPendingLongPress();
 
+public slots:
+    // Monitor level from radio (mode 0=CW/1=Data/2=Voice); updates MON overlay.
+    void updateMonitorLevel(int mode, int level);
+    // Track current monitor mode so ML commands target the right register.
+    void updateMonitorMode(int mode);
+    // Sub-AF balance from radio (mode 0=NOR/1=BAL, offset -50..+50).
+    void updateBalance(int mode, int offset);
+
 signals:
     // TX Function button signals (left-click = primary, right-click = secondary)
     void tuneClicked();    // TUNE - SW16;
@@ -109,6 +120,8 @@ signals:
     void remAntClicked();  // REM ANT - TBD
     void rxAntClicked();   // RX ANT - SW70;
     void subAntClicked();  // SUB ANT - SW157;
+    void monClicked();     // MON - SW128;
+    void balClicked();     // BAL - SW130;
 
     // Value changed signals (emitted when user scrolls to change value)
     // CW mode signals
@@ -136,6 +149,11 @@ signals:
 
     // Restore the current mode's nominal filter passband.
     void normalizeFilterRequested();
+
+    // Monitor level edited on the MON overlay (mode 0/1/2, level 0-100).
+    void monLevelChangeRequested(int mode, int level);
+    // Sub-AF balance edited on the BAL overlay (mode 0/1, offset -50..+50).
+    void balChangeRequested(int mode, int offset);
 
 private slots:
     // Group 1: WPM/PWR - handle activation and scrolling
@@ -166,6 +184,7 @@ private:
     void setupUi();
     void triggerSecondary(QObject *watched);
     void configureAdjustmentSlider(DualControlButton *button, QSlider *slider);
+    void openAdjustOverlay(DualControlButton *button);
     void setSliderValueFromTouchPosition(QSlider *slider, int xPosition);
     QScrollArea *containingScrollArea() const;
     void setGroup1Active(DualControlButton *activeBtn);
@@ -203,6 +222,11 @@ private:
     QSlider *m_shiftSlider = nullptr;
     QSlider *m_mainRfSlider = nullptr;
     QSlider *m_subSqlSlider = nullptr;
+
+    // iPad touch adjust popup (shared, one at a time). m_adjustButton is the
+    // control whose value the popup slider currently drives.
+    AdjustOverlay *m_adjustOverlay = nullptr;
+    DualControlButton *m_adjustButton = nullptr;
 
     int m_wpmValue = 20;
     int m_pitchValue = 600;
@@ -257,12 +281,15 @@ private:
     QLabel *m_volumeLabel;
     QSlider *m_subVolumeSlider;
     QLabel *m_subVolumeLabel;
-    QSlider *m_phoneMicGainSlider;
-    QLabel *m_phoneMicGainLabel;
+    QSlider *m_phoneMicGainSlider = nullptr;
+    QLabel *m_phoneMicGainLabel = nullptr;
 
-    // NORM stays with filter controls. K4 MON and BAL are intentionally
-    // omitted from the remote UI; A AF and B AF provide independent levels.
+    // MON / NORM / BAL row, grouped as on the K4 and QK4 for macOS.
+    QPushButton *m_monBtn = nullptr;
     QPushButton *m_normBtn = nullptr;
+    QPushButton *m_balBtn = nullptr;
+    MonOverlay *m_monOverlay = nullptr;
+    BalOverlay *m_balOverlay = nullptr;
 };
 
 #endif // SIDECONTROLPANEL_H

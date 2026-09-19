@@ -14,13 +14,20 @@ DualControlButton::DualControlButton(QWidget *parent) : QWidget(parent) {
     m_longPressTimer->setSingleShot(true);
     m_longPressTimer->setInterval(550);
     connect(m_longPressTimer, &QTimer::timeout, this, [this]() {
-        if (!K4Styles::isCompactLayout() || m_dragging)
+        if (m_dragging)
             return;
-        if (!m_showIndicator)
-            emit becameActive();
-        swapFunctions();
-        emit swapped();
         m_longPressHandled = true;
+        if (K4Styles::isCompactLayout()) {
+            // Phone: long-press swaps to the amber alternate function.
+            if (!m_showIndicator)
+                emit becameActive();
+            swapFunctions();
+            emit swapped();
+        } else {
+            // iPad (macOS-style column): long-press opens the touch adjust
+            // popup, the touch equivalent of the macOS wheel/right-click.
+            emit adjustRequested();
+        }
     });
 }
 
@@ -187,8 +194,9 @@ void DualControlButton::mousePressEvent(QMouseEvent *event) {
         m_lastDragY = event->pos().y();
         m_dragging = false;
         m_longPressHandled = false;
-        if (K4Styles::isCompactLayout())
-            m_longPressTimer->start();
+        // Compact: long-press swaps to alternate. Regular (iPad): long-press
+        // opens the adjust popup. Either way the timer is armed on press.
+        m_longPressTimer->start();
         event->accept();
     } else {
         QWidget::mousePressEvent(event);
@@ -232,11 +240,19 @@ void DualControlButton::mouseReleaseEvent(QMouseEvent *event) {
         if (!m_dragging) {
             if (!m_showIndicator) {
                 emit becameActive();
-            } else if (!K4Styles::isCompactLayout()) {
+                emit clicked();
+            } else if (K4Styles::isCompactLayout()) {
+                // Phone: a tap selects the primary function (handled by the
+                // panel's clicked handler); no swap here.
+                emit clicked();
+            } else {
+                // iPad: a tap swaps white<->yellow (active function). Emit
+                // only swapped so the panel does not also run the compact
+                // clicked handler, which would swap a second time and cancel
+                // it out.
                 swapFunctions();
                 emit swapped();
             }
-            emit clicked();
         }
         event->accept();
         return;
