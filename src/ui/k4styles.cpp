@@ -51,12 +51,14 @@ void applyDefaultDimensions() {
     VfoSquareSize = 45;
     NavButtonWidth = 54;
     SidePanelWidth = 105;
+    RightSidePanelWidth = 130;
     MemoryButtonWidth = 42;
 
     CenterPanelWidth = 330;
     VfoColumnWidth = 270;
     VfoContentHeight = 150;
     VfoMeterWidth = 260;
+    VfoMeterHeight = 130;
     SpectrumMinHeight = 300;
     VfoIndicatorBadgeWidth = 34;
     VfoIndicatorBadgeHeight = 30;
@@ -133,6 +135,7 @@ void applyCompactDimensions() {
     // Original QK4 control banks are now presented side-by-side in the
     // phone Controls screen, so each needs room for its two-column grid.
     SidePanelWidth = 170;
+    RightSidePanelWidth = 170;
     MemoryButtonWidth = 34;
 
     // 62 px filter shapes on both sides plus the 80 px RIT/XIT readout.
@@ -195,36 +198,70 @@ void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qrea
                         bool forceCompact) {
     applyDefaultDimensions();
 
-    // TEMPORARY: Until the tablet layout has been physically validated, use the
-    // proven landscape phone layout on every Android screen size. Keep the
-    // original size-based selection below for restoration once tablet testing
-    // is available.
+    // Large screens (iPad / Android tablet) get the regular desktop-like layout,
+    // closer to QK4 on macOS and the physical radio; phones keep the compact
+    // layout. iOS separates by the landscape short edge (iPad >= ~740 pt,
+    // iPhone <= ~440 pt). Android logical sizes vary a lot, so prefer the
+    // reported physical diagonal there (phones <= ~7", tablets larger), falling
+    // back to the short edge when the physical size is unknown.
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    Q_UNUSED(devicePixelRatio);
+    const int shortEdge = std::min(availableSize.width(), availableSize.height());
+#if defined(Q_OS_ANDROID)
+    const bool regular =
+        (physicalDiagonalInches > 0.0) ? (physicalDiagonalInches >= 7.0) : (shortEdge > 700);
+#else
+    Q_UNUSED(physicalDiagonalInches);
+    const bool regular = (shortEdge > 700);
+#endif
+    bool useCompact = forceCompact || !regular;
+#else
+    // Desktop dev builds keep the compact layout (unchanged).
     Q_UNUSED(availableSize);
     Q_UNUSED(devicePixelRatio);
     Q_UNUSED(physicalDiagonalInches);
     Q_UNUSED(forceCompact);
-    const bool useCompact = true;
-    /*
+    bool useCompact = true;
+#endif
+
+    // Manual override for development/testing: forces a specific layout
+    // regardless of the device's real size, so the compact (phone) layout can
+    // be smoke-tested on a tablet/iPad and vice versa. Unset by default, so
+    // production behavior is unaffected.
     bool forceCompactEnvOk = false;
     bool forceRegularEnvOk = false;
     const int forceCompactEnv = qEnvironmentVariableIntValue("QK4_FORCE_COMPACT_UI", &forceCompactEnvOk);
     const int forceRegularEnv = qEnvironmentVariableIntValue("QK4_FORCE_REGULAR_UI", &forceRegularEnvOk);
-    const bool forceCompactByEnv = forceCompactEnvOk && forceCompactEnv > 0;
-    const bool forceRegularByEnv = forceRegularEnvOk && forceRegularEnv > 0;
-
-    const int shortEdge = std::min(availableSize.width(), availableSize.height());
-    const int longEdge = std::max(availableSize.width(), availableSize.height());
-    const int nativeShortEdge = qRound(static_cast<qreal>(shortEdge) * qMax<qreal>(1.0, devicePixelRatio));
-
-    const bool logicalPhone = (shortEdge <= 540) || (shortEdge <= 700 && longEdge <= 1200);
-    const bool densePhone = (shortEdge <= 900 && nativeShortEdge <= 1300 && longEdge <= 2600);
-    const bool physicalPhone = (physicalDiagonalInches > 0.0 && physicalDiagonalInches <= 7.2);
-
-    bool useCompact = forceCompact || forceCompactByEnv || logicalPhone || densePhone || physicalPhone;
-    if (forceRegularByEnv) {
+    if (forceCompactEnvOk && forceCompactEnv > 0) {
+        useCompact = true;
+    } else if (forceRegularEnvOk && forceRegularEnv > 0) {
         useCompact = false;
     }
-    */
+
+#if defined(Q_OS_ANDROID)
+    // Android tablets are wider and shorter than an iPad (e.g. 1340x800), so
+    // the regular layout's iPad vertical rhythm overflows and clips the bottom
+    // of each column. Tighten the vertical density for the Android tablet
+    // layout (iOS/iPad keep the roomier values).
+    if (!useCompact) {
+        using namespace K4Styles::Dimensions;
+        // The left control column is the tallest. Shrink its DualControlButton
+        // tiles and the group padding to fit. Keep the shared ButtonHeightSmall
+        // at its default so the right panel's two-line function buttons (FREQ
+        // ENT) are not squished; the left MON/NORM/BAL use their own compact
+        // height in SideControlPanel. Shrink the S-meter (and the matching VFO
+        // content height) so the centre's SUB/DIV badges and the B filter
+        // indicator fit; the panadapter absorbs the difference.
+        ButtonHeightLarge = 32;   // DualControlButton tiles (left column)
+        ButtonHeightSmall = 22;   // right-panel function buttons + left MON/NORM/BAL
+        PaddingLarge = 6;
+        PaddingMedium = 5;
+        PaddingSmall = 4;
+        SpectrumMinHeight = 190;
+        VfoMeterHeight = 120;     // was 130; keeps all 5 meter rows, a little tighter
+        VfoContentHeight = 138;   // meter + feature labels
+    }
+#endif
 
     g_compactLayout = useCompact;
     if (useCompact) {
