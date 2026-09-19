@@ -224,7 +224,9 @@ bool HalikeyDevice::dahPressed() const {
 #else
 
 #include "halikeymidiworker.h"
-#include "halikeyv14worker.h"
+#ifndef Q_OS_IOS
+#include "halikeyv14worker.h" // serial/HID V14 keyer — desktop only (no serial on iOS)
+#endif
 #include "halikeyworkerbase.h"
 #include "../settings/radiosettings.h"
 #include <QDebug>
@@ -315,13 +317,19 @@ bool HalikeyDevice::openPort(const QString &portName) {
     m_confirmedDahState = false;
     m_confirmedPttState = false;
 
-    // Create worker based on configured device type
+    // Create worker based on configured device type.
+#ifdef Q_OS_IOS
+    // iOS keyer is MIDI-only (CoreMIDI via RtMidi); the serial/HID V14 path is
+    // not built on iOS, so always use the MIDI worker regardless of the setting.
+    m_worker = new HaliKeyMidiWorker(portName);
+#else
     int deviceType = RadioSettings::instance()->halikeyDeviceType();
     if (deviceType == 1) {
         m_worker = new HaliKeyMidiWorker(portName);
     } else {
         m_worker = new HaliKeyV14Worker(portName);
     }
+#endif
 
     m_workerThread = new QThread(this);
     m_worker->moveToThread(m_workerThread);
@@ -393,15 +401,23 @@ QString HalikeyDevice::portName() const {
 }
 
 QStringList HalikeyDevice::availablePorts() {
+#ifdef Q_OS_IOS
+    // No serial ports on iOS; the keyer is MIDI-only (see availableMidiDevices).
+    return {};
+#else
     QStringList ports;
     const auto portInfos = QSerialPortInfo::availablePorts();
     for (const QSerialPortInfo &info : portInfos) {
         ports.append(info.portName());
     }
     return ports;
+#endif
 }
 
 QList<HaliKeyPortInfo> HalikeyDevice::availablePortsDetailed() {
+#ifdef Q_OS_IOS
+    return {};
+#else
     QList<HaliKeyPortInfo> ports;
     const auto portInfos = QSerialPortInfo::availablePorts();
     for (const QSerialPortInfo &info : portInfos) {
@@ -410,6 +426,7 @@ QList<HaliKeyPortInfo> HalikeyDevice::availablePortsDetailed() {
         ports.append(pi);
     }
     return ports;
+#endif
 }
 
 QStringList HalikeyDevice::availableMidiDevices() {
