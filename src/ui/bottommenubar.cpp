@@ -130,6 +130,11 @@ void BottomMenuBar::setupUi() {
     layout->addStretch();
 
     // ===== Menu Buttons =====
+    // Regular layout never got its own connect entry point - it was built
+    // dormant behind the old "always compact" hardcode, and compact's own
+    // CONN button lives in a row this layout doesn't use. Add one so
+    // tablet/iPad can actually reach the Radio Manager.
+    m_connectBtn = createMenuButton("CONN");
     m_menuBtn = createMenuButton("MENU");
     m_fnBtn = createMenuButton("Fn");
     m_displayBtn = createMenuButton("DISPLAY");
@@ -138,6 +143,7 @@ void BottomMenuBar::setupUi() {
     m_subRxBtn = createMenuButton("SUB RX");
     m_txBtn = createMenuButton("TX");
 
+    layout->addWidget(m_connectBtn);
     layout->addWidget(m_menuBtn);
     layout->addWidget(m_fnBtn);
     layout->addWidget(m_displayBtn);
