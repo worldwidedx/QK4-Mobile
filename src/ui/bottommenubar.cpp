@@ -73,28 +73,7 @@ void BottomMenuBar::setupUi() {
             button->setMaximumWidth(QWIDGETSIZE_MAX);
             button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         }
-        m_settingsBtn = createMenuButton(QString());
-        m_settingsBtn->setAccessibleName("QK4 Settings");
-        m_settingsBtn->setToolTip("QK4 Settings");
-        m_settingsBtn->setFixedSize(34, 26);
-        // Draw a monochrome gear so Android cannot substitute a colored emoji.
-        QPixmap gearPixmap(16, 16);
-        gearPixmap.fill(Qt::transparent);
-        QPainter gearPainter(&gearPixmap);
-        gearPainter.setRenderHint(QPainter::Antialiasing);
-        gearPainter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap));
-        const QPointF center(8.0, 8.0);
-        constexpr qreal Pi = 3.14159265358979323846;
-        for (int i = 0; i < 8; ++i) {
-            const qreal angle = i * Pi / 4.0;
-            gearPainter.drawLine(center + QPointF(std::cos(angle) * 4.0, std::sin(angle) * 4.0),
-                                 center + QPointF(std::cos(angle) * 6.5, std::sin(angle) * 6.5));
-        }
-        gearPainter.drawEllipse(center, 4.0, 4.0);
-        gearPainter.drawEllipse(center, 1.5, 1.5);
-        gearPainter.end();
-        m_settingsBtn->setIcon(QIcon(gearPixmap));
-        m_settingsBtn->setIconSize(QSize(16, 16));
+        m_settingsBtn = createSettingsButton();
         tuneRow->addWidget(m_settingsBtn);
         tuneRow->addWidget(m_tuneADownBtn);
         tuneRow->addWidget(m_tuneAUpBtn);
@@ -130,11 +109,13 @@ void BottomMenuBar::setupUi() {
     layout->addStretch();
 
     // ===== Menu Buttons =====
-    // Regular layout never got its own connect entry point - it was built
-    // dormant behind the old "always compact" hardcode, and compact's own
-    // CONN button lives in a row this layout doesn't use. Add one so
-    // tablet/iPad can actually reach the Radio Manager.
+    // Regular layout never got its own connect entry point or settings
+    // access - both were built dormant behind the old "always compact"
+    // hardcode, and compact's own CONN/gear buttons live in rows this
+    // layout doesn't use. Add them so tablet/iPad can actually reach the
+    // Radio Manager and QK4 Settings.
     m_connectBtn = createMenuButton("CONN");
+    m_settingsBtn = createSettingsButton();
     m_menuBtn = createMenuButton("MENU");
     m_fnBtn = createMenuButton("Fn");
     m_displayBtn = createMenuButton("DISPLAY");
@@ -144,6 +125,7 @@ void BottomMenuBar::setupUi() {
     m_txBtn = createMenuButton("TX");
 
     layout->addWidget(m_connectBtn);
+    layout->addWidget(m_settingsBtn);
     layout->addWidget(m_menuBtn);
     layout->addWidget(m_fnBtn);
     layout->addWidget(m_displayBtn);
@@ -263,6 +245,32 @@ QPushButton *BottomMenuBar::createMenuButton(const QString &text) {
     btn->setFixedSize(K4Styles::Dimensions::MenuBarButtonWidth, K4Styles::Dimensions::ButtonHeightMedium);
     btn->setCursor(Qt::PointingHandCursor);
     btn->setStyleSheet(K4Styles::menuBarButton());
+    return btn;
+}
+
+QPushButton *BottomMenuBar::createSettingsButton() {
+    auto *btn = createMenuButton(QString());
+    btn->setAccessibleName("QK4 Settings");
+    btn->setToolTip("QK4 Settings");
+    btn->setFixedSize(34, 26);
+    // Draw a monochrome gear so Android cannot substitute a colored emoji.
+    QPixmap gearPixmap(16, 16);
+    gearPixmap.fill(Qt::transparent);
+    QPainter gearPainter(&gearPixmap);
+    gearPainter.setRenderHint(QPainter::Antialiasing);
+    gearPainter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap));
+    const QPointF center(8.0, 8.0);
+    constexpr qreal Pi = 3.14159265358979323846;
+    for (int i = 0; i < 8; ++i) {
+        const qreal angle = i * Pi / 4.0;
+        gearPainter.drawLine(center + QPointF(std::cos(angle) * 4.0, std::sin(angle) * 4.0),
+                             center + QPointF(std::cos(angle) * 6.5, std::sin(angle) * 6.5));
+    }
+    gearPainter.drawEllipse(center, 4.0, 4.0);
+    gearPainter.drawEllipse(center, 1.5, 1.5);
+    gearPainter.end();
+    btn->setIcon(QIcon(gearPixmap));
+    btn->setIconSize(QSize(16, 16));
     return btn;
 }
 
