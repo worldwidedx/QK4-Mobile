@@ -1,9 +1,9 @@
 # QK4 Mobile
 
-QK4 Mobile is the Android mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
+QK4 Mobile is the Mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
 
 The application is under active development and is intended for use with an
-Elecraft K4/K4D on the same network. Version 1.0.5 is the current ARM64
+Elecraft K4/K4D attached to the internet. Version 1.0.5 is the current ARM64
 release.
 
 The current stable APK remains available from the [archived QK4-Android
