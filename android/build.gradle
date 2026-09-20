@@ -1,0 +1,91 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        //noinspection AndroidGradlePluginVersion
+        classpath 'com.android.tools.build:gradle:9.0.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0"
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+apply plugin: qtGradlePluginType
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    implementation 'androidx.core:core:1.17.0'
+}
+
+android {
+    namespace = androidPackageName
+    compileSdkVersion androidCompileSdkVersion
+    buildToolsVersion androidBuildToolsVersion
+    ndkVersion = androidNdkVersion
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = [qtAndroidDir + '/src', 'src', 'java']
+            kotlin.srcDirs = [qtAndroidDir + '/src', 'src', 'kotlin']
+            aidl.srcDirs = [qtAndroidDir + '/src', 'src', 'aidl']
+            res.srcDirs = [qtAndroidDir + '/res', 'res']
+            resources.srcDirs = ['resources']
+            renderscript.srcDirs = ['src']
+            assets.srcDirs = ['assets']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    tasks.withType(JavaCompile) {
+        options.incremental = true
+        options.compilerArgs += ['-Xlint:all']
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lintOptions {
+        abortOnError = false
+    }
+
+    aaptOptions {
+        noCompress 'rcc'
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = legacyPackaging
+        }
+    }
+
+    defaultConfig {
+        resConfig "en"
+        minSdkVersion qtMinSdkVersion
+        targetSdkVersion qtTargetSdkVersion
+        ndk.abiFilters = qtTargetAbiList.split(",")
+    }
+}
+
+// androiddeployqt still expects <binary>.apk at the package root, while
+// Android Gradle Plugin 9 writes QK4-debug.apk in build/outputs/apk/debug.
+// Make that expected compatibility copy as part of the requested task.
+gradle.projectsEvaluated {
+    tasks.named("assembleDebug") {
+        doLast {
+            copy {
+                from layout.buildDirectory.file("outputs/apk/debug/QK4-debug.apk")
+                into projectDir
+                rename { "QK4.apk" }
+            }
+        }
+    }
+}

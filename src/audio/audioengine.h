@@ -11,23 +11,11 @@
 #include <QQueue>
 #include <QMutex>
 #include <atomic>
+#include "sstv/sstvencoder.h"
+#include "digitaltxguard.h"
 
 class OpusEncoder;
 
-/**
- * @brief Qt audio I/O + Opus pipeline for both RX (speaker) and TX (microphone) paths.
- *
- * Lives on @c AudioController::m_audioThread (see `controllers/audiocontroller.cpp`).
- * RX:  decoded 12 kHz stereo Float32 PCM is enqueued from the IO thread via
- *      `enqueueAudio()`, consumed by `feedAudioDevice()` on a 10 ms timer, with MX
- *      routing + volume + balance applied per packet.
- * TX:  48 kHz mono Float32 captured on a 10 ms poll, resampled 4:1 to 12 kHz,
- *      framed to the SL-tier sample count, emitted via `microphoneFrame` for the
- *      Opus encoder.
- *
- * Thread-safety: all public setters mutate @c std::atomic members or take
- * @c m_queueMutex / @c m_mixMutex; no other cross-thread contract.
- */
 class AudioEngine : public QObject {
     Q_OBJECT
 
@@ -42,17 +30,38 @@ public:
     void enqueueAudio(const QByteArray &pcmData);
     Q_INVOKABLE void flushQueue();
 
-    // Mic device lifecycle is decoupled from per-PTT send-gating: the QAudioSource is opened
-    // once on first PTT (preserving the macOS permission deferral noted in the constructor)
-    // and stays open for the lifetime of the K4 connection, so subsequent PTT presses don't
-    // pay the OS audio backend renegotiation cost (200 ms – 1.5 s on PipeWire/CoreAudio/WASAPI).
-    // openMic() is idempotent. closeMic() is only called from teardown paths (stop(), device
-    // swap) — never per-PTT. The TX send-gate lives in AudioController::onMicrophoneFrame.
+    // The microphone is opened once and then remains open while connected.
+    // PTT controls only the packet send gate; reopening the Android audio
+    // backend for each press creates gaps that make the K4 leave TX.
     Q_INVOKABLE void openMic();
     Q_INVOKABLE void closeMic();
-    Q_INVOKABLE void flushMicBuffer(); // Called on PTT-on edge so a partial-frame tail from
-                                       // the previous transmission cannot leak into the new one.
-    bool isMicOpen() const { return m_micEnabled.load(std::memory_order_relaxed); }
+
+    // PTT owns the TX encode gate on the audio thread. The capture device is
+    // intentionally not stopped on release; see openMic()/closeMic().
+    Q_INVOKABLE void setPttActive(bool active);
+    bool isPttActive() const { return m_pttActive.load(std::memory_order_relaxed); }
+    void setEncodeMode(int mode);
+    void setFrameSamples(int samples);
+
+    // SSTV owns the same Opus encoder and frame clock as microphone TX, but
+    // has an exclusive program-audio source.  The caller must obtain the K4
+    // TX lease before beginSstvTransmit(); these methods never send CAT.
+    Q_INVOKABLE void prepareSstvTransmit(const QImage &frame, int modeId,
+                                         const QString &morseId, int morseWpm,
+                                         const QString &fskId,
+                                         quint64 generation);
+    Q_INVOKABLE void beginSstvTransmit();
+    Q_INVOKABLE void stopSstvTransmit();
+    // Safe to call directly from the UI thread. It immediately prevents the
+    // audio timer from producing any further program packet; the queued stop
+    // then disposes the encoder on its owning thread.
+    void requestSstvStop();
+    void setDigitalTxControl(std::shared_ptr<DigitalTxControl> control) { m_digitalControl = std::move(control); }
+    void beginFt8Encoding(quint64 generation);
+    void encodeFt8Frame(const QVector<qint16> &samples, int emitted, int total, quint64 generation);
+    void finishFt8Encoding(quint64 generation);
+    Q_INVOKABLE void prepareDigitalCalibration(int toneHz, quint64 generation);
+    bool isSstvTransmitActive() const { return m_sstvActive.load(std::memory_order_acquire); }
 
     // Channel volume controls (applied at playback time for instant response)
     void setMainVolume(float volume);
@@ -70,24 +79,8 @@ public:
     void setBalanceMode(int mode);
     void setBalanceOffset(int offset); // -50 to +50
 
-    // TX frame size (dynamic, matches SL tier)
-    void setFrameSamples(int samples); // 240, 480, 720, or 1440
-    int frameSamples() const { return m_frameSamples.load(std::memory_order_relaxed); }
-
-    // TX encode mode (0=EM0 RAW32, 1=EM1 S16, 2=EM2 Opus int, 3=EM3 Opus float).
-    // Atomic so the audio-thread encode path reads it lock-free.
-    void setEncodeMode(int mode);
-    int encodeMode() const { return m_encodeMode.load(std::memory_order_relaxed); }
-
-    // PTT gate for the TX encode path. Setting to true on PTT-on edge also
-    // opens the mic (if needed) and flushes any partial-frame tail from the
-    // previous transmission. The TX encode runs on the audio thread; reading
-    // m_pttActive there is a lock-free atomic load.
-    Q_INVOKABLE void setPttActive(bool active);
-    bool isPttActive() const { return m_pttActive.load(std::memory_order_relaxed); }
-
     // Microphone settings
-    Q_INVOKABLE void setMicGain(float gain); // 0.0 to 1.0
+    void setMicGain(float gain); // 0.0 to 1.0
     float micGain() const { return m_micGain.load(std::memory_order_relaxed); }
 
     Q_INVOKABLE void setMicDevice(const QString &deviceId);
@@ -104,41 +97,50 @@ public:
     static QList<QPair<QString, QString>> availableOutputDevices(); // (id, description)
 
 signals:
-    // Encoded TX packet ready for the wire. Emitted on the audio thread;
-    // TcpClient::sendRaw() auto-marshals to the I/O thread. PR 12 moved the
-    // encode pipeline here from AudioController (main thread) so a busy GUI
-    // event loop can no longer stall voice TX packet emission.
-    void txPacketReady(const QByteArray &packet);
+    void micLevelChanged(float level);                 // RMS level 0.0-1.0 for meter display
+    void txPacketReady(const QByteArray &packet);       // Encoded K4 TX packet from audio thread
+    // The sample counters travel with the packet. TcpClient reports progress
+    // only after it accepts this packet through the still-open SSTV gate.
+    void sstvPacketReady(const QByteArray &packet, int emittedSamples, int totalSamples,
+                         int imageSamples, quint64 generation);
+    void sstvPrepared(bool ready, const QString &error, int totalSamples, quint64 generation);
+    void sstvFailed(const QString &reason, quint64 generation);
+    void sstvProgress(int emittedSamples, int totalSamples);
+    void sstvFinished(quint64 generation);
+    void digitalCalibrationPrepared(quint64 generation);
+    void digitalCalibrationPreparationFailed(const QString &reason, quint64 generation);
     void bufferStatus(int queueBytes, int maxBytes, bool prebuffering);
 
 private slots:
     void onMicDataReady();
+    void onSstvPacer();
     void feedAudioDevice();
-    // WHY: when the user leaves a device set to "System Default" (empty id), follow
-    // the OS default live instead of caching it for the whole session. QMediaDevices
-    // fires these when devices or the system default change; we rebuild the sink/
-    // source only if the effective default actually moved. Pinned devices are ignored.
     void onSystemDefaultInputChanged();
     void onSystemDefaultOutputChanged();
+    void refreshSystemAudioRoute();
+    void pollAndroidOutputRoute();
 
 private:
-    bool setupAudioOutput();
+    bool setupAudioOutput(bool resetPlayback = true);
     bool setupAudioInput();
+    void scheduleSystemAudioRouteRefresh(int delayMs);
 
-    // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging).
-    // Reads from input48k, writes into the pre-allocated m_resampleBuf12k
-    // member and returns a const reference to it. Avoids per-poll allocation.
+    // Resample into a reusable buffer, avoiding allocations in the microphone hot path.
     const QByteArray &resample48kTo12k(const QByteArray &input48k);
-
-    // Encode + packetize one captured S16LE mono frame and emit txPacketReady.
-    // Runs on the audio thread, called from onMicDataReady when PTT is active.
-    void encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frameSamples, int encodeMode);
+    void encodeAndSendFrame(const QByteArray &s16leData, int frameSamples, int encodeMode,
+                            bool sstvProgram = false);
 
     // Apply MX routing + volume + balance to a raw [main, sub] interleaved packet
     void applyMixAndVolume(QByteArray &packet);
+    const QByteArray &resampleOutputPacket(const QByteArray &packet);
+    void resetOutputResampler();
 
     // Audio output format: 12kHz stereo Float32 (K4 RX audio, L=Main R=Sub)
     QAudioFormat m_outputFormat;
+    // Physical playback format. USB audio commonly requires a 48 kHz stream
+    // even though K4 RX packets are fixed at 12 kHz.
+    QAudioFormat m_sinkFormat;
+    int m_sinkSampleRate = 12000;
 
     // Audio input format: 48kHz mono Float32 (native macOS rate, resampled to 12kHz)
     QAudioFormat m_inputFormat;
@@ -146,16 +148,31 @@ private:
     // Audio output (speaker)
     QAudioSink *m_audioSink;
     QIODevice *m_audioSinkDevice;
+#ifdef Q_OS_ANDROID
+    bool m_androidNativePlaybackActive = false;
+    // USB capture alone bypasses Qt's Android device enumeration. Phone and
+    // Bluetooth capture continue to use QAudioSource unchanged.
+    bool m_androidUsbMicrophoneActive = false;
+#endif
 
     // Audio input (microphone)
     QAudioSource *m_audioSource;
     QIODevice *m_audioSourceDevice;
     std::atomic<bool> m_micEnabled{false};
-    QString m_selectedMicDeviceId;           // Empty = use system default
-    QString m_selectedOutputDeviceId;        // Empty = use system default
-    QString m_activeMicDeviceId;             // id of the device the source was actually opened on
-    QString m_activeOutputDeviceId;          // id of the device the sink was actually opened on
-    QMediaDevices *m_mediaDevices = nullptr; // OS device/default-change monitor
+    QString m_selectedMicDeviceId;    // Empty = use system default
+    QString m_selectedOutputDeviceId; // Empty = use system default
+    QString m_activeMicDeviceId;
+    QString m_activeOutputDeviceId;
+    QMediaDevices *m_mediaDevices = nullptr;
+    QTimer *m_routeRefreshTimer = nullptr;
+    bool m_replacingAudioOutput = false;
+#ifdef Q_OS_ANDROID
+    // Qt 6.11 does not enumerate every USB-C endpoint, so USB attach/remove
+    // must be observed from Android's own audio-device list.
+    QTimer *m_androidRoutePollTimer = nullptr;
+    int m_activeAndroidWiredOutputId = -1;
+    int m_pendingAndroidWiredOutputId = -1;
+#endif
 
     // Channel volume controls (0.0 to 1.0)
     std::atomic<float> m_mainVolume{1.0f};
@@ -176,6 +193,27 @@ private:
     // Microphone gain control
     std::atomic<float> m_micGain{0.25f}; // Default 25% (macOS mic input is typically hot)
 
+    // TX packetization runs in the audio thread.  Keeping sequence and Opus
+    // state here makes packet timing independent of the UI event loop.
+    OpusEncoder *m_opusEncoder = nullptr;
+    quint8 m_txSequence = 0;
+    std::atomic<bool> m_pttActive{false};
+    std::atomic<int> m_encodeMode{3};
+    // Frame size follows the connected radio's SL tier, exactly as in QK4 main.
+    std::atomic<int> m_frameSamples{240};
+    std::atomic<bool> m_sstvActive{false};
+    bool m_sstvPrepared = false;
+    SstvEncoder m_sstvEncoder;
+    std::atomic<quint64> m_sstvGeneration{0};
+    quint64 m_ft8EncodingGeneration = 0;
+    int m_ft8Emitted = 0, m_ft8Total = 0;
+    std::shared_ptr<DigitalTxControl> m_digitalControl;
+    DigitalTxAudio m_digitalAudio;
+    bool m_calibrationTone = false;
+    int m_calibrationHz = 1500;
+    double m_calibrationPhase = 0;
+    QTimer *m_sstvPacerTimer = nullptr;
+
     // Audio throughput: 12kHz × 2ch × sizeof(float) = 96,000 bytes/sec = 96 bytes/ms
     static constexpr int BYTES_PER_MS = 96;
 
@@ -186,30 +224,10 @@ private:
     // Input: 48kHz * 4 bytes/sample * 0.1 sec = 19200 bytes
     static constexpr int INPUT_BUFFER_SIZE = 19200;
 
-    // Microphone gain uses cubic curve for fine control at low levels
-
-    // TX encode pipeline state. Lives here (audio thread) instead of in
-    // AudioController (main thread) so a busy GUI doesn't stall voice TX.
-    OpusEncoder *m_opusEncoder = nullptr; // Owned, deleted in destructor
-    quint8 m_txSequence = 0;              // Audio-thread-only — no atomic needed
-    std::atomic<int> m_encodeMode{3};     // EM3 (Opus float) default
-    std::atomic<bool> m_pttActive{false}; // TX gate; read on every mic frame
-
-    // Microphone frame buffering for Opus encoding
-    // Buffer accumulates S16LE samples at 12kHz until we have a complete frame.
-    // Frame size is dynamic, matching the SL tier (240/480/720/1440 samples).
-    std::atomic<int> m_frameSamples{240}; // Default 20ms, updated on SL change
+    // Microphone frame buffering for Opus encoding. The read offset avoids an
+    // O(N) front-removal on every 10 ms microphone poll.
     QByteArray m_micBuffer;
-    // Offset into m_micBuffer of the next byte to emit. Eliminates the
-    // per-poll O(N) memmove from QByteArray::remove(0, n) — instead we just
-    // bump this and compact only when the offset exceeds half the buffer's
-    // capacity.
     int m_micReadOffset = 0;
-
-    // Pre-allocated scratch for resample48kTo12k. Sized to INPUT_BUFFER_SIZE/4
-    // bytes (the 4:1 decimation ratio means 12kHz output is 1/4 the 48kHz input
-    // size; INPUT_BUFFER_SIZE bytes of 48kHz Float32 = INPUT_BUFFER_SIZE/16
-    // samples = INPUT_BUFFER_SIZE/16 * 4 bytes of 12kHz output = INPUT_BUFFER_SIZE/4).
     QByteArray m_resampleBuf12k;
 
     // Timer for polling microphone data (more reliable than readyRead signal)
@@ -225,16 +243,16 @@ private:
     // Write staging buffer: holds processed PCM that couldn't be written in one feed cycle
     // Audio-thread-only (no mutex needed) — safety net for partial QIODevice::write()
     QByteArray m_writeBuffer;
-
-    // Reused per feedAudioDevice() cycle. Hoisted from a per-call stack QList
-    // so the 100 Hz feed timer doesn't construct a fresh list each tick.
+    QByteArray m_outputResampleBuffer;
+    bool m_outputResamplerPrimed = false;
+    float m_outputResamplerPreviousLeft = 0.0f;
+    float m_outputResamplerPreviousRight = 0.0f;
     QList<QByteArray> m_feedBatch;
 
-    // Jitter buffer constants (adapt to any SL level automatically).
-    // WHY PREBUFFER_PACKETS = 1: SL-tier packets already encode the jitter runway (SL7 carries
-    // ~120 ms of audio per packet). Waiting for a second packet would double the startup latency
-    // without improving tolerance — the runway is already inside the single packet. See
-    // `memory/k4-streaming-latency.md` for the verified SL0–7 frame-bundling map.
+    // Jitter buffer constants (adapt to any SL level automatically)
+    // Prebuffer: start playback as soon as the first packet arrives.
+    // The SL level already provides jitter tolerance (larger packets = more runway),
+    // so additional prebuffering just adds latency without benefit.
     static constexpr int PREBUFFER_PACKETS = 1;
     static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS; // 96,000 bytes (1s cap)
     static constexpr int FEED_INTERVAL_MS = 10;

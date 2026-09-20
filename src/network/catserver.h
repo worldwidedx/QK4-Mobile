@@ -1,15 +1,14 @@
 #ifndef CATSERVER_H
 #define CATSERVER_H
 
-#include <QByteArray>
-#include <QHash>
+#include <QList>
+#include <QMap>
 #include <QObject>
 #include <QTcpServer>
 #include <QTcpSocket>
 
 class RadioState;
 class TcpClient;
-class CatPushBroadcaster;
 
 /**
  * @brief TCP server that speaks native K4 CAT protocol
@@ -53,20 +52,19 @@ signals:
 
 private slots:
     void onNewConnection();
+    void onClientData();
+    void onClientDisconnected();
 
 private:
-    QByteArray handleCommand(const QString &cmd, QTcpSocket *client);
-
-    struct ClientState {
-        QByteArray buffer;
-        int aiMode = 0;
-    };
+    QString handleCommand(const QString &cmd);
+    QString buildFrequencyResponse(quint64 freq, const QString &prefix) const;
+    QString buildModeResponse(int mode) const;
 
     QTcpServer *m_server;
     RadioState *m_radioState;
     TcpClient *m_tcpClient = nullptr;
-    QHash<QTcpSocket *, ClientState> m_clients;
-    CatPushBroadcaster *m_broadcaster = nullptr;
+    QList<QTcpSocket *> m_clients;
+    QMap<QTcpSocket *, QByteArray> m_clientBuffers;
     quint16 m_port = 0;
 };
 

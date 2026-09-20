@@ -1,5 +1,10 @@
-cmake_minimum_required(VERSION 3.21)
-project(QK4 VERSION 0.7.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.16)
+project(QK4 VERSION 1.0.5 LANGUAGES CXX)
+include(CTest)
+
+# Optional override paths for Opus when cross-compiling (primarily Android)
+set(QK4_OPUS_INCLUDE_DIR "" CACHE PATH "Directory containing opus/opus.h for the target platform")
+set(QK4_OPUS_LIBRARY "" CACHE FILEPATH "Path to libopus library for the target platform")
 
 # Full version string can include prerelease info (e.g., "0.1.0-alpha.123")
 # CI sets this via -DQK4_VERSION_FULL="x.y.z-prerelease"
@@ -15,8 +20,54 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+if(ANDROID)
+    # Packaging mode can differ from CMAKE_BUILD_TYPE:
+    # - DEBUG: debug-signed APK for direct adb install/testing.
+    # - RELEASE: requires explicit keystore signing for production distribution.
+    set(QK4_ANDROID_DEPLOYMENT_TYPE "DEBUG" CACHE STRING
+        "Android packaging mode: DEBUG (local testing) or RELEASE (production signed)")
+    set_property(CACHE QK4_ANDROID_DEPLOYMENT_TYPE PROPERTY STRINGS DEBUG RELEASE)
+    string(TOUPPER "${QK4_ANDROID_DEPLOYMENT_TYPE}" _qk4_android_deployment_type)
+    if(NOT _qk4_android_deployment_type STREQUAL "DEBUG"
+       AND NOT _qk4_android_deployment_type STREQUAL "RELEASE")
+        message(FATAL_ERROR
+            "QK4_ANDROID_DEPLOYMENT_TYPE must be DEBUG or RELEASE. "
+            "Got '${QK4_ANDROID_DEPLOYMENT_TYPE}'.")
+    endif()
+    set(QT_ANDROID_DEPLOYMENT_TYPE "${_qk4_android_deployment_type}" CACHE STRING
+        "Qt Android deployment type" FORCE)
+
+    if(_qk4_android_deployment_type STREQUAL "RELEASE")
+        # Qt's Android CMake integration passes only --sign; signing details are read from env vars.
+        # Enforce required env vars at configure time so packaging never produces an unsigned release APK.
+        set(QT_ANDROID_SIGN_APK ON CACHE BOOL "Sign Android APK during deployment" FORCE)
+        set(_qk4_missing_signing_env "")
+        foreach(_qk4_var
+                QT_ANDROID_KEYSTORE_PATH
+                QT_ANDROID_KEYSTORE_ALIAS
+                QT_ANDROID_KEYSTORE_STORE_PASS
+                QT_ANDROID_KEYSTORE_KEY_PASS)
+            if(NOT DEFINED ENV{${_qk4_var}} OR "$ENV{${_qk4_var}}" STREQUAL "")
+                list(APPEND _qk4_missing_signing_env "${_qk4_var}")
+            endif()
+        endforeach()
+        if(_qk4_missing_signing_env)
+            string(JOIN ", " _qk4_missing_signing_env_list ${_qk4_missing_signing_env})
+            message(FATAL_ERROR
+                "Android RELEASE packaging requires signing credentials. Missing environment variables: "
+                "${_qk4_missing_signing_env_list}. "
+                "For local device testing, configure with -DQK4_ANDROID_DEPLOYMENT_TYPE=DEBUG.")
+        endif()
+        unset(_qk4_missing_signing_env_list)
+        unset(_qk4_missing_signing_env)
+    endif()
+
+    message(STATUS "QK4 Android deployment type: ${_qk4_android_deployment_type}")
+    unset(_qk4_android_deployment_type)
+endif()
+
 # Core Qt components (GuiPrivate handled separately for cross-platform compatibility)
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg)
 
 # GuiPrivate is needed for QRhi access but may not have CMake config on all platforms
 if(APPLE)
@@ -44,8 +95,42 @@ else()
     endif()
 endif()
 
+add_subdirectory(src/ft8)
+
 # Platform-specific dependency handling
-if(APPLE)
+if(ANDROID)
+    # Android: HID/MIDI hardware features are disabled, Opus is still required for RX/TX audio.
+    set(HIDAPI_INCLUDE_DIRS "")
+    set(HIDAPI_LIBRARIES "")
+    set(OPUS_INCLUDE_DIRS "")
+    set(OPUS_LIBRARIES "")
+
+    if(QK4_OPUS_INCLUDE_DIR AND QK4_OPUS_LIBRARY)
+        # Accept both "<prefix>/include" and "<prefix>/include/opus" from callers.
+        get_filename_component(_qk4_opus_inc_leaf "${QK4_OPUS_INCLUDE_DIR}" NAME)
+        if(_qk4_opus_inc_leaf STREQUAL "opus" AND EXISTS "${QK4_OPUS_INCLUDE_DIR}/opus.h")
+            get_filename_component(OPUS_INCLUDE_DIRS "${QK4_OPUS_INCLUDE_DIR}" DIRECTORY)
+        else()
+            set(OPUS_INCLUDE_DIRS "${QK4_OPUS_INCLUDE_DIR}")
+        endif()
+        unset(_qk4_opus_inc_leaf)
+        set(OPUS_LIBRARIES "${QK4_OPUS_LIBRARY}")
+    else()
+        find_package(Opus CONFIG QUIET)
+        if(TARGET Opus::opus)
+            set(OPUS_LIBRARIES Opus::opus)
+        else()
+            find_path(OPUS_INCLUDE_DIRS NAMES opus/opus.h)
+            find_library(OPUS_LIBRARIES NAMES opus)
+        endif()
+    endif()
+
+    if(NOT TARGET Opus::opus AND (NOT OPUS_INCLUDE_DIRS OR NOT OPUS_LIBRARIES))
+        message(FATAL_ERROR
+            "Android build requires Opus. Provide -DQK4_OPUS_INCLUDE_DIR and -DQK4_OPUS_LIBRARY, "
+            "or install an Opus package that exports Opus::opus.")
+    endif()
+elseif(APPLE)
     # macOS with Homebrew
     set(OPUS_PREFIX "/opt/homebrew/opt/opus")
     set(OPUS_INCLUDE_DIRS "${OPUS_PREFIX}/include")
@@ -54,17 +139,10 @@ if(APPLE)
     set(HIDAPI_PREFIX "/opt/homebrew/opt/hidapi")
     set(HIDAPI_INCLUDE_DIRS "${HIDAPI_PREFIX}/include")
     set(HIDAPI_LIBRARIES "${HIDAPI_PREFIX}/lib/libhidapi.dylib")
-
-    set(LIBUSB_PREFIX "/opt/homebrew/opt/libusb")
-    set(LIBUSB_INCLUDE_DIRS "${LIBUSB_PREFIX}/include")
-    set(LIBUSB_LIBRARIES "${LIBUSB_PREFIX}/lib/libusb-1.0.dylib")
 elseif(WIN32)
     # Windows with vcpkg
     find_package(Opus CONFIG REQUIRED)
     find_package(hidapi CONFIG REQUIRED)
-    # libusb doesn't provide CMake config files; use find_path/find_library
-    find_path(LIBUSB_INCLUDE_DIRS NAMES libusb-1.0/libusb.h REQUIRED)
-    find_library(LIBUSB_LIBRARIES NAMES usb-1.0 libusb-1.0 REQUIRED)
     set(OPUS_INCLUDE_DIRS "")
     set(HIDAPI_INCLUDE_DIRS "")
     set(OPUS_LIBRARIES Opus::opus)
@@ -74,285 +152,206 @@ else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(OPUS REQUIRED opus)
     pkg_check_modules(HIDAPI REQUIRED hidapi-libusb)
-    pkg_check_modules(LIBUDEV REQUIRED libudev)
-    pkg_check_modules(LIBUSB REQUIRED libusb-1.0>=1.0.21)
 endif()
 set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
-    src/utils/radioutils.cpp
-    src/utils/bandplan.cpp
-    src/controllers/connectioncontroller.cpp
-    src/controllers/hardwarecontroller.cpp
-    src/controllers/audiocontroller.cpp
-    src/controllers/spectrumcontroller.cpp
-    src/controllers/dxclustercontroller.cpp
-    src/controllers/textdecodecontroller.cpp
-    src/controllers/statusbarcontroller.cpp
-    src/controllers/menucontroller.cpp
-    src/controllers/antennaconfigcontroller.cpp
-    src/controllers/featuremenucontroller.cpp
-    src/controllers/popupmanager.cpp
-    src/controllers/kpa1500uicontroller.cpp
-    src/controllers/modepopupcontroller.cpp
-    src/controllers/bandnavigationcontroller.cpp
-    src/controllers/buttonrowdispatcher.cpp
-    src/controllers/macrocontroller.cpp
-    src/controllers/processingdisplaycontroller.cpp
-    src/controllers/antennadisplaycontroller.cpp
-    src/controllers/vforowindicatorcontroller.cpp
-    src/controllers/ritxitcontroller.cpp
-    src/controllers/modelabelcontroller.cpp
-    src/controllers/vfofrequencycontroller.cpp
-    src/controllers/subdivindicatorcontroller.cpp
-    src/controllers/txstatecontroller.cpp
-    src/controllers/sidecontroldisplaycontroller.cpp
-    src/controllers/sidecontrolscrollcontroller.cpp
-    src/controllers/rightsidecontroller.cpp
-    src/controllers/memorybuttonscontroller.cpp
-    src/controllers/cwcontroller.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
-    src/network/networkmetrics.cpp
     src/network/kpa1500client.cpp
-    src/network/dxclusterclient.cpp
     src/network/catserver.cpp
-    src/network/catframes.cpp
-    src/network/catpushbroadcaster.cpp
-    src/network/k4discovery.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
+    src/audio/digitaltxguard.cpp
+    src/audio/digitaltxguard.h
     src/audio/sidetonegenerator.cpp
-    src/dsp/panadapter_rhi.cpp
+    src/sstv/sstvmoderegistry.cpp
+    src/sstv/sstvencoder.cpp
+    src/sstv/sstvdecoder.cpp
+    src/sstv/sstvstorage.cpp
+    src/android/sstvorientation.cpp
+    src/android/sstvmedia.cpp
+    src/hardware/iambickeyer.cpp
+    src/hardware/midimapping.cpp
+    src/hardware/midiinputrouter.cpp
+    src/hardware/ctr2mididevice.cpp
     src/dsp/minipan_rhi.cpp
+    src/settings/fnkeymemory.cpp
     src/settings/radiosettings.cpp
     src/models/radiostate.cpp
-    src/models/radiostate/antennastate.cpp
-    src/models/radiostate/audioeffectsstate.cpp
-    src/models/radiostate/datacontrolstate.cpp
-    src/models/radiostate/frequencyvfostate.cpp
-    src/models/radiostate/levelsstate.cpp
-    src/models/radiostate/modefilterstate.cpp
-    src/models/radiostate/powerstate.cpp
-    src/models/radiostate/processingstate.cpp
-    src/models/radiostate/qskcontrolstate.cpp
-    src/models/radiostate/rxtxmeterstate.cpp
-    src/models/radiostate/spectrumdisplaystate.cpp
-    src/models/radiostate/textdecodestate.cpp
-    src/models/radiostate/xvtrbandstate.cpp
     src/models/menumodel.cpp
-    src/ui/dialogs/radiomanagerdialog.cpp
-    src/ui/widgets/dualcontrolbutton.cpp
-    src/ui/widgets/sidecontrolpanel.cpp
-    src/ui/widgets/bottommenubar.cpp
-    src/ui/overlays/menuoverlay.cpp
-    src/ui/overlays/mousevfoindicator.cpp
-    src/ui/widgets/vfowidget.cpp
-    src/ui/widgets/frequencydisplaywidget.cpp
-    src/ui/widgets/vforowwidget.cpp
-    src/ui/widgets/filterindicatorwidget.cpp
-    src/ui/popups/bandpopupwidget.cpp
-    src/ui/popups/buttonrowpopup.cpp
-    src/ui/widgets/displaymenubutton.cpp
-    src/ui/widgets/controlgroupwidget.cpp
-    src/ui/widgets/togglegroupwidget.cpp
-    src/ui/popups/displaypopupwidget.cpp
-    src/ui/dialogs/optionsdialog.cpp
-    src/ui/pages/aboutpage.cpp
-    src/ui/pages/stationpage.cpp
-    src/ui/pages/audioinputpage.cpp
-    src/ui/pages/audiooutputpage.cpp
-    src/ui/pages/rigcontrolpage.cpp
-    src/ui/pages/cwkeyerpage.cpp
-    src/ui/pages/kpodpage.cpp
-    src/ui/pages/kpa1500page.cpp
-    src/ui/pages/dxclusterpage.cpp
-    src/ui/overlays/dxspotoverlay.cpp
-    src/ui/widgets/rightsidepanel.cpp
-    src/ui/widgets/featuremenubar.cpp
-    src/ui/popups/modepopupwidget.cpp
-    src/ui/widgets/txmeterwidget.cpp
-    src/ui/widgets/nethealthwidget.cpp
-    src/ui/widgets/nethealthpopup.cpp
-    src/ui/widgets/icontextlabel.cpp
-    src/ui/widgets/powerstatusbutton.cpp
-    src/ui/popups/fnpopupwidget.cpp
-    src/ui/popups/rxeqpopupwidget.cpp
-    src/ui/popups/antennacfgpopup.cpp
-    src/ui/popups/lineoutpopup.cpp
-    src/ui/popups/lineinpopup.cpp
-    src/ui/popups/micinputpopup.cpp
-    src/ui/popups/micconfigpopup.cpp
-    src/ui/popups/voxpopup.cpp
-    src/ui/popups/ssbbwpopup.cpp
-    src/ui/popups/keyingweightpopup.cpp
-    src/ui/popups/confirmpopup.cpp
-    src/ui/popups/softwarelistpopup.cpp
-    src/ui/dialogs/textdecodewindow.cpp
-    src/ui/dialogs/macrodialog.cpp
-    src/ui/widgets/notificationwidget.cpp
-    src/ui/styling/k4styles.cpp
-    src/ui/styling/k4glyphs.cpp
-    src/ui/popups/k4popupbase.cpp
-    src/ui/widgets/kpa1500minipanel.cpp
-    src/ui/overlays/sidecontroloverlay.cpp
-    src/ui/overlays/monoverlay.cpp
-    src/ui/overlays/baloverlay.cpp
-    src/utils/wheelaccumulator.cpp
-    src/hardware/kpoddevice.cpp
-    src/hardware/kpodhidworker.cpp
-    src/hardware/kpodplusdevice.cpp
-    src/hardware/kpodplususbworker.cpp
-    src/hardware/halikeydevice.cpp
-    src/hardware/halikeyworkerbase.cpp
-    src/hardware/halikeyv14worker.cpp
-    src/hardware/halikeymidiworker.cpp
-    src/hardware/iambickeyer.cpp
-    third_party/rtmidi/RtMidi.cpp
+    src/ui/radiomanagerdialog.cpp
+    src/ui/dualcontrolbutton.cpp
+    src/ui/sidecontrolpanel.cpp
+    src/ui/bottommenubar.cpp
+    src/ui/menuoverlay.cpp
+    src/ui/micmeterwidget.cpp
+    src/ui/vfowidget.cpp
+    src/ui/frequencydisplaywidget.cpp
+    src/ui/frequencyentryparser.cpp
+    src/ui/vforowwidget.cpp
+    src/ui/filterindicatorwidget.cpp
+    src/ui/bandpopupwidget.cpp
+    src/ui/buttonrowpopup.cpp
+    src/ui/displaypopupwidget.cpp
+    src/ui/optionsdialog.cpp
+    src/ui/ctr2mappingeditor.cpp
+    src/ui/inwindowdialog.cpp
+    src/ui/digitalaudiosetupdialog.cpp
+    src/ui/digitalaudiosetupdialog.h
+    src/ui/rightsidepanel.cpp
+    src/ui/featuremenubar.cpp
+    src/ui/modepopupwidget.cpp
+    src/ui/txmeterwidget.cpp
+    src/ui/fnpopupwidget.cpp
+    src/ui/rxeqpopupwidget.cpp
+    src/ui/antennacfgpopup.cpp
+    src/ui/lineoutpopup.cpp
+    src/ui/lineinpopup.cpp
+    src/ui/micinputpopup.cpp
+    src/ui/micconfigpopup.cpp
+    src/ui/voxpopup.cpp
+    src/ui/ssbbwpopup.cpp
+    src/ui/keyingweightpopup.cpp
+    src/ui/fmplpopup.cpp
+    src/ui/dtmfpopup.cpp
+    src/ui/txmodepopup.cpp
+    src/ui/softwarelistpopup.cpp
+    src/ui/dxprefixlistdialog.cpp
+    src/ui/sstvscreen.cpp
+    src/ui/sstvcomposercanvas.cpp
+    src/ui/textdecodewindow.cpp
+    src/ui/macrodialog.cpp
+    src/ui/notificationwidget.cpp
+    src/ui/k4styles.cpp
+    src/ui/k4popupbase.cpp
+    src/ui/kpa1500panel.cpp
+    src/ui/kpa1500window.cpp
+    src/ui/sidecontroloverlay.cpp
+    src/ui/monoverlay.cpp
+    src/ui/baloverlay.cpp
+    src/ui/wheelaccumulator.cpp
 )
 
-if(UNIX AND NOT APPLE)
-    list(APPEND SOURCES src/hardware/kpodudevworker.cpp)
+if(ANDROID)
+    # Keep class availability on Android via no-op implementations.
+    list(APPEND SOURCES
+        src/hardware/kpoddevice.cpp
+        src/hardware/halikeydevice.cpp
+    )
+else()
+    list(APPEND SOURCES
+        src/hardware/kpoddevice.cpp
+        src/hardware/halikeydevice.cpp
+        src/hardware/halikeyworkerbase.cpp
+        src/hardware/halikeyv14worker.cpp
+        src/hardware/halikeymidiworker.cpp
+        third_party/rtmidi/RtMidi.cpp
+    )
 endif()
 
 set(HEADERS
     src/mainwindow.h
-    src/utils/radioutils.h
-    src/utils/bandplan.h
-    src/controllers/connectioncontroller.h
-    src/controllers/hardwarecontroller.h
-    src/controllers/audiocontroller.h
-    src/controllers/spectrumcontroller.h
-    src/controllers/dxclustercontroller.h
-    src/controllers/textdecodecontroller.h
-    src/controllers/statusbarcontroller.h
-    src/controllers/menucontroller.h
-    src/controllers/antennaconfigcontroller.h
-    src/controllers/featuremenucontroller.h
-    src/controllers/popupmanager.h
-    src/controllers/kpa1500uicontroller.h
-    src/controllers/modepopupcontroller.h
-    src/controllers/bandnavigationcontroller.h
-    src/controllers/buttonrowdispatcher.h
-    src/controllers/macrocontroller.h
-    src/controllers/processingdisplaycontroller.h
-    src/controllers/antennadisplaycontroller.h
-    src/controllers/vforowindicatorcontroller.h
-    src/controllers/ritxitcontroller.h
-    src/controllers/modelabelcontroller.h
-    src/controllers/vfofrequencycontroller.h
-    src/controllers/subdivindicatorcontroller.h
-    src/controllers/txstatecontroller.h
-    src/controllers/sidecontroldisplaycontroller.h
-    src/controllers/sidecontrolscrollcontroller.h
-    src/controllers/rightsidecontroller.h
-    src/controllers/memorybuttonscontroller.h
-    src/controllers/cwcontroller.h
     src/network/tcpclient.h
     src/network/protocol.h
-    src/network/networkmetrics.h
     src/network/kpa1500client.h
-    src/network/dxclusterclient.h
     src/network/catserver.h
-    src/network/catframes.h
-    src/network/catpushbroadcaster.h
-    src/network/k4discovery.h
     src/audio/audioengine.h
     src/audio/opusdecoder.h
     src/audio/opusencoder.h
     src/audio/sidetonegenerator.h
-    src/dsp/panadapter_rhi.h
+    src/sstv/sstvmoderegistry.h
+    src/sstv/sstvencoder.h
+    src/sstv/sstvdecoder.h
+    src/sstv/sstvstorage.h
+    src/android/sstvorientation.h
+    src/android/sstvmedia.h
+    src/hardware/iambickeyer.h
+    src/hardware/midimapping.h
+    src/hardware/midiinputrouter.h
+    src/hardware/ctr2mididevice.h
     src/dsp/minipan_rhi.h
+    src/settings/fnkeymemory.h
     src/settings/radiosettings.h
     src/models/radiostate.h
-    src/models/radiostate/antennastate.h
-    src/models/radiostate/datacontrolstate.h
-    src/models/radiostate/frequencyvfostate.h
-    src/models/radiostate/levelsstate.h
-    src/models/radiostate/modefilterstate.h
-    src/models/radiostate/processingstate.h
-    src/models/radiostate/qskcontrolstate.h
-    src/models/radiostate/textdecodestate.h
-    src/models/radiostate/xvtrbandstate.h
     src/models/menumodel.h
-    src/utils/macroids.h
-    src/ui/dialogs/radiomanagerdialog.h
-    src/ui/widgets/dualcontrolbutton.h
-    src/ui/widgets/sidecontrolpanel.h
-    src/ui/widgets/bottommenubar.h
-    src/ui/overlays/menuoverlay.h
-    src/ui/overlays/mousevfoindicator.h
-    src/ui/widgets/vfowidget.h
-    src/ui/widgets/frequencydisplaywidget.h
-    src/ui/widgets/vforowwidget.h
-    src/ui/widgets/filterindicatorwidget.h
-    src/ui/popups/bandpopupwidget.h
-    src/ui/popups/buttonrowpopup.h
-    src/ui/widgets/displaymenubutton.h
-    src/ui/widgets/controlgroupwidget.h
-    src/ui/widgets/togglegroupwidget.h
-    src/ui/popups/displaypopupwidget.h
-    src/ui/dialogs/optionsdialog.h
-    src/ui/pages/aboutpage.h
-    src/ui/pages/stationpage.h
-    src/ui/pages/audioinputpage.h
-    src/ui/pages/audiooutputpage.h
-    src/ui/pages/rigcontrolpage.h
-    src/ui/pages/cwkeyerpage.h
-    src/ui/pages/kpodpage.h
-    src/ui/pages/kpa1500page.h
-    src/ui/pages/dxclusterpage.h
-    src/ui/overlays/dxspotoverlay.h
-    src/ui/widgets/rightsidepanel.h
-    src/ui/widgets/featuremenubar.h
-    src/ui/popups/modepopupwidget.h
-    src/ui/widgets/txmeterwidget.h
-    src/ui/widgets/nethealthwidget.h
-    src/ui/widgets/nethealthpopup.h
-    src/ui/popups/fnpopupwidget.h
-    src/ui/popups/rxeqpopupwidget.h
-    src/ui/popups/antennacfgpopup.h
-    src/ui/popups/lineoutpopup.h
-    src/ui/popups/lineinpopup.h
-    src/ui/popups/micinputpopup.h
-    src/ui/popups/micconfigpopup.h
-    src/ui/popups/voxpopup.h
-    src/ui/popups/ssbbwpopup.h
-    src/ui/popups/keyingweightpopup.h
-    src/ui/popups/softwarelistpopup.h
-    src/ui/dialogs/textdecodewindow.h
-    src/ui/dialogs/macrodialog.h
-    src/ui/widgets/notificationwidget.h
-    src/ui/styling/k4styles.h
-    src/ui/styling/k4constants.h
-    src/ui/popups/k4popupbase.h
-    src/ui/widgets/kpa1500minipanel.h
-    src/ui/overlays/sidecontroloverlay.h
-    src/ui/overlays/monoverlay.h
-    src/ui/overlays/baloverlay.h
-    src/utils/wheelaccumulator.h
-    src/hardware/kpoddevice.h
-    src/hardware/kpodhidworker.h
-    src/hardware/kpodplusdevice.h
-    src/hardware/kpodplususbworker.h
-    src/hardware/halikeydevice.h
-    src/hardware/halikeyworkerbase.h
-    src/hardware/halikeyv14worker.h
-    src/hardware/halikeymidiworker.h
-    src/hardware/iambickeyer.h
+    src/ui/radiomanagerdialog.h
+    src/ui/dualcontrolbutton.h
+    src/ui/sidecontrolpanel.h
+    src/ui/bottommenubar.h
+    src/ui/menuoverlay.h
+    src/ui/micmeterwidget.h
+    src/ui/vfowidget.h
+    src/ui/frequencyentryparser.h
+    src/ui/frequencydisplaywidget.h
+    src/ui/vforowwidget.h
+    src/ui/filterindicatorwidget.h
+    src/ui/bandpopupwidget.h
+    src/ui/buttonrowpopup.h
+    src/ui/displaypopupwidget.h
+    src/ui/optionsdialog.h
+    src/ui/ctr2mappingeditor.h
+    src/ui/rightsidepanel.h
+    src/ui/featuremenubar.h
+    src/ui/modepopupwidget.h
+    src/ui/txmeterwidget.h
+    src/ui/fnpopupwidget.h
+    src/ui/rxeqpopupwidget.h
+    src/ui/antennacfgpopup.h
+    src/ui/lineoutpopup.h
+    src/ui/lineinpopup.h
+    src/ui/micinputpopup.h
+    src/ui/micconfigpopup.h
+    src/ui/voxpopup.h
+    src/ui/ssbbwpopup.h
+    src/ui/keyingweightpopup.h
+    src/ui/fmplpopup.h
+    src/ui/dtmfpopup.h
+    src/ui/txmodepopup.h
+    src/ui/softwarelistpopup.h
+    src/ui/dxprefixlistdialog.h
+    src/ui/sstvscreen.h
+    src/ui/sstvcomposercanvas.h
+    src/ui/textdecodewindow.h
+    src/ui/macrodialog.h
+    src/ui/notificationwidget.h
+    src/ui/k4styles.h
+    src/ui/k4popupbase.h
+    src/ui/inwindowpopup.h
+    src/ui/inwindowdialog.h
+    src/ui/kpa1500panel.h
+    src/ui/kpa1500window.h
+    src/ui/sidecontroloverlay.h
+    src/ui/monoverlay.h
+    src/ui/baloverlay.h
+    src/ui/wheelaccumulator.h
 )
 
-if(UNIX AND NOT APPLE)
-    list(APPEND HEADERS src/hardware/kpodudevworker.h)
+if(ANDROID)
+    list(APPEND HEADERS
+        src/hardware/kpoddevice.h
+        src/hardware/halikeydevice.h
+    )
+else()
+    list(APPEND HEADERS
+        src/hardware/kpoddevice.h
+        src/hardware/halikeydevice.h
+        src/hardware/halikeyworkerbase.h
+        src/hardware/halikeyv14worker.h
+        src/hardware/halikeymidiworker.h
+    )
 endif()
 
+# On Android, create Qt executable package target
+if(ANDROID)
+    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION ${SOURCES} ${HEADERS})
 # On macOS, create an app bundle
-if(APPLE)
+elseif(APPLE)
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
     set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_VERSION_FULL})
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
-    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.kf5o.qk4")
+    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.ai5qk.qk4")
     set(MACOSX_BUNDLE_ICON_FILE QK4.icns)
 
     # Set the icon file as a resource
@@ -384,13 +383,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtmidi
     ${OPUS_INCLUDE_DIRS}
     ${HIDAPI_INCLUDE_DIRS}
-    ${LIBUSB_INCLUDE_DIRS}
 )
-
-if(UNIX AND NOT APPLE)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUDEV_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBUDEV_LIBRARIES})
-endif()
 
 # Pass version to source code as compile definition
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -404,7 +397,19 @@ foreach(dir ${QT_GUI_INCLUDE_DIRS})
     target_include_directories(${PROJECT_NAME} PRIVATE "${dir}/${Qt6_VERSION}/QtGui")
 endforeach()
 
+# Qt's Android AAudio backend accepts an Android AudioDeviceInfo id through a
+# QAudioDevice. The USB headset types missing from Qt's public enumerator need
+# the private device factory to create that endpoint.
+if(ANDROID)
+    get_target_property(QT_MULTIMEDIA_INCLUDE_DIRS Qt6::Multimedia INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(dir ${QT_MULTIMEDIA_INCLUDE_DIRS})
+        target_include_directories(${PROJECT_NAME} PRIVATE "${dir}/${Qt6_VERSION}")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${dir}/${Qt6_VERSION}/QtMultimedia")
+    endforeach()
+endif()
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    qk4_ft8
     Qt6::Core
     Qt6::Widgets
     Qt6::Network
@@ -414,7 +419,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::SerialPort
     ${OPUS_LIBRARIES}
     ${HIDAPI_LIBRARIES}
-    ${LIBUSB_LIBRARIES}
 )
 
 # Link GuiPrivate if found via CMake, otherwise private headers are included manually
@@ -440,6 +444,8 @@ if(APPLE)
 elseif(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __WINDOWS_MM__)
     target_link_libraries(${PROJECT_NAME} PRIVATE winmm)
+elseif(ANDROID)
+    # No RtMidi backend on Android (HaliKey/KPOD features disabled).
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE __LINUX_ALSA__)
     target_link_libraries(${PROJECT_NAME} PRIVATE asound)
@@ -453,8 +459,8 @@ qt6_add_shaders(${PROJECT_NAME} "panadapter_shaders"
     FILES
         src/dsp/shaders/spectrum.vert
         src/dsp/shaders/spectrum.frag
-        src/dsp/shaders/spectrum_fill.vert
-        src/dsp/shaders/spectrum_fill.frag
+        src/dsp/shaders/spectrum_blue.vert
+        src/dsp/shaders/spectrum_blue_amp.frag
         src/dsp/shaders/waterfall.vert
         src/dsp/shaders/waterfall.frag
         src/dsp/shaders/overlay.vert
@@ -477,16 +483,46 @@ qt_add_resources(${PROJECT_NAME} "icons"
     PREFIX "/"
     BASE "resources"
     FILES
+        resources/icons/check.svg
         resources/icons/globe.svg
         resources/icons/help.svg
 )
 
-# =============================================================================
-# Tests
-# =============================================================================
+if(ANDROID)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        # Keep the phone build installable alongside an existing QK4 APK that
+        # may be signed with a different developer certificate.
+        QT_ANDROID_PACKAGE_NAME "com.w9wdx.qk4phone"
+        QT_ANDROID_MIN_SDK_VERSION 26
+        QT_ANDROID_TARGET_SDK_VERSION 34
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
+    )
 
-enable_testing()
-add_subdirectory(tests)
+    # Qt ships the Android OpenSSL TLS backend plugin, but not OpenSSL itself.
+    # Bundle the ARM64 OpenSSL 3 runtime under suffixed names so it cannot be
+    # confused with Android's system SSL libraries.  main.cpp selects this
+    # suffix before QSslSocket is first used.
+    set(QK4_ANDROID_OPENSSL_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/android/openssl/arm64-v8a")
+    set(QK4_ANDROID_OPENSSL_LIBS
+        "${QK4_ANDROID_OPENSSL_DIR}/libcrypto_3.so"
+        "${QK4_ANDROID_OPENSSL_DIR}/libssl_3.so")
+    foreach(_qk4_openssl_library IN LISTS QK4_ANDROID_OPENSSL_LIBS)
+        if(NOT EXISTS "${_qk4_openssl_library}")
+            message(FATAL_ERROR "Missing bundled Android OpenSSL runtime: ${_qk4_openssl_library}")
+        endif()
+    endforeach()
+    set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY
+        QT_ANDROID_EXTRA_LIBS ${QK4_ANDROID_OPENSSL_LIBS})
+    unset(_qk4_openssl_library)
+    # Qt 6.11 encodes Android permission entries as structured metadata.  The
+    # direct property strings used by older Qt releases produce invalid APK
+    # deployment JSON, so use Qt's helper to retain the required permissions.
+    _qt_internal_add_android_permission(${PROJECT_NAME}
+        NAME "android.permission.INTERNET")
+    _qt_internal_add_android_permission(${PROJECT_NAME}
+        NAME "android.permission.RECORD_AUDIO")
+endif()
 
 # =============================================================================
 # Deployment / Bundling - Create self-contained distributable app
@@ -544,10 +580,6 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${HIDAPI_LIBRARIES}"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
-        # Copy libusb library
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${LIBUSB_LIBRARIES}"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
         # Fix OpenSSL library paths - use real Cellar path for -change
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libssl.3.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.3.dylib"
@@ -564,9 +596,6 @@ if(APPLE)
         # Fix HIDAPI library path
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libhidapi.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libhidapi.dylib" || true
-        # Fix libusb library path
-        COMMAND install_name_tool -id "@executable_path/../Frameworks/libusb-1.0.dylib"
-            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libusb-1.0.dylib" || true
         # Re-sign the app bundle (required after modifying libraries)
         # Uses ad-hoc signing by default; set CODESIGN_IDENTITY for Developer ID
         COMMAND codesign --force --deep --sign "$ENV{CODESIGN_IDENTITY}"
@@ -589,3 +618,71 @@ elseif(WIN32)
     )
 endif()
 
+if(ANDROID)
+    qt_finalize_executable(${PROJECT_NAME})
+endif()
+
+if(BUILD_TESTING AND NOT ANDROID)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    qt_add_executable(test_frequencyentryparser
+        tests/test_frequencyentryparser.cpp
+        src/ui/frequencyentryparser.cpp
+        src/ui/frequencyentryparser.h
+    )
+    target_include_directories(test_frequencyentryparser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_frequencyentryparser PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME frequencyentryparser COMMAND test_frequencyentryparser)
+
+    qt_add_executable(test_radiostate
+        tests/test_radiostate.cpp
+        src/models/radiostate.cpp
+        src/models/radiostate.h
+    )
+    target_include_directories(test_radiostate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_radiostate PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME radiostate COMMAND test_radiostate)
+
+    qt_add_executable(test_modepopupwidget
+        tests/test_modepopupwidget.cpp
+        src/ui/modepopupwidget.cpp
+        src/ui/modepopupwidget.h
+        src/ui/k4popupbase.cpp
+        src/ui/k4popupbase.h
+        src/ui/k4styles.cpp
+        src/ui/k4styles.h
+    )
+    target_include_directories(test_modepopupwidget PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_modepopupwidget PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+    add_test(NAME modepopupwidget COMMAND test_modepopupwidget)
+
+    qt_add_executable(test_sstvencoder
+        tests/test_sstvencoder.cpp
+        src/sstv/sstvmoderegistry.cpp
+        src/sstv/sstvmoderegistry.h
+        src/sstv/sstvencoder.cpp
+        src/sstv/sstvencoder.h
+        src/sstv/sstvdecoder.cpp
+        src/sstv/sstvdecoder.h
+    )
+    target_include_directories(test_sstvencoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_sstvencoder PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    add_test(NAME sstvencoder COMMAND test_sstvencoder)
+
+    qt_add_executable(test_sstvcomposer
+        tests/test_sstvcomposer.cpp
+        src/ui/sstvcomposercanvas.cpp
+        src/ui/sstvcomposercanvas.h
+    )
+    target_include_directories(test_sstvcomposer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_sstvcomposer PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+    add_test(NAME sstvcomposer COMMAND test_sstvcomposer)
+
+    qt_add_executable(test_sstvstorage
+        tests/test_sstvstorage.cpp
+        src/sstv/sstvstorage.cpp
+        src/sstv/sstvstorage.h
+    )
+    target_include_directories(test_sstvstorage PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_sstvstorage PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    add_test(NAME sstvstorage COMMAND test_sstvstorage)
+endif()

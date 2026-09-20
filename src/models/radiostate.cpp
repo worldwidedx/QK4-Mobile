@@ -1,7 +1,6 @@
 #include "radiostate.h"
 #include <QDateTime>
 #include <QDebug>
-#include <QThread>
 #include <algorithm>
 
 RadioState::RadioState(QObject *parent) : QObject(parent) {
@@ -9,69 +8,242 @@ RadioState::RadioState(QObject *parent) : QObject(parent) {
 }
 
 void RadioState::reset() {
-    // Frequency / VFO / RIT/XIT state — subsystem struct handles split + offsets too.
-    m_frequencyVfoState.reset();
-    // Data-mode + tuning step + streaming latency.
-    m_dataControlState.reset();
+    // Frequency and VFO
+    m_frequency = 0;
+    m_vfoA = 0;
+    m_vfoB = 0;
+    m_tuningStep = -1;
+    m_tuningStepB = -1;
 
-    // Mode / filter / CW pitch / keyer config — subsystem struct.
-    m_modeFilterState.reset();
+    // Mode and filter
+    m_mode = Unknown;
+    m_modeB = Unknown;
+    m_filterBandwidth = -1;
+    m_filterBandwidthB = -1;
+    m_filterPosition = -1;
+    m_filterPositionB = -1;
+    m_ifShift = -1;
+    m_ifShiftB = -1;
+    m_cwPitch = -1;
 
-    // Power, mic gain, compression, RF gain, squelch.
-    m_levelsState.reset();
-    // Keyer speed / iambic / paddle / weight reset via m_modeFilterState.reset() above.
+    // Power and levels
+    m_rfPower = -1.0;
+    m_isQrpMode = false;
+    m_micGain = -1;
+    m_compression = -1;
+    m_rfGain = -999;
+    m_squelchLevel = -1;
+    m_rfGainB = -999;
+    m_squelchLevelB = -1;
+    m_keyerSpeed = -1;
+    m_paddleOrientation = QChar();
 
-    // Meters / TX state / control toggles / supply / radio identity / message bank.
-    m_rxTxMeterState.reset();
-    // splitEnabled reset via m_frequencyVfoState.reset() above.
+    // Meters
+    m_sMeter = 0.0;
+    m_sMeterB = 0.0;
+    m_powerMeter = 0;
+    m_swrMeter = 1.0;
+    m_alcMeter = 0;
+    m_compressionDb = 0;
+    m_forwardPower = 0.0;
 
-    // Processing state (NB/NR/PA/RA/GT + NA/NM for both VFOs).
-    m_processingState.reset();
+    // Power supply
+    m_supplyVoltage = 0.0;
+    m_supplyCurrent = 0.0;
 
-    // XVTR per-band configs (12 slots).
-    m_xvtrBandState.reset();
+    // Control states
+    m_isTransmitting = false;
+    m_subReceiverEnabled = false;
+    m_diversityEnabled = false;
+    m_splitEnabled = false;
+    m_streamingLatency = -1;
+
+    // Processing - Main RX
+    m_noiseBlankerLevel = 0;
+    m_noiseBlankerEnabled = false;
+    m_noiseBlankerFilterWidth = 0;
+    m_noiseReductionLevel = 0;
+    m_noiseReductionEnabled = false;
+    m_ssnrLevel = 0;
+    m_ssnrEnabled = false;
+
+    // Notch filter - Main RX
+    m_autoNotchEnabled = false;
+    m_manualNotchEnabled = false;
+    m_manualNotchPitch = 1000;
+
+    // Notch filter - Sub RX
+    m_autoNotchEnabledB = false;
+    m_manualNotchEnabledB = false;
+    m_manualNotchPitchB = 1000;
+
+    m_preamp = 0;
+    m_preampEnabled = false;
+    m_attenuatorLevel = 0;
+    m_attenuatorEnabled = false;
+    m_agcSpeed = AGC_Slow;
+
+    // Processing - Sub RX
+    m_noiseBlankerLevelB = 0;
+    m_noiseBlankerEnabledB = false;
+    m_noiseBlankerFilterWidthB = 0;
+    m_noiseReductionLevelB = 0;
+    m_noiseReductionEnabledB = false;
+    m_ssnrLevelB = 0;
+    m_ssnrEnabledB = false;
+    m_preampB = 0;
+    m_preampEnabledB = false;
+    m_attenuatorLevelB = 0;
+    m_attenuatorEnabledB = false;
+    m_agcSpeedB = AGC_Slow;
 
     // Antenna
-    m_antennaState.reset();
+    m_selectedAntenna = -1;
+    m_receiveAntenna = -1;
+    m_receiveAntennaSub = -1;
+    m_atuMode = -1;
+    m_antennaNames.clear();
 
-    // RIT/XIT state reset via m_frequencyVfoState.reset() above.
+    // RIT/XIT
+    m_ritEnabled = false;
+    m_xitEnabled = false;
+    m_ritXitOffset = 0;
+    m_ritEnabledB = false;
+    m_ritXitOffsetB = 0;
 
-    // Audio pipeline state (VOX/FX/AP/mix/balance/ML/LO/LI/MI/MS/RE/TE/VG/VI/ES).
-    m_audioEffectsState.reset();
+    // Message bank
+    m_messageBank = -1;
 
-    // QSK (full break-in) + per-mode delays. (TEST/B SET live on m_rxTxMeterState.)
-    m_qskControlState.reset();
+    // VOX
+    m_voxCW = false;
+    m_voxVoice = false;
+    m_voxData = false;
 
-    // K4 remote power state — back to "unknown" so the indicator goes neutral
-    // until the next session sends a PS query.
-    m_powerState.reset();
+    // QSK / TEST / B SET
+    m_qskEnabled = false;
+    m_testMode = false;
+    m_bSetEnabled = false;
 
-    // VFO link + lock A/B reset via m_frequencyVfoState.reset() above.
+    // QSK/VOX Delay
+    m_qskDelayCW = -1;
+    m_qskDelayVoice = -1;
+    m_qskDelayData = -1;
 
-    // Panadapter / display state (REF, SPN, SCL, MP, DPM, DSM, FPS, WFC, WFH,
-    // AVG, PKM, FXT, FXA, FRZ, VFA, VFB, AR, NB$, NBL$ + EXT variants).
-    m_spectrumDisplayState.reset();
+    // Audio effects
+    m_afxMode = 0;
+    m_apfEnabled = false;
+    m_apfBandwidth = 0;
+    m_apfEnabledB = false;
+    m_apfBandwidthB = 0;
 
-    // Radio identity cleared by m_rxTxMeterState.reset().
+    // VFO Link/Lock
+    m_vfoLink = false;
+    m_lockA = false;
+    m_lockB = false;
 
-    // Data-mode + rate + optimistic cooldowns reset via m_dataControlState.reset().
+    // Audio mix/balance
+    m_audioMixLeft = -1;
+    m_audioMixRight = -1;
+    m_balanceMode = -1;
+    m_balanceOffset = -99;
 
-    // EQ bands / Line In/Out / Mic Input/Setup / VOX Gain / Anti-VOX / ESSB
-    // are reset via m_audioEffectsState.reset() above.
+    // Monitor Level
+    m_monitorLevelCW = -1;
+    m_monitorLevelData = -1;
+    m_monitorLevelVoice = -1;
 
-    // Antenna config masks reset as part of m_antennaState.reset() above.
+    // Panadapter
+    m_refLevel = -110;
+    m_scale = -1;
+    m_spanHz = 0;
+    m_refLevelB = -110;
+    m_spanHzB = 0;
 
-    // Streaming latency reset via m_dataControlState.reset().
+    // Radio info
+    m_radioID.clear();
+    m_radioModel.clear();
+    m_optionModules.clear();
+    m_firmwareVersions.clear();
+
+    // Mini-Pan
+    m_miniPanAEnabled = false;
+    m_miniPanBEnabled = false;
+
+    // Display state
+    m_dualPanModeLcd = -1;
+    m_dualPanModeExt = -1;
+    m_displayModeLcd = -1;
+    m_displayModeExt = -1;
+    m_displayFps = 30;
+    m_waterfallColor = -1;
+    m_waterfallHeight = 50;
+    m_waterfallHeightExt = 50;
+    m_averaging = -1;
+    m_peakMode = -1;
+    m_fixedTune = -1;
+    m_fixedTuneMode = -1;
+    m_freeze = -1;
+    m_vfoACursor = -1;
+    m_vfoBCursor = -1;
+    m_autoRefLevel = -1;
+    m_ddcNbMode = -1;
+    m_ddcNbLevel = -1;
+
+    // Data sub-mode
+    m_dataSubMode = -1;
+    m_dataSubModeB = -1;
+    m_dataSubModeOptimisticTime = 0;
+    m_dataSubModeBOptimisticTime = 0;
+
+    // EQ bands
+    std::fill(std::begin(m_rxEqBands), std::end(m_rxEqBands), 0);
+    std::fill(std::begin(m_txEqBands), std::end(m_txEqBands), 0);
+
+    // Antenna config masks
+    m_mainRxDisplayAll = true;
+    std::fill(std::begin(m_mainRxAntMask), std::end(m_mainRxAntMask), false);
+    m_subRxDisplayAll = true;
+    std::fill(std::begin(m_subRxAntMask), std::end(m_subRxAntMask), false);
+    m_txDisplayAll = true;
+    std::fill(std::begin(m_txAntMask), std::end(m_txAntMask), false);
+
+    // Line Out
+    m_lineOutLeft = -1;
+    m_lineOutRight = -1;
+    m_lineOutRightEqualsLeft = false;
+
+    // Line In
+    m_lineInSoundCard = -1;
+    m_lineInJack = -1;
+    m_lineInSource = -1;
+
+    // Mic Input/Setup
+    m_micInput = -1;
+    m_micFrontPreamp = -1;
+    m_micFrontBias = -1;
+    m_micFrontButtons = -1;
+    m_micRearPreamp = -1;
+    m_micRearBias = -1;
+
+    // VOX Gain / Anti-VOX
+    m_voxGainVoice = -1;
+    m_voxGainData = -1;
+    m_antiVox = -1;
+
+    // ESSB
+    m_essbEnabled = false;
+    m_ssbTxBw = -1;
 
     // Text Decode
-    m_textDecodeState.reset();
+    m_textDecodeMode = -1;
+    m_textDecodeThreshold = -1;
+    m_textDecodeLines = -1;
+    m_textDecodeModeB = -1;
+    m_textDecodeThresholdB = -1;
+    m_textDecodeLinesB = -1;
 }
 
 void RadioState::parseCATCommand(const QString &command) {
-    // RadioState is not thread-safe — all callers must be on the main (GUI) thread.
-    // If cross-thread parsing is ever needed, use QMetaObject::invokeMethod with Qt::QueuedConnection.
-    Q_ASSERT(QThread::currentThread() == thread());
-
     QString cmd = command.trimmed();
     if (cmd.isEmpty())
         return;
@@ -85,10 +257,17 @@ void RadioState::parseCATCommand(const QString &command) {
     for (const auto &entry : m_commandHandlers) {
         if (cmd.startsWith(entry.prefix)) {
             entry.handler(cmd);
+            emit stateUpdated();
             return;
         }
     }
+
+    // Unknown command - no handler matched
+    // qDebug() << "Unhandled CAT command:" << cmd;
 }
+
+// Legacy parseCATCommand content removed - now using handler registry above
+// Old implementation was ~1500 lines of if-else chain
 
 RadioState::Mode RadioState::modeFromCode(int code) {
     switch (code) {
@@ -138,7 +317,7 @@ QString RadioState::modeToString(Mode mode) {
 }
 
 QString RadioState::modeString() const {
-    return modeToString(mode());
+    return modeToString(m_mode);
 }
 
 QString RadioState::dataSubModeToString(int subMode) {
@@ -157,447 +336,662 @@ QString RadioState::dataSubModeToString(int subMode) {
 }
 
 QString RadioState::modeStringFull() const {
-    // For DATA / DATA-R modes, show the sub-mode instead.
-    const Mode m = mode();
-    if (m == DATA || m == DATA_R)
-        return dataSubModeToString(m_dataControlState.dataSubMode);
-    return modeToString(m);
+    // For DATA/DATA-R modes, show the sub-mode instead
+    if (m_mode == DATA || m_mode == DATA_R) {
+        QString label = dataSubModeToString(m_dataSubMode);
+        if (m_mode == DATA_R)
+            label += QStringLiteral("-R");
+        return label;
+    }
+    return modeToString(m_mode);
 }
 
 QString RadioState::modeStringFullB() const {
-    const Mode m = modeB();
-    if (m == DATA || m == DATA_R)
-        return dataSubModeToString(m_dataControlState.dataSubModeB);
-    return modeToString(m);
+    // For DATA/DATA-R modes, show the sub-mode instead
+    if (m_modeB == DATA || m_modeB == DATA_R) {
+        QString label = dataSubModeToString(m_dataSubModeB);
+        if (m_modeB == DATA_R)
+            label += QStringLiteral("-R");
+        return label;
+    }
+    return modeToString(m_modeB);
 }
 
-// Mode/filter/CW pitch/keyer optimistic setters — delegate to ModeFilterHandlers.
-void RadioState::setKeyerSpeed(int wpm) {
-    ModeFilterHandlers::setKeyerSpeed(m_modeFilterState, *this, wpm);
+QString RadioState::sMeterString() const {
+    if (m_sMeter <= 9.0) {
+        return QString("S%1").arg(static_cast<int>(m_sMeter));
+    } else {
+        int dbOver = static_cast<int>((m_sMeter - 9.0) * 10);
+        return QString("S9+%1").arg(dbOver);
+    }
 }
+
+QString RadioState::sMeterStringB() const {
+    if (m_sMeterB <= 9.0) {
+        return QString("S%1").arg(static_cast<int>(m_sMeterB));
+    } else {
+        int dbOver = static_cast<int>((m_sMeterB - 9.0) * 10);
+        return QString("S9+%1").arg(dbOver);
+    }
+}
+
+// Optimistic setters for scroll wheel updates (radio doesn't echo these commands)
+void RadioState::setKeyerSpeed(int wpm) {
+    if (m_keyerSpeed != wpm) {
+        m_keyerSpeed = wpm;
+        emit keyerSpeedChanged(m_keyerSpeed);
+    }
+}
+
 void RadioState::setCwPitch(int pitchHz) {
-    ModeFilterHandlers::setCwPitch(m_modeFilterState, *this, pitchHz);
+    if (m_cwPitch != pitchHz) {
+        m_cwPitch = pitchHz;
+        emit cwPitchChanged(m_cwPitch);
+    }
 }
 
 void RadioState::setRfPower(double watts) {
-    LevelsHandlers::setRfPower(m_levelsState, *this, watts);
+    if (m_rfPower != watts) {
+        m_rfPower = watts;
+        emit rfPowerChanged(m_rfPower, m_isQrpMode);
+    }
 }
 
 void RadioState::setFilterBandwidth(int bwHz) {
-    ModeFilterHandlers::setFilterBandwidth(m_modeFilterState, *this, bwHz);
+    if (m_filterBandwidth != bwHz) {
+        m_filterBandwidth = bwHz;
+        emit filterBandwidthChanged(m_filterBandwidth);
+    }
 }
+
 void RadioState::setIfShift(int shift) {
-    ModeFilterHandlers::setIfShift(m_modeFilterState, *this, shift);
+    if (m_ifShift != shift) {
+        m_ifShift = shift;
+        emit ifShiftChanged(m_ifShift);
+    }
 }
+
 void RadioState::setFilterBandwidthB(int bwHz) {
-    ModeFilterHandlers::setFilterBandwidthB(m_modeFilterState, *this, bwHz);
+    if (m_filterBandwidthB != bwHz) {
+        m_filterBandwidthB = bwHz;
+        emit filterBandwidthBChanged(m_filterBandwidthB);
+    }
 }
+
 void RadioState::setIfShiftB(int shift) {
-    ModeFilterHandlers::setIfShiftB(m_modeFilterState, *this, shift);
+    if (m_ifShiftB != shift) {
+        m_ifShiftB = shift;
+        emit ifShiftBChanged(m_ifShiftB);
+    }
 }
 
 void RadioState::setRfGain(int gain) {
-    LevelsHandlers::setRfGain(m_levelsState, *this, gain);
+    if (m_rfGain != gain) {
+        m_rfGain = gain;
+        emit rfGainChanged(m_rfGain);
+    }
 }
 
 void RadioState::setSquelchLevel(int level) {
-    LevelsHandlers::setSquelchLevel(m_levelsState, *this, level);
+    if (m_squelchLevel != level) {
+        m_squelchLevel = level;
+        emit squelchChanged(m_squelchLevel);
+    }
 }
 
 void RadioState::setRfGainB(int gain) {
-    LevelsHandlers::setRfGainB(m_levelsState, *this, gain);
+    if (m_rfGainB != gain) {
+        m_rfGainB = gain;
+        emit rfGainBChanged(m_rfGainB);
+    }
 }
 
 void RadioState::setSquelchLevelB(int level) {
-    LevelsHandlers::setSquelchLevelB(m_levelsState, *this, level);
+    if (m_squelchLevelB != level) {
+        m_squelchLevelB = level;
+        emit squelchBChanged(m_squelchLevelB);
+    }
 }
 
 void RadioState::setMicGain(int gain) {
-    LevelsHandlers::setMicGain(m_levelsState, *this, gain);
+    if (m_micGain != gain) {
+        m_micGain = gain;
+        emit micGainChanged(m_micGain);
+    }
 }
 
 void RadioState::setCompression(int level) {
-    LevelsHandlers::setCompression(m_levelsState, *this, level);
+    if (m_compression != level) {
+        m_compression = level;
+        emit compressionChanged(m_compression);
+    }
 }
 
 void RadioState::setBalance(int mode, int offset) {
-    AudioEffectsHandlers::setBalance(m_audioEffectsState, *this, mode, offset);
+    mode = qBound(0, mode, 1);
+    offset = qBound(-50, offset, 50);
+    if (m_balanceMode != mode || m_balanceOffset != offset) {
+        m_balanceMode = mode;
+        m_balanceOffset = offset;
+        emit balanceChanged(mode, offset);
+    }
 }
 
 void RadioState::setMonitorLevel(int mode, int level) {
-    AudioEffectsHandlers::setMonitorLevel(m_audioEffectsState, *this, mode, level);
+    level = qBound(0, level, 100);
+    int *target = nullptr;
+    switch (mode) {
+    case 0:
+        target = &m_monitorLevelCW;
+        break;
+    case 1:
+        target = &m_monitorLevelData;
+        break;
+    case 2:
+        target = &m_monitorLevelVoice;
+        break;
+    default:
+        return;
+    }
+    if (*target != level) {
+        *target = level;
+        emit monitorLevelChanged(mode, level);
+    }
 }
 
-// Processing optimistic setters — delegate to ProcessingHandlers namespace.
+void RadioState::setAttenuatorLevel(int level) {
+    level = qBound(0, level, 21);
+    if (m_attenuatorLevel != level) {
+        m_attenuatorLevel = level;
+        emit processingChanged();
+    }
+}
+
+void RadioState::setAttenuatorLevelB(int level) {
+    level = qBound(0, level, 21);
+    if (m_attenuatorLevelB != level) {
+        m_attenuatorLevelB = level;
+        emit processingChangedB();
+    }
+}
+
 void RadioState::setNoiseBlankerLevel(int level) {
-    ProcessingHandlers::setNoiseBlankerLevel(m_processingState, *this, level);
-}
-void RadioState::setNoiseBlankerLevelB(int level) {
-    ProcessingHandlers::setNoiseBlankerLevelB(m_processingState, *this, level);
-}
-void RadioState::setNoiseBlankerFilter(int filter) {
-    ProcessingHandlers::setNoiseBlankerFilter(m_processingState, *this, filter);
-}
-void RadioState::setNoiseBlankerFilterB(int filter) {
-    ProcessingHandlers::setNoiseBlankerFilterB(m_processingState, *this, filter);
-}
-void RadioState::setNoiseReductionLevel(int level) {
-    ProcessingHandlers::setNoiseReductionLevel(m_processingState, *this, level);
-}
-void RadioState::setNoiseReductionLevelB(int level) {
-    ProcessingHandlers::setNoiseReductionLevelB(m_processingState, *this, level);
-}
-void RadioState::setSsnrLevel(int level) {
-    ProcessingHandlers::setSsnrLevel(m_processingState, *this, level);
-}
-void RadioState::setSsnrLevelB(int level) {
-    ProcessingHandlers::setSsnrLevelB(m_processingState, *this, level);
-}
-void RadioState::setManualNotchPitch(int pitch) {
-    ProcessingHandlers::setManualNotchPitch(m_processingState, *this, pitch);
-}
-void RadioState::setManualNotchPitchB(int pitch) {
-    ProcessingHandlers::setManualNotchPitchB(m_processingState, *this, pitch);
+    if (m_noiseBlankerLevel != level) {
+        m_noiseBlankerLevel = qMin(level, 15);
+        emit processingChanged();
+    }
 }
 
-// Data mode optimistic setters — delegate to DataControlHandlers namespace.
+void RadioState::setNoiseBlankerLevelB(int level) {
+    if (m_noiseBlankerLevelB != level) {
+        m_noiseBlankerLevelB = qMin(level, 15);
+        emit processingChangedB();
+    }
+}
+
+void RadioState::setNoiseBlankerFilter(int filter) {
+    filter = qBound(0, filter, 2);
+    if (m_noiseBlankerFilterWidth != filter) {
+        m_noiseBlankerFilterWidth = filter;
+        emit processingChanged();
+    }
+}
+
+void RadioState::setNoiseBlankerFilterB(int filter) {
+    filter = qBound(0, filter, 2);
+    if (m_noiseBlankerFilterWidthB != filter) {
+        m_noiseBlankerFilterWidthB = filter;
+        emit processingChangedB();
+    }
+}
+
+void RadioState::setNoiseReductionLevel(int level) {
+    if (m_noiseReductionLevel != level) {
+        m_noiseReductionLevel = qMin(level, 10);
+        emit processingChanged();
+    }
+}
+
+void RadioState::setNoiseReductionLevelB(int level) {
+    if (m_noiseReductionLevelB != level) {
+        m_noiseReductionLevelB = qMin(level, 10);
+        emit processingChangedB();
+    }
+}
+
+void RadioState::setSsnrLevel(int level) {
+    if (m_ssnrLevel != level) {
+        m_ssnrLevel = qBound(0, level, 20);
+        emit processingChanged();
+    }
+}
+
+void RadioState::setSsnrLevelB(int level) {
+    if (m_ssnrLevelB != level) {
+        m_ssnrLevelB = qBound(0, level, 20);
+        emit processingChangedB();
+    }
+}
+
+void RadioState::setManualNotchPitch(int pitch) {
+    pitch = qBound(150, pitch, 5000);
+    if (m_manualNotchPitch != pitch) {
+        m_manualNotchPitch = pitch;
+        emit notchChanged();
+    }
+}
+
+void RadioState::setManualNotchPitchB(int pitch) {
+    pitch = qBound(150, pitch, 5000);
+    if (m_manualNotchPitchB != pitch) {
+        m_manualNotchPitchB = pitch;
+        emit notchBChanged();
+    }
+}
+
 void RadioState::setDataSubMode(int subMode) {
-    DataControlHandlers::setDataSubMode(m_dataControlState, *this, subMode);
+    subMode = qBound(0, subMode, 3);
+    if (m_dataSubMode != subMode) {
+        m_dataSubMode = subMode;
+        m_dataSubModeOptimisticTime = QDateTime::currentMSecsSinceEpoch();
+        emit dataSubModeChanged(subMode);
+    }
 }
+
 void RadioState::setDataSubModeB(int subMode) {
-    DataControlHandlers::setDataSubModeB(m_dataControlState, *this, subMode);
-}
-void RadioState::setDataRate(int rate) {
-    DataControlHandlers::setDataRate(m_dataControlState, *this, rate);
-}
-void RadioState::setDataRateB(int rate) {
-    DataControlHandlers::setDataRateB(m_dataControlState, *this, rate);
+    subMode = qBound(0, subMode, 3);
+    if (m_dataSubModeB != subMode) {
+        m_dataSubModeB = subMode;
+        m_dataSubModeBOptimisticTime = QDateTime::currentMSecsSinceEpoch();
+        emit dataSubModeBChanged(subMode);
+    }
 }
 
 void RadioState::setMiniPanAEnabled(bool enabled) {
-    SpectrumDisplayHandlers::setMiniPanAEnabled(m_spectrumDisplayState, *this, enabled);
+    if (m_miniPanAEnabled != enabled) {
+        m_miniPanAEnabled = enabled;
+        emit miniPanAEnabledChanged(enabled);
+    }
 }
 
 void RadioState::setMiniPanBEnabled(bool enabled) {
-    SpectrumDisplayHandlers::setMiniPanBEnabled(m_spectrumDisplayState, *this, enabled);
+    if (m_miniPanBEnabled != enabled) {
+        m_miniPanBEnabled = enabled;
+        emit miniPanBEnabledChanged(enabled);
+    }
 }
 
 void RadioState::setWaterfallHeight(int percent) {
-    SpectrumDisplayHandlers::setWaterfallHeight(m_spectrumDisplayState, *this, percent);
+    percent = qBound(10, percent, 90);
+    if (m_waterfallHeight != percent) {
+        m_waterfallHeight = percent;
+        emit waterfallHeightChanged(percent);
+    }
 }
 
 void RadioState::setWaterfallHeightExt(int percent) {
-    SpectrumDisplayHandlers::setWaterfallHeightExt(m_spectrumDisplayState, *this, percent);
+    percent = qBound(10, percent, 90);
+    if (m_waterfallHeightExt != percent) {
+        m_waterfallHeightExt = percent;
+        emit waterfallHeightExtChanged(percent);
+    }
 }
 
 void RadioState::setAveraging(int value) {
-    SpectrumDisplayHandlers::setAveraging(m_spectrumDisplayState, *this, value);
-}
-
-void RadioState::setRefLevel(int level) {
-    SpectrumDisplayHandlers::setRefLevel(m_spectrumDisplayState, *this, level);
-}
-
-void RadioState::setScale(int scale) {
-    SpectrumDisplayHandlers::setScale(m_spectrumDisplayState, *this, scale);
-}
-
-void RadioState::setSpanHz(int spanHz) {
-    SpectrumDisplayHandlers::setSpanHz(m_spectrumDisplayState, *this, spanHz);
-}
-
-void RadioState::setRefLevelB(int level) {
-    SpectrumDisplayHandlers::setRefLevelB(m_spectrumDisplayState, *this, level);
-}
-
-void RadioState::setSpanHzB(int spanHz) {
-    SpectrumDisplayHandlers::setSpanHzB(m_spectrumDisplayState, *this, spanHz);
+    value = qBound(1, value, 20);
+    if (m_averaging != value) {
+        m_averaging = value;
+        emit averagingChanged(value);
+    }
 }
 
 void RadioState::setRxEqBand(int index, int dB) {
-    AudioEffectsHandlers::setRxEqBand(m_audioEffectsState, *this, index, dB);
+    if (index < 0 || index >= 8)
+        return;
+    dB = qBound(-16, dB, 16);
+    if (m_rxEqBands[index] != dB) {
+        m_rxEqBands[index] = dB;
+        emit rxEqBandChanged(index, dB);
+        emit rxEqChanged();
+    }
 }
 
 void RadioState::setRxEqBands(const QVector<int> &bands) {
-    AudioEffectsHandlers::setRxEqBands(m_audioEffectsState, *this, bands);
+    bool changed = false;
+    for (int i = 0; i < qMin(bands.size(), 8); i++) {
+        int dB = qBound(-16, bands[i], 16);
+        if (m_rxEqBands[i] != dB) {
+            m_rxEqBands[i] = dB;
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit rxEqChanged();
+    }
 }
 
 void RadioState::setTxEqBand(int index, int dB) {
-    AudioEffectsHandlers::setTxEqBand(m_audioEffectsState, *this, index, dB);
+    if (index < 0 || index >= 8)
+        return;
+    dB = qBound(-16, dB, 16);
+    if (m_txEqBands[index] != dB) {
+        m_txEqBands[index] = dB;
+        emit txEqBandChanged(index, dB);
+        emit txEqChanged();
+    }
 }
 
 void RadioState::setTxEqBands(const QVector<int> &bands) {
-    AudioEffectsHandlers::setTxEqBands(m_audioEffectsState, *this, bands);
+    bool changed = false;
+    for (int i = 0; i < qMin(bands.size(), 8); i++) {
+        int dB = qBound(-16, bands[i], 16);
+        if (m_txEqBands[i] != dB) {
+            m_txEqBands[i] = dB;
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit txEqChanged();
+    }
 }
 
-// Antenna config setters — delegate to AntennaHandlers namespace.
 void RadioState::setMainRxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setMainRxAntConfig(m_antennaState, *this, displayAll, mask);
+    bool changed = false;
+    if (displayAll != m_mainRxDisplayAll) {
+        m_mainRxDisplayAll = displayAll;
+        changed = true;
+    }
+    for (int i = 0; i < qMin(mask.size(), 7); i++) {
+        if (mask[i] != m_mainRxAntMask[i]) {
+            m_mainRxAntMask[i] = mask[i];
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit mainRxAntCfgChanged();
+    }
 }
+
 void RadioState::setSubRxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setSubRxAntConfig(m_antennaState, *this, displayAll, mask);
+    bool changed = false;
+    if (displayAll != m_subRxDisplayAll) {
+        m_subRxDisplayAll = displayAll;
+        changed = true;
+    }
+    for (int i = 0; i < qMin(mask.size(), 7); i++) {
+        if (mask[i] != m_subRxAntMask[i]) {
+            m_subRxAntMask[i] = mask[i];
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit subRxAntCfgChanged();
+    }
 }
+
 void RadioState::setTxAntConfig(bool displayAll, const QVector<bool> &mask) {
-    AntennaHandlers::setTxAntConfig(m_antennaState, *this, displayAll, mask);
+    bool changed = false;
+    if (displayAll != m_txDisplayAll) {
+        m_txDisplayAll = displayAll;
+        changed = true;
+    }
+    for (int i = 0; i < qMin(mask.size(), 3); i++) {
+        if (mask[i] != m_txAntMask[i]) {
+            m_txAntMask[i] = mask[i];
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit txAntCfgChanged();
+    }
 }
 
 void RadioState::setLineOutLeft(int level) {
-    AudioEffectsHandlers::setLineOutLeft(m_audioEffectsState, *this, level);
+    level = qBound(0, level, 40);
+    if (level != m_lineOutLeft) {
+        m_lineOutLeft = level;
+        emit lineOutChanged();
+    }
 }
 
 void RadioState::setLineOutRight(int level) {
-    AudioEffectsHandlers::setLineOutRight(m_audioEffectsState, *this, level);
+    level = qBound(0, level, 40);
+    if (level != m_lineOutRight) {
+        m_lineOutRight = level;
+        emit lineOutChanged();
+    }
 }
 
 void RadioState::setLineOutRightEqualsLeft(bool enabled) {
-    AudioEffectsHandlers::setLineOutRightEqualsLeft(m_audioEffectsState, *this, enabled);
+    if (enabled != m_lineOutRightEqualsLeft) {
+        m_lineOutRightEqualsLeft = enabled;
+        emit lineOutChanged();
+    }
 }
 
 // Line In optimistic setters
 void RadioState::setLineInSoundCard(int level) {
-    AudioEffectsHandlers::setLineInSoundCard(m_audioEffectsState, *this, level);
+    level = qBound(0, level, 250);
+    if (level != m_lineInSoundCard) {
+        m_lineInSoundCard = level;
+        emit lineInChanged();
+    }
 }
 
 void RadioState::setLineInJack(int level) {
-    AudioEffectsHandlers::setLineInJack(m_audioEffectsState, *this, level);
+    level = qBound(0, level, 250);
+    if (level != m_lineInJack) {
+        m_lineInJack = level;
+        emit lineInChanged();
+    }
 }
 
 void RadioState::setLineInSource(int source) {
-    AudioEffectsHandlers::setLineInSource(m_audioEffectsState, *this, source);
+    if ((source == 0 || source == 1) && source != m_lineInSource) {
+        m_lineInSource = source;
+        emit lineInChanged();
+    }
 }
 
 // Mic Input/Setup optimistic setters
 void RadioState::setMicInput(int input) {
-    AudioEffectsHandlers::setMicInput(m_audioEffectsState, *this, input);
+    if (input >= 0 && input <= 4 && input != m_micInput) {
+        m_micInput = input;
+        emit micInputChanged(m_micInput);
+    }
 }
 
 void RadioState::setMicFrontPreamp(int preamp) {
-    AudioEffectsHandlers::setMicFrontPreamp(m_audioEffectsState, *this, preamp);
+    if (preamp >= 0 && preamp <= 2 && preamp != m_micFrontPreamp) {
+        m_micFrontPreamp = preamp;
+        emit micSetupChanged();
+    }
 }
 
 void RadioState::setMicFrontBias(int bias) {
-    AudioEffectsHandlers::setMicFrontBias(m_audioEffectsState, *this, bias);
+    if ((bias == 0 || bias == 1) && bias != m_micFrontBias) {
+        m_micFrontBias = bias;
+        emit micSetupChanged();
+    }
 }
 
 void RadioState::setMicFrontButtons(int buttons) {
-    AudioEffectsHandlers::setMicFrontButtons(m_audioEffectsState, *this, buttons);
+    if ((buttons == 0 || buttons == 1) && buttons != m_micFrontButtons) {
+        m_micFrontButtons = buttons;
+        emit micSetupChanged();
+    }
 }
 
 void RadioState::setMicRearPreamp(int preamp) {
-    AudioEffectsHandlers::setMicRearPreamp(m_audioEffectsState, *this, preamp);
+    if ((preamp == 0 || preamp == 1) && preamp != m_micRearPreamp) {
+        m_micRearPreamp = preamp;
+        emit micSetupChanged();
+    }
 }
 
 void RadioState::setMicRearBias(int bias) {
-    AudioEffectsHandlers::setMicRearBias(m_audioEffectsState, *this, bias);
+    if ((bias == 0 || bias == 1) && bias != m_micRearBias) {
+        m_micRearBias = bias;
+        emit micSetupChanged();
+    }
 }
 
-// Text Decode optimistic setters — delegate into the TextDecodeHandlers
-// namespace (see models/radiostate/textdecodestate.cpp). Public API shape
-// preserved; the struct holds the state and the handler fns mutate it.
+// Text Decode optimistic setters - Main RX
 void RadioState::setTextDecodeMode(int mode) {
-    TextDecodeHandlers::setMode(m_textDecodeState, *this, mode);
-}
-void RadioState::setTextDecodeThreshold(int threshold) {
-    TextDecodeHandlers::setThreshold(m_textDecodeState, *this, threshold);
-}
-void RadioState::setTextDecodeLines(int lines) {
-    TextDecodeHandlers::setLines(m_textDecodeState, *this, lines);
-}
-void RadioState::setTextDecodeModeB(int mode) {
-    TextDecodeHandlers::setModeB(m_textDecodeState, *this, mode);
-}
-void RadioState::setTextDecodeThresholdB(int threshold) {
-    TextDecodeHandlers::setThresholdB(m_textDecodeState, *this, threshold);
-}
-void RadioState::setTextDecodeLinesB(int lines) {
-    TextDecodeHandlers::setLinesB(m_textDecodeState, *this, lines);
+    mode = qBound(0, mode, 4);
+    if (mode != m_textDecodeMode) {
+        m_textDecodeMode = mode;
+        emit textDecodeChanged();
+    }
 }
 
-// VOX Gain / Anti-VOX / ESSB optimistic setters — delegate into AudioEffectsHandlers.
+void RadioState::setTextDecodeThreshold(int threshold) {
+    threshold = qBound(0, threshold, 9);
+    if (threshold != m_textDecodeThreshold) {
+        m_textDecodeThreshold = threshold;
+        emit textDecodeChanged();
+    }
+}
+
+void RadioState::setTextDecodeLines(int lines) {
+    lines = qBound(1, lines, 10);
+    if (lines != m_textDecodeLines) {
+        m_textDecodeLines = lines;
+        emit textDecodeChanged();
+    }
+}
+
+// Text Decode optimistic setters - Sub RX
+void RadioState::setTextDecodeModeB(int mode) {
+    mode = qBound(0, mode, 4);
+    if (mode != m_textDecodeModeB) {
+        m_textDecodeModeB = mode;
+        emit textDecodeBChanged();
+    }
+}
+
+void RadioState::setTextDecodeThresholdB(int threshold) {
+    threshold = qBound(0, threshold, 9);
+    if (threshold != m_textDecodeThresholdB) {
+        m_textDecodeThresholdB = threshold;
+        emit textDecodeBChanged();
+    }
+}
+
+void RadioState::setTextDecodeLinesB(int lines) {
+    lines = qBound(1, lines, 10);
+    if (lines != m_textDecodeLinesB) {
+        m_textDecodeLinesB = lines;
+        emit textDecodeBChanged();
+    }
+}
+
+// VOX Gain optimistic setters
 void RadioState::setVoxGainVoice(int gain) {
-    AudioEffectsHandlers::setVoxGainVoice(m_audioEffectsState, *this, gain);
+    gain = qBound(0, gain, 60);
+    if (gain != m_voxGainVoice) {
+        m_voxGainVoice = gain;
+        emit voxGainChanged(0, gain);
+    }
 }
 
 void RadioState::setVoxGainData(int gain) {
-    AudioEffectsHandlers::setVoxGainData(m_audioEffectsState, *this, gain);
+    gain = qBound(0, gain, 60);
+    if (gain != m_voxGainData) {
+        m_voxGainData = gain;
+        emit voxGainChanged(1, gain);
+    }
 }
 
 void RadioState::setAntiVox(int level) {
-    AudioEffectsHandlers::setAntiVox(m_audioEffectsState, *this, level);
+    level = qBound(0, level, 60);
+    if (level != m_antiVox) {
+        m_antiVox = level;
+        emit antiVoxChanged(level);
+    }
 }
 
 void RadioState::setEssbEnabled(bool enabled) {
-    AudioEffectsHandlers::setEssbEnabled(m_audioEffectsState, *this, enabled);
+    if (enabled != m_essbEnabled) {
+        m_essbEnabled = enabled;
+        emit essbChanged(m_essbEnabled, m_ssbTxBw);
+    }
 }
 
 void RadioState::setSsbTxBw(int bw) {
-    AudioEffectsHandlers::setSsbTxBw(m_audioEffectsState, *this, bw);
-}
-
-// =============================================================================
-// A/B Deduplication Helpers
-// =============================================================================
-
-void RadioState::handleIntPair(const QString &cmd, int prefixLen, int &member, int min, int max,
-                               void (RadioState::*signal)(int)) {
-    if (cmd.length() <= prefixLen)
-        return;
-    bool ok;
-    int val = cmd.mid(prefixLen).toInt(&ok);
-    if (ok && val >= min && val <= max && val != member) {
-        member = val;
-        emit(this->*signal)(val);
-    }
-}
-
-void RadioState::handleBoolPair(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)()) {
-    if (cmd.length() <= charPos)
-        return;
-    bool enabled = (cmd.at(charPos) == '1');
-    if (member != enabled) {
-        member = enabled;
-        emit(this->*signal)();
-    }
-}
-
-void RadioState::handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool)) {
-    if (cmd.length() <= charPos)
-        return;
-    bool enabled = (cmd.at(charPos) == '1');
-    if (member != enabled) {
-        member = enabled;
-        emit(this->*signal)(enabled);
+    bw = qBound(30, bw, 45);
+    if (bw != m_ssbTxBw) {
+        m_ssbTxBw = bw;
+        emit essbChanged(m_essbEnabled, m_ssbTxBw);
     }
 }
 
 // =============================================================================
 // Command Handler Registry
 // =============================================================================
-//
-// WHY a registry and not a giant switch:
-//   1. K4 CAT prefixes are variable-length (2–5 chars: `FA`, `MD$`, `#REF$`). A switch on the
-//      leading two characters would mis-route `MD$` into the `MD` branch — `$`-suffixed sub-RX
-//      variants are indistinguishable from the base command at the first two bytes.
-//   2. Prefix matching lets us keep the sub-RX variant (`$` suffix) alongside its base command
-//      in code, which makes it obvious they share parsing logic (many use `handleIntPair()`).
-//   3. The list is sorted longest-first so the dispatcher's first-match-wins rule correctly
-//      prefers `RO$` over `RO` and `#REF$` over `#REF`.
-//
-// Dispatch is O(handlers) linear scan — with ~200 handlers and a single CAT stream, this has
-// never been the bottleneck and keeping the list readable (grouped by subsystem) matters more
-// than O(log n) matching.
-//
-// Pure-data and state fields that use `handleIntPair` consolidate the base and sub-RX variants
-// into one call site; handlers that differ between main/sub (e.g., `MD` vs `MD$` often need to
-// emit different signals) stay as separate lambdas.
-
-QStringList RadioState::registeredCommandPrefixes() const {
-    QStringList prefixes;
-    prefixes.reserve(m_commandHandlers.size());
-    for (const auto &entry : m_commandHandlers)
-        prefixes.append(entry.prefix);
-    return prefixes;
-}
 
 void RadioState::registerCommandHandlers() {
     // Register handlers in order - will be sorted by prefix length (longest first)
     // This ensures "MD$" is checked before "MD", "NB$" before "NB", etc.
 
-    // Display commands (# prefix) - register longest first. All handlers
-    // delegate to SpectrumDisplayHandlers (see radiostate/spectrumdisplaystate.cpp).
-    auto spectrumHandler = [this](void (*fn)(SpectrumDisplayState &, RadioState &, const QString &)) {
-        return [this, fn](const QString &c) { fn(m_spectrumDisplayState, *this, c); };
-    };
-    m_commandHandlers.append({"#HWFH", spectrumHandler(&SpectrumDisplayHandlers::handleHWFH)});
-    m_commandHandlers.append({"#HDPM", spectrumHandler(&SpectrumDisplayHandlers::handleHDPM)});
-    m_commandHandlers.append({"#HDSM", spectrumHandler(&SpectrumDisplayHandlers::handleHDSM)});
-    m_commandHandlers.append({"#NBL$", spectrumHandler(&SpectrumDisplayHandlers::handleNBL)});
-    m_commandHandlers.append({"#REF$", spectrumHandler(&SpectrumDisplayHandlers::handleREFSub)});
-    m_commandHandlers.append({"#SPN$", spectrumHandler(&SpectrumDisplayHandlers::handleSPNSub)});
-    m_commandHandlers.append({"#NB$", spectrumHandler(&SpectrumDisplayHandlers::handleNB)});
-    m_commandHandlers.append({"#MP$", spectrumHandler(&SpectrumDisplayHandlers::handleMPSub)});
-    m_commandHandlers.append({"#REF", spectrumHandler(&SpectrumDisplayHandlers::handleREF)});
-    m_commandHandlers.append({"#SPN", spectrumHandler(&SpectrumDisplayHandlers::handleSPN)});
-    m_commandHandlers.append({"#SCL", spectrumHandler(&SpectrumDisplayHandlers::handleSCL)});
-    m_commandHandlers.append({"#DPM", spectrumHandler(&SpectrumDisplayHandlers::handleDPM)});
-    m_commandHandlers.append({"#DSM", spectrumHandler(&SpectrumDisplayHandlers::handleDSM)});
-    m_commandHandlers.append({"#FPS", spectrumHandler(&SpectrumDisplayHandlers::handleFPS)});
-    m_commandHandlers.append({"#WFC", spectrumHandler(&SpectrumDisplayHandlers::handleWFC)});
-    m_commandHandlers.append({"#WFH", spectrumHandler(&SpectrumDisplayHandlers::handleWFH)});
-    m_commandHandlers.append({"#AVG", spectrumHandler(&SpectrumDisplayHandlers::handleAVG)});
-    m_commandHandlers.append({"#PKM", spectrumHandler(&SpectrumDisplayHandlers::handlePKM)});
-    m_commandHandlers.append({"#FXT", spectrumHandler(&SpectrumDisplayHandlers::handleFXT)});
-    m_commandHandlers.append({"#FXA", spectrumHandler(&SpectrumDisplayHandlers::handleFXA)});
-    m_commandHandlers.append({"#FRZ", spectrumHandler(&SpectrumDisplayHandlers::handleFRZ)});
-    m_commandHandlers.append({"#VFA", spectrumHandler(&SpectrumDisplayHandlers::handleVFA)});
-    m_commandHandlers.append({"#VFB", spectrumHandler(&SpectrumDisplayHandlers::handleVFB)});
-    m_commandHandlers.append({"#MP", spectrumHandler(&SpectrumDisplayHandlers::handleMP)});
-    m_commandHandlers.append({"#AR", spectrumHandler(&SpectrumDisplayHandlers::handleAR)});
+    // Display commands (# prefix) - register longest first
+    m_commandHandlers.append({"#HWFH", [this](const QString &c) { handleDisplayHWFH(c); }});
+    m_commandHandlers.append({"#HDPM", [this](const QString &c) { handleDisplayHDPM(c); }});
+    m_commandHandlers.append({"#HDSM", [this](const QString &c) { handleDisplayHDSM(c); }});
+    m_commandHandlers.append({"#NBL$", [this](const QString &c) { handleDisplayNBL(c); }});
+    m_commandHandlers.append({"#REF$", [this](const QString &c) { handleDisplayREFSub(c); }});
+    m_commandHandlers.append({"#SPN$", [this](const QString &c) { handleDisplaySPNSub(c); }});
+    m_commandHandlers.append({"#NB$", [this](const QString &c) { handleDisplayNB(c); }});
+    m_commandHandlers.append({"#MP$", [this](const QString &c) { handleDisplayMPSub(c); }});
+    m_commandHandlers.append({"#REF", [this](const QString &c) { handleDisplayREF(c); }});
+    m_commandHandlers.append({"#SPN", [this](const QString &c) { handleDisplaySPN(c); }});
+    m_commandHandlers.append({"#SCL", [this](const QString &c) { handleDisplaySCL(c); }});
+    m_commandHandlers.append({"#DPM", [this](const QString &c) { handleDisplayDPM(c); }});
+    m_commandHandlers.append({"#DSM", [this](const QString &c) { handleDisplayDSM(c); }});
+    m_commandHandlers.append({"#FPS", [this](const QString &c) { handleDisplayFPS(c); }});
+    m_commandHandlers.append({"#WFC", [this](const QString &c) { handleDisplayWFC(c); }});
+    m_commandHandlers.append({"#WFH", [this](const QString &c) { handleDisplayWFH(c); }});
+    m_commandHandlers.append({"#AVG", [this](const QString &c) { handleDisplayAVG(c); }});
+    m_commandHandlers.append({"#PKM", [this](const QString &c) { handleDisplayPKM(c); }});
+    m_commandHandlers.append({"#FXT", [this](const QString &c) { handleDisplayFXT(c); }});
+    m_commandHandlers.append({"#FXA", [this](const QString &c) { handleDisplayFXA(c); }});
+    m_commandHandlers.append({"#FRZ", [this](const QString &c) { handleDisplayFRZ(c); }});
+    m_commandHandlers.append({"#VFA", [this](const QString &c) { handleDisplayVFA(c); }});
+    m_commandHandlers.append({"#VFB", [this](const QString &c) { handleDisplayVFB(c); }});
+    m_commandHandlers.append({"#MP", [this](const QString &c) { handleDisplayMP(c); }});
+    m_commandHandlers.append({"#AR", [this](const QString &c) { handleDisplayAR(c); }});
 
     // Multi-char commands with $ suffix (must come before their base commands)
     m_commandHandlers.append({"SIFP", [this](const QString &c) { handleSIFP(c); }});
     m_commandHandlers.append({"SIRF", [this](const QString &c) { handleSIRF(c); }});
-
+    m_commandHandlers.append({"SIRC", [this](const QString &c) { handleSIRC(c); }});
     m_commandHandlers.append({"TD$", [this](const QString &c) { handleTDSub(c); }});
     m_commandHandlers.append({"TB$", [this](const QString &c) { handleTBSub(c); }});
-    m_commandHandlers.append({"DR$", [this](const QString &c) { handleDRSub(c); }});
     m_commandHandlers.append({"DT$", [this](const QString &c) { handleDTSub(c); }});
     m_commandHandlers.append({"MD$", [this](const QString &c) { handleMDSub(c); }});
-    // BW$, IS$, FP$ — deduplicated via handleIntPair / ModeFilterHandlers.
-    m_commandHandlers.append(
-        {"BW$", [this](const QString &c) { ModeFilterHandlers::handleBWSub(m_modeFilterState, *this, c); }});
-    m_commandHandlers.append({"IS$", [this](const QString &c) {
-                                  handleIntPair(c, 3, m_modeFilterState.ifShiftB, -99999, 99999,
-                                                &RadioState::ifShiftBChanged);
-                              }});
-    m_commandHandlers.append({"FP$", [this](const QString &c) {
-                                  handleIntPair(c, 3, m_modeFilterState.filterPositionB, 1, 3,
-                                                &RadioState::filterPositionBChanged);
-                              }});
-    // RG$ — strips leading dash before parsing.
-    // WHY: K4 reports RF gain as an attenuation in the range -0..-60 dB
-    // ("RG-030;" = -30 dB). Throughout the codebase (SideControlPanel UI,
-    // MainWindow scroll handler, RadioState::setRfGain setter) RF gain is
-    // carried as a positive magnitude 0..60; the minus sign is re-added only
-    // at the display / CAT dispatch boundary. The handler uses qAbs() to
-    // make that convention explicit. See levelsstate.cpp:80 for the canonical
-    // version of this WHY and test_radiostate.cpp:1702 for the regression test.
-    m_commandHandlers.append(
-        {"RG$", [this](const QString &c) { LevelsHandlers::handleRGSub(m_levelsState, *this, c); }});
-    m_commandHandlers.append(
-        {"SQ$", [this](const QString &c) { LevelsHandlers::handleSQSub(m_levelsState, *this, c); }});
+    m_commandHandlers.append({"BW$", [this](const QString &c) { handleBWSub(c); }});
+    m_commandHandlers.append({"IS$", [this](const QString &c) { handleISSub(c); }});
+    m_commandHandlers.append({"FP$", [this](const QString &c) { handleFPSub(c); }});
+    m_commandHandlers.append({"RG$", [this](const QString &c) { handleRGSub(c); }});
+    m_commandHandlers.append({"SQ$", [this](const QString &c) { handleSQSub(c); }});
     m_commandHandlers.append({"SM$", [this](const QString &c) { handleSMSub(c); }});
     m_commandHandlers.append({"NB$", [this](const QString &c) { handleNBSub(c); }});
-    m_commandHandlers.append({"NR$", [this](const QString &c) { handleNRSub(c); }});
     m_commandHandlers.append({"NRS$", [this](const QString &c) { handleNRSSub(c); }});
+    m_commandHandlers.append({"NR$", [this](const QString &c) { handleNRSub(c); }});
     m_commandHandlers.append({"PA$", [this](const QString &c) { handlePASub(c); }});
     m_commandHandlers.append({"RA$", [this](const QString &c) { handleRASub(c); }});
     m_commandHandlers.append({"GT$", [this](const QString &c) { handleGTSub(c); }});
-    // NA$ — deduplicated via handleBoolPair
-    m_commandHandlers.append({"NA$", [this](const QString &c) {
-                                  handleBoolPair(c, 3, m_processingState.autoNotchEnabledB, &RadioState::notchBChanged);
-                              }});
+    m_commandHandlers.append({"NA$", [this](const QString &c) { handleNASub(c); }});
     m_commandHandlers.append({"NM$", [this](const QString &c) { handleNMSub(c); }});
     m_commandHandlers.append({"AP$", [this](const QString &c) { handleAPSub(c); }});
-    m_commandHandlers.append(
-        {"LK$", [this](const QString &c) { FrequencyVfoHandlers::handleLKSub(m_frequencyVfoState, *this, c); }});
-    // VT$ — deduplicated inline (takes .left(1), qBound)
-    m_commandHandlers.append(
-        {"VT$", [this](const QString &c) { DataControlHandlers::handleVTSub(m_dataControlState, *this, c); }});
-    // AR$ — deduplicated inline (3-arg signal)
-    m_commandHandlers.append(
-        {"AR$", [this](const QString &c) { AntennaHandlers::handleARSub(m_antennaState, *this, c); }});
-    // RO$ — inline (custom multi-arg signal).
-    // WHY a separate RO$ handler (RIT/XIT offset routing on the K4):
-    //   - No split, RIT or XIT active  → offset lives in `RO`  (VFO A, handled below)
-    //   - Split + XIT                  → offset lives in `RO$` (VFO B, the TX VFO when split)
-    //   - BSET + RIT                   → offset lives in `RO$` (VFO B)
-    // We update `m_ritXitOffsetB` and emit the `B`-variant signal so the VFO B display tracks.
-    // See `~/.claude/projects/.../memory/MEMORY.md` → "K4 RIT/XIT Offset Registers".
-    m_commandHandlers.append(
-        {"RO$", [this](const QString &c) { FrequencyVfoHandlers::handleROSub(m_frequencyVfoState, *this, c); }});
-    m_commandHandlers.append(
-        {"RT$", [this](const QString &c) { FrequencyVfoHandlers::handleRTSub(m_frequencyVfoState, *this, c); }});
+    m_commandHandlers.append({"LK$", [this](const QString &c) { handleLKSub(c); }});
+    m_commandHandlers.append({"VT$", [this](const QString &c) { handleVTSub(c); }});
+    m_commandHandlers.append({"PL$", [this](const QString &c) { handlePL(c, true); }});
+    m_commandHandlers.append({"AR$", [this](const QString &c) { handleARSub(c); }});
+    // Mainline QK4 keeps the two offset registers distinct. RO$ is used by
+    // B SET RIT and by XIT when split routes TX to VFO B.
+    m_commandHandlers.append({"RT$", [this](const QString &c) { handleRTSub(c); }});
+    m_commandHandlers.append({"RO$", [this](const QString &c) { handleROSub(c); }});
 
     // 3-char commands
     m_commandHandlers.append({"ACN", [this](const QString &c) { handleACN(c); }});
@@ -610,58 +1004,44 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"FA", [this](const QString &c) { handleFA(c); }});
     m_commandHandlers.append({"FB", [this](const QString &c) { handleFB(c); }});
     m_commandHandlers.append({"FT", [this](const QString &c) { handleFT(c); }});
-    // FP — deduplicated via handleIntPair.
-    m_commandHandlers.append({"FP", [this](const QString &c) {
-                                  handleIntPair(c, 2, m_modeFilterState.filterPosition, 1, 3,
-                                                &RadioState::filterPositionChanged);
-                              }});
+    m_commandHandlers.append({"FP", [this](const QString &c) { handleFP(c); }});
     m_commandHandlers.append({"FX", [this](const QString &c) { handleFX(c); }});
+    m_commandHandlers.append({"DW", [this](const QString &c) { handleDW(c); }});
+    m_commandHandlers.append({"RP", [this](const QString &c) { handleRP(c); }});
+    m_commandHandlers.append({"PL", [this](const QString &c) { handlePL(c, false); }});
     m_commandHandlers.append({"MD", [this](const QString &c) { handleMD(c); }});
     m_commandHandlers.append({"BL", [this](const QString &c) { handleBL(c); }});
-    // BW — deduplicated via ModeFilterHandlers (×10 multiplier).
-    m_commandHandlers.append(
-        {"BW", [this](const QString &c) { ModeFilterHandlers::handleBW(m_modeFilterState, *this, c); }});
-    // IS — deduplicated via handleIntPair.
-    m_commandHandlers.append({"IS", [this](const QString &c) {
-                                  handleIntPair(c, 2, m_modeFilterState.ifShift, -99999, 99999,
-                                                &RadioState::ifShiftChanged);
-                              }});
+    m_commandHandlers.append({"BW", [this](const QString &c) { handleBW(c); }});
+    m_commandHandlers.append({"IS", [this](const QString &c) { handleIS(c); }});
     m_commandHandlers.append({"CW", [this](const QString &c) { handleCW(c); }});
-    m_commandHandlers.append({"RG", [this](const QString &c) { LevelsHandlers::handleRG(m_levelsState, *this, c); }});
-    m_commandHandlers.append({"SQ", [this](const QString &c) { LevelsHandlers::handleSQ(m_levelsState, *this, c); }});
+    m_commandHandlers.append({"RG", [this](const QString &c) { handleRG(c); }});
+    m_commandHandlers.append({"SQ", [this](const QString &c) { handleSQ(c); }});
     m_commandHandlers.append({"MG", [this](const QString &c) { handleMG(c); }});
     m_commandHandlers.append({"ML", [this](const QString &c) { handleML(c); }});
     m_commandHandlers.append({"CP", [this](const QString &c) { handleCP(c); }});
     m_commandHandlers.append({"PC", [this](const QString &c) { handlePC(c); }});
-    m_commandHandlers.append({"PS", [this](const QString &c) { PowerHandlers::handlePS(m_powerState, *this, c); }});
     m_commandHandlers.append({"KS", [this](const QString &c) { handleKS(c); }});
     m_commandHandlers.append({"KP", [this](const QString &c) { handleKP(c); }});
     m_commandHandlers.append({"SM", [this](const QString &c) { handleSM(c); }});
     m_commandHandlers.append({"PO", [this](const QString &c) { handlePO(c); }});
     m_commandHandlers.append({"TM", [this](const QString &c) { handleTM(c); }});
+    m_commandHandlers.append({"TQ", [this](const QString &c) { handleTQ(c); }});
     m_commandHandlers.append({"TX", [this](const QString &c) { handleTX(c); }});
     m_commandHandlers.append({"RX", [this](const QString &c) { handleRX(c); }});
     m_commandHandlers.append({"NB", [this](const QString &c) { handleNB(c); }});
-    m_commandHandlers.append({"NR", [this](const QString &c) { handleNR(c); }});
     m_commandHandlers.append({"NRS", [this](const QString &c) { handleNRS(c); }});
-    // NA — deduplicated via handleBoolPair
-    m_commandHandlers.append({"NA", [this](const QString &c) {
-                                  handleBoolPair(c, 2, m_processingState.autoNotchEnabled, &RadioState::notchChanged);
-                              }});
+    m_commandHandlers.append({"NR", [this](const QString &c) { handleNR(c); }});
+    m_commandHandlers.append({"NA", [this](const QString &c) { handleNA(c); }});
     m_commandHandlers.append({"NM", [this](const QString &c) { handleNM(c); }});
     m_commandHandlers.append({"PA", [this](const QString &c) { handlePA(c); }});
     m_commandHandlers.append({"RA", [this](const QString &c) { handleRA(c); }});
     m_commandHandlers.append({"GT", [this](const QString &c) { handleGT(c); }});
     m_commandHandlers.append({"AP", [this](const QString &c) { handleAP(c); }});
     m_commandHandlers.append({"LN", [this](const QString &c) { handleLN(c); }});
-    // LK — deduplicated via handleBoolPairVal
-    m_commandHandlers.append(
-        {"LK", [this](const QString &c) { FrequencyVfoHandlers::handleLK(m_frequencyVfoState, *this, c); }});
+    m_commandHandlers.append({"LK", [this](const QString &c) { handleLK(c); }});
     m_commandHandlers.append({"LO", [this](const QString &c) { handleLO(c); }});
     m_commandHandlers.append({"LI", [this](const QString &c) { handleLI(c); }});
-    // VT — deduplicated inline (takes .left(1), qBound)
-    m_commandHandlers.append(
-        {"VT", [this](const QString &c) { DataControlHandlers::handleVT(m_dataControlState, *this, c); }});
+    m_commandHandlers.append({"VT", [this](const QString &c) { handleVT(c); }});
     m_commandHandlers.append({"VX", [this](const QString &c) { handleVX(c); }});
     m_commandHandlers.append({"VG", [this](const QString &c) { handleVG(c); }});
     m_commandHandlers.append({"VI", [this](const QString &c) { handleVI(c); }});
@@ -674,7 +1054,6 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"SL", [this](const QString &c) { handleSL(c); }});
     m_commandHandlers.append({"SB", [this](const QString &c) { handleSB(c); }});
     m_commandHandlers.append({"DV", [this](const QString &c) { handleDV(c); }});
-    m_commandHandlers.append({"DR", [this](const QString &c) { handleDR(c); }});
     m_commandHandlers.append({"DT", [this](const QString &c) { handleDT(c); }});
     m_commandHandlers.append({"TS", [this](const QString &c) { handleTS(c); }});
     m_commandHandlers.append({"TB", [this](const QString &c) { handleTB(c); }});
@@ -682,8 +1061,7 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"TE", [this](const QString &c) { handleTE(c); }});
     m_commandHandlers.append({"BS", [this](const QString &c) { handleBS(c); }});
     m_commandHandlers.append({"AN", [this](const QString &c) { handleAN(c); }});
-    // AR — deduplicated inline (3-arg signal)
-    m_commandHandlers.append({"AR", [this](const QString &c) { AntennaHandlers::handleAR(m_antennaState, *this, c); }});
+    m_commandHandlers.append({"AR", [this](const QString &c) { handleAR(c); }});
     m_commandHandlers.append({"AT", [this](const QString &c) { handleAT(c); }});
     m_commandHandlers.append({"RT", [this](const QString &c) { handleRT(c); }});
     m_commandHandlers.append({"XT", [this](const QString &c) { handleXT(c); }});
@@ -692,18 +1070,6 @@ void RadioState::registerCommandHandlers() {
     m_commandHandlers.append({"ID", [this](const QString &c) { handleID(c); }});
     m_commandHandlers.append({"OM", [this](const QString &c) { handleOM(c); }});
     m_commandHandlers.append({"ER", [this](const QString &c) { handleER(c); }});
-
-    // XVTR per-band config — XvtrBandHandlers populates m_xvtrBandState.
-    m_commandHandlers.append(
-        {"XVN", [this](const QString &c) { XvtrBandHandlers::handleXVN(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVM", [this](const QString &c) { XvtrBandHandlers::handleXVM(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVR", [this](const QString &c) { XvtrBandHandlers::handleXVR(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVI", [this](const QString &c) { XvtrBandHandlers::handleXVI(m_xvtrBandState, *this, c); }});
-    m_commandHandlers.append(
-        {"XVO", [this](const QString &c) { XvtrBandHandlers::handleXVO(m_xvtrBandState, *this, c); }});
 
     // Sort by prefix length (longest first) for correct matching
     std::sort(m_commandHandlers.begin(), m_commandHandlers.end(),
@@ -714,15 +1080,37 @@ void RadioState::registerCommandHandlers() {
 // Individual Command Handlers - VFO/Frequency
 // =============================================================================
 
-// Frequency / VFO CAT handlers — delegate to FrequencyVfoHandlers namespace.
 void RadioState::handleFA(const QString &cmd) {
-    FrequencyVfoHandlers::handleFA(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    quint64 freq = cmd.mid(2).toULongLong(&ok);
+    if (ok) {
+        m_vfoA = freq;
+        m_frequency = freq;
+        emit frequencyChanged(freq);
+    }
 }
+
 void RadioState::handleFB(const QString &cmd) {
-    FrequencyVfoHandlers::handleFB(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    quint64 freq = cmd.mid(2).toULongLong(&ok);
+    if (ok && m_vfoB != freq) {
+        m_vfoB = freq;
+        emit frequencyBChanged(freq);
+    }
 }
+
 void RadioState::handleFT(const QString &cmd) {
-    FrequencyVfoHandlers::handleFT(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool newSplit = (cmd.mid(2) == "1");
+    if (newSplit != m_splitEnabled) {
+        m_splitEnabled = newSplit;
+        emit splitChanged(m_splitEnabled);
+    }
 }
 
 // =============================================================================
@@ -730,63 +1118,366 @@ void RadioState::handleFT(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleMD(const QString &cmd) {
-    ModeFilterHandlers::handleMD(m_modeFilterState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int modeCode = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        Mode newMode = modeFromCode(modeCode);
+        if (m_mode != newMode) {
+            m_mode = newMode;
+            emit modeChanged(m_mode);
+            int currentDelay = delayForCurrentMode();
+            if (currentDelay >= 0) {
+                emit qskDelayChanged(currentDelay);
+            }
+        }
+    }
 }
+
 void RadioState::handleMDSub(const QString &cmd) {
-    ModeFilterHandlers::handleMDSub(m_modeFilterState, *this, cmd);
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int modeCode = cmd.mid(3).toInt(&ok);
+    if (ok) {
+        Mode newMode = modeFromCode(modeCode);
+        if (m_modeB != newMode) {
+            m_modeB = newMode;
+            emit modeBChanged(m_modeB);
+        }
+    }
 }
 
 // =============================================================================
 // Individual Command Handlers - Bandwidth/Filter
 // =============================================================================
 
+void RadioState::handleBW(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int bw = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        int newBw = bw * 10;
+        if (m_filterBandwidth != newBw) {
+            m_filterBandwidth = newBw;
+            emit filterBandwidthChanged(m_filterBandwidth);
+        }
+    }
+}
+
+void RadioState::handleBWSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int bw = cmd.mid(3).toInt(&ok);
+    if (ok) {
+        int newBw = bw * 10;
+        if (m_filterBandwidthB != newBw) {
+            m_filterBandwidthB = newBw;
+            emit filterBandwidthBChanged(m_filterBandwidthB);
+        }
+    }
+}
+
+void RadioState::handleIS(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int is = cmd.mid(2).toInt(&ok);
+    if (ok && is != m_ifShift) {
+        m_ifShift = is;
+        emit ifShiftChanged(m_ifShift);
+    }
+}
+
+void RadioState::handleISSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int is = cmd.mid(3).toInt(&ok);
+    if (ok && is != m_ifShiftB) {
+        m_ifShiftB = is;
+        emit ifShiftBChanged(m_ifShiftB);
+    }
+}
+
 void RadioState::handleCW(const QString &cmd) {
-    ModeFilterHandlers::handleCW(m_modeFilterState, *this, cmd);
+    // CW pitch - but skip CW-R mode strings
+    if (cmd.length() < 4 || cmd.startsWith("CW-"))
+        return;
+    bool ok;
+    int pitchCode = cmd.mid(2).toInt(&ok);
+    if (ok && pitchCode >= 25 && pitchCode <= 95) {
+        int pitchHz = pitchCode * 10;
+        if (pitchHz != m_cwPitch) {
+            m_cwPitch = pitchHz;
+            emit cwPitchChanged(m_cwPitch);
+        }
+    }
+}
+
+void RadioState::handleFP(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int fp = cmd.mid(2).toInt(&ok);
+    if (ok && fp >= 1 && fp <= 3 && fp != m_filterPosition) {
+        m_filterPosition = fp;
+        emit filterPositionChanged(m_filterPosition);
+    }
+}
+
+void RadioState::handleFPSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int fp = cmd.mid(3).toInt(&ok);
+    if (ok && fp >= 1 && fp <= 3 && fp != m_filterPositionB) {
+        m_filterPositionB = fp;
+        emit filterPositionBChanged(m_filterPositionB);
+    }
 }
 
 // =============================================================================
 // Individual Command Handlers - Gain/Level
 // =============================================================================
 
+void RadioState::handleRG(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int rg = cmd.mid(2).toInt(&ok);
+    if (ok && m_rfGain != rg) {
+        m_rfGain = rg;
+        emit rfGainChanged(m_rfGain);
+    }
+}
+
+void RadioState::handleRGSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int rg = cmd.mid(3).toInt(&ok);
+    if (ok && m_rfGainB != rg) {
+        m_rfGainB = rg;
+        emit rfGainBChanged(m_rfGainB);
+    }
+}
+
+void RadioState::handleSQ(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int sq = cmd.mid(2).toInt(&ok);
+    if (ok && m_squelchLevel != sq) {
+        m_squelchLevel = sq;
+        emit squelchChanged(m_squelchLevel);
+    }
+}
+
+void RadioState::handleSQSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int sq = cmd.mid(3).toInt(&ok);
+    if (ok && m_squelchLevelB != sq) {
+        m_squelchLevelB = sq;
+        emit squelchBChanged(m_squelchLevelB);
+    }
+}
+
 void RadioState::handleMG(const QString &cmd) {
-    LevelsHandlers::handleMG(m_levelsState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int gain = cmd.mid(2).toInt(&ok);
+    if (ok && gain != m_micGain) {
+        m_micGain = gain;
+        emit micGainChanged(m_micGain);
+    }
 }
 
 void RadioState::handleCP(const QString &cmd) {
-    LevelsHandlers::handleCP(m_levelsState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int comp = cmd.mid(2).toInt(&ok);
+    if (ok && comp != m_compression) {
+        m_compression = comp;
+        emit compressionChanged(m_compression);
+    }
 }
 
 void RadioState::handleML(const QString &cmd) {
-    AudioEffectsHandlers::handleML(m_audioEffectsState, *this, cmd);
+    // Monitor Level - MLmnnn where m=mode (0=CW, 1=Data, 2=Voice), nnn=000-100
+    if (cmd.length() < 5)
+        return;
+    bool ok;
+    int mode = cmd.mid(2, 1).toInt(&ok);
+    if (!ok || mode < 0 || mode > 2)
+        return;
+
+    int level = cmd.mid(3).toInt(&ok);
+    if (!ok || level < 0 || level > 100)
+        return;
+
+    int *target = nullptr;
+    switch (mode) {
+    case 0:
+        target = &m_monitorLevelCW;
+        break;
+    case 1:
+        target = &m_monitorLevelData;
+        break;
+    case 2:
+        target = &m_monitorLevelVoice;
+        break;
+    }
+    if (target && *target != level) {
+        *target = level;
+        emit monitorLevelChanged(mode, level);
+    }
 }
 
 void RadioState::handleBL(const QString &cmd) {
-    AudioEffectsHandlers::handleBL(m_audioEffectsState, *this, cmd);
+    // Balance - BLm±nn where m=mode (0=NOR, 1=BAL), ±nn=offset (-50 to +50)
+    // Examples: BL0+00, BL0+02, BL0-03, BL1+00, BL1-01
+    if (cmd.length() < 5)
+        return;
+    int mode = cmd[2].digitValue();
+    if (mode < 0 || mode > 1)
+        return;
+    QChar sign = cmd[3];
+    bool ok;
+    int nn = cmd.mid(4).toInt(&ok);
+    if (!ok)
+        return;
+    int offset = (sign == '-') ? -nn : nn;
+    offset = qBound(-50, offset, 50);
+    if (m_balanceMode != mode || m_balanceOffset != offset) {
+        m_balanceMode = mode;
+        m_balanceOffset = offset;
+        emit balanceChanged(mode, offset);
+    }
 }
 
 void RadioState::handleMX(const QString &cmd) {
-    AudioEffectsHandlers::handleMX(m_audioEffectsState, *this, cmd);
+    // Audio Mix routing - MXL.R where L and R are component strings
+    // Format: "MX" followed by "left.right" e.g. "MXA.B", "MXAB.AB", "MXA.-A"
+    // Components: A=main(0), B=sub(1), AB=main+sub(2), -A=neg main(3)
+    if (cmd.length() < 5)
+        return;
+
+    QString body = cmd.mid(2); // e.g. "A.B", "AB.AB", "A.-A"
+    int dotPos = body.indexOf('.');
+    if (dotPos < 1 || dotPos >= body.length() - 1)
+        return;
+
+    QString leftStr = body.left(dotPos);
+    QString rightStr = body.mid(dotPos + 1);
+
+    // Map component string to MixSource value
+    auto mapComponent = [](const QString &s) -> int {
+        if (s == "A")
+            return 0; // MixA
+        if (s == "B")
+            return 1; // MixB
+        if (s == "AB")
+            return 2; // MixAB
+        if (s == "-A")
+            return 3; // MixNegA
+        return -1;
+    };
+
+    int left = mapComponent(leftStr);
+    int right = mapComponent(rightStr);
+    if (left < 0 || right < 0)
+        return;
+
+    if (m_audioMixLeft != left || m_audioMixRight != right) {
+        m_audioMixLeft = left;
+        m_audioMixRight = right;
+        emit audioMixChanged(left, right);
+    }
 }
 
 void RadioState::handlePC(const QString &cmd) {
-    LevelsHandlers::handlePC(m_levelsState, *this, cmd);
+    // Power Control - PCnnnr; where nnn=power value, r=L/H/X
+    // L = QRP (0.1-10W): nnn is watts*10 (e.g., 099 = 9.9W)
+    // H = QRO (1-110W): nnn is watts directly (e.g., 050 = 50W)
+    // X = XVTR (0.1-10mW): nnn is mW*10
+    if (cmd.length() < 6)
+        return;
+
+    bool ok;
+    int powerRaw = cmd.mid(2, 3).toInt(&ok);
+    if (!ok)
+        return;
+
+    QChar mode = cmd.at(5);
+    double watts;
+    bool qrp;
+
+    if (mode == 'L') {
+        // QRP mode: value is watts * 10
+        watts = powerRaw / 10.0;
+        qrp = true;
+    } else if (mode == 'H') {
+        // QRO mode: value is watts directly
+        watts = powerRaw;
+        qrp = false;
+    } else {
+        // Unknown mode (X for XVTR, etc.) - skip
+        return;
+    }
+
+    bool changed = false;
+    if (watts != m_rfPower) {
+        m_rfPower = watts;
+        changed = true;
+    }
+    if (qrp != m_isQrpMode) {
+        m_isQrpMode = qrp;
+        changed = true;
+    }
+    if (changed) {
+        emit rfPowerChanged(m_rfPower, m_isQrpMode);
+    }
 }
 
 void RadioState::handleKS(const QString &cmd) {
-    ModeFilterHandlers::handleKS(m_modeFilterState, *this, cmd);
-}
-void RadioState::handleKP(const QString &cmd) {
-    ModeFilterHandlers::handleKP(m_modeFilterState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int wpm = cmd.mid(2).toInt(&ok);
+    if (ok && m_keyerSpeed != wpm) {
+        m_keyerSpeed = wpm;
+        emit keyerSpeedChanged(m_keyerSpeed);
+    }
 }
 
-void RadioState::setIambicMode(QChar mode) {
-    ModeFilterHandlers::setIambicMode(m_modeFilterState, *this, mode);
-}
-void RadioState::setPaddleOrientation(QChar orientation) {
-    ModeFilterHandlers::setPaddleOrientation(m_modeFilterState, *this, orientation);
-}
-void RadioState::setKeyingWeight(int weight) {
-    ModeFilterHandlers::setKeyingWeight(m_modeFilterState, *this, weight);
+void RadioState::handleKP(const QString &cmd) {
+    // KPionnn; i=iambic A/B, o=paddle orientation N/R, nnn=weight.
+    if (cmd.length() < 4)
+        return;
+    const QChar iambic = cmd.at(2).toUpper();
+    if ((iambic == 'A' || iambic == 'B') && m_iambicMode != iambic) {
+        m_iambicMode = iambic;
+        emit iambicModeChanged(iambic);
+    }
+    bool weightOk = false;
+    const int weight = cmd.mid(4, 3).toInt(&weightOk);
+    if (weightOk && weight >= 90 && weight <= 125)
+        m_keyingWeight = weight;
+    const QChar orientation = cmd.at(3).toUpper();
+    if (orientation != 'N' && orientation != 'R')
+        return;
+    if (m_paddleOrientation != orientation) {
+        m_paddleOrientation = orientation;
+        emit keyerPaddleChanged(orientation);
+    }
 }
 
 // =============================================================================
@@ -794,85 +1485,422 @@ void RadioState::setKeyingWeight(int weight) {
 // =============================================================================
 
 void RadioState::handleSM(const QString &cmd) {
-    RxTxMeterHandlers::handleSM(m_rxTxMeterState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int bars = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        if (bars <= 18) {
+            m_sMeter = bars / 2.0;
+        } else {
+            int dbAboveS9 = (bars - 18) * 3;
+            m_sMeter = 9.0 + dbAboveS9 / 10.0;
+        }
+        emit sMeterChanged(m_sMeter);
+    }
 }
 
 void RadioState::handleSMSub(const QString &cmd) {
-    RxTxMeterHandlers::handleSMSub(m_rxTxMeterState, *this, cmd);
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int bars = cmd.mid(3).toInt(&ok);
+    if (ok) {
+        if (bars <= 18) {
+            m_sMeterB = bars / 2.0;
+        } else {
+            int dbAboveS9 = (bars - 18) * 3;
+            m_sMeterB = 9.0 + dbAboveS9 / 10.0;
+        }
+        emit sMeterBChanged(m_sMeterB);
+    }
 }
 
 void RadioState::handlePO(const QString &cmd) {
-    RxTxMeterHandlers::handlePO(m_rxTxMeterState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int po = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        m_powerMeter = po;
+        emit powerMeterChanged(m_powerMeter);
+    }
 }
 
 void RadioState::handleTM(const QString &cmd) {
-    RxTxMeterHandlers::handleTM(m_rxTxMeterState, *this, cmd);
+    // TX Meter Data (TM) - TMaaabbbcccddd; (ALC, CMP, FWD, SWR) - 3-digit fields
+    if (cmd.length() < 14)
+        return;
+    QString data = cmd.mid(2);
+    if (data.length() < 12)
+        return;
+
+    bool ok1, ok2, ok3, ok4;
+    int alc = data.mid(0, 3).toInt(&ok1);
+    int cmp = data.mid(3, 3).toInt(&ok2);
+    int fwd = data.mid(6, 3).toInt(&ok3);
+    int swrRaw = data.mid(9, 3).toInt(&ok4);
+
+    if (!ok1 || !ok2 || !ok3 || !ok4)
+        return;
+
+    m_alcMeter = alc;
+    m_compressionDb = cmp;
+    // FWD is watts in QRO, tenths in QRP
+    m_forwardPower = m_isQrpMode ? fwd / 10.0 : fwd;
+    m_swrMeter = swrRaw / 10.0; // SWR in 1/10th units
+
+    emit txMeterChanged(m_alcMeter, m_compressionDb, m_forwardPower, m_swrMeter);
+    emit swrChanged(m_swrMeter);
 }
 
 // =============================================================================
 // Individual Command Handlers - TX/RX State
 // =============================================================================
 
+void RadioState::handleTQ(const QString &cmd) {
+    // TQ0/TQ1 is the documented confirmation of the K4's logical TX state.
+    // Treat it exactly like the unsolicited RX/TX state commands so clients
+    // can wait for confirmed key-up before releasing time-critical audio.
+    if (cmd.length() < 3 || (cmd.at(2) != QLatin1Char('0') && cmd.at(2) != QLatin1Char('1')))
+        return;
+    const bool transmitting = cmd.at(2) == QLatin1Char('1');
+    if (transmitting == m_isTransmitting)
+        return;
+    m_isTransmitting = transmitting;
+    emit transmitStateChanged(transmitting);
+}
+
 void RadioState::handleTX(const QString &cmd) {
-    RxTxMeterHandlers::handleTX(m_rxTxMeterState, *this, cmd);
+    Q_UNUSED(cmd)
+    if (!m_isTransmitting) {
+        m_isTransmitting = true;
+        emit transmitStateChanged(true);
+    }
 }
 
 void RadioState::handleRX(const QString &cmd) {
-    RxTxMeterHandlers::handleRX(m_rxTxMeterState, *this, cmd);
+    Q_UNUSED(cmd)
+    if (m_isTransmitting) {
+        m_isTransmitting = false;
+        emit transmitStateChanged(false);
+    }
 }
 
 // =============================================================================
 // Individual Command Handlers - Processing (NB, NR, PA, RA, GT, NA, NM)
 // =============================================================================
 
-// WHY: Handlers in this block (NB/NB$, NR/NR$, PA/PA$, RA/RA$, GT/GT$)
-// all emit the cross-cutting `processingChanged()` / `processingChangedB()`
-// rollup signal. Compute proposed values first, short-circuit if nothing
-// differs, and only then mutate + emit — keeps the rollup idempotent so
-// redundant CAT echoes don't trigger spurious UI repaints.
-
-// Processing CAT handlers — delegate to ProcessingHandlers namespace.
 void RadioState::handleNB(const QString &cmd) {
-    ProcessingHandlers::handleNB(m_processingState, *this, cmd);
+    // NB - Noise Blanker Main: NBnnm or NBnnmf where nn=level, m=on/off, f=filter
+    if (cmd.length() < 4)
+        return;
+    QString nbStr = cmd.mid(2);
+    if (nbStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = nbStr.left(2).toInt(&ok1);
+    int enabled = nbStr.mid(2, 1).toInt(&ok2);
+    if (!ok1 || !ok2)
+        return;
+
+    m_noiseBlankerLevel = qMin(level, 15);
+    m_noiseBlankerEnabled = (enabled == 1);
+
+    if (nbStr.length() >= 4) {
+        bool ok3;
+        int filter = nbStr.mid(3, 1).toInt(&ok3);
+        if (ok3) {
+            m_noiseBlankerFilterWidth = qMin(filter, 2);
+        }
+    }
+    emit processingChanged();
 }
+
 void RadioState::handleNBSub(const QString &cmd) {
-    ProcessingHandlers::handleNBSub(m_processingState, *this, cmd);
+    // NB$ - Noise Blanker Sub
+    if (cmd.length() < 5)
+        return;
+    QString nbStr = cmd.mid(3);
+    if (nbStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = nbStr.left(2).toInt(&ok1);
+    int enabled = nbStr.mid(2, 1).toInt(&ok2);
+    if (!ok1 || !ok2)
+        return;
+
+    m_noiseBlankerLevelB = qMin(level, 15);
+    m_noiseBlankerEnabledB = (enabled == 1);
+
+    if (nbStr.length() >= 4) {
+        bool ok3;
+        int filter = nbStr.mid(3, 1).toInt(&ok3);
+        if (ok3) {
+            m_noiseBlankerFilterWidthB = qMin(filter, 2);
+        }
+    }
+    emit processingChangedB();
 }
+
 void RadioState::handleNR(const QString &cmd) {
-    ProcessingHandlers::handleNR(m_processingState, *this, cmd);
+    // NR - Noise Reduction Main
+    if (cmd.length() < 3)
+        return;
+    QString nrStr = cmd.mid(2);
+    if (nrStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = nrStr.left(2).toInt(&ok1);
+    int enabled = nrStr.right(1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_noiseReductionLevel = level;
+        m_noiseReductionEnabled = (enabled == 1);
+        emit processingChanged();
+    }
 }
+
 void RadioState::handleNRSub(const QString &cmd) {
-    ProcessingHandlers::handleNRSub(m_processingState, *this, cmd);
+    // NR$ - Noise Reduction Sub
+    if (cmd.length() < 4)
+        return;
+    QString nrStr = cmd.mid(3);
+    if (nrStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = nrStr.left(2).toInt(&ok1);
+    int enabled = nrStr.right(1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_noiseReductionLevelB = level;
+        m_noiseReductionEnabledB = (enabled == 1);
+        emit processingChangedB();
+    }
 }
+
 void RadioState::handleNRS(const QString &cmd) {
-    ProcessingHandlers::handleNRS(m_processingState, *this, cmd);
+    // NRSnnm: spectral-subtraction NR; it is a peer of LMS NR on the K4.
+    if (cmd.length() < 4)
+        return;
+    const QString value = cmd.mid(3);
+    if (value.length() < 3)
+        return;
+    bool levelOk, enabledOk;
+    const int level = value.left(2).toInt(&levelOk);
+    const int enabled = value.right(1).toInt(&enabledOk);
+    if (!levelOk || !enabledOk)
+        return;
+    m_ssnrLevel = qBound(0, level, 20);
+    m_ssnrEnabled = (enabled == 1);
+    emit processingChanged();
 }
+
 void RadioState::handleNRSSub(const QString &cmd) {
-    ProcessingHandlers::handleNRSSub(m_processingState, *this, cmd);
+    // NRS$nnm: spectral-subtraction NR for the sub receiver.
+    if (cmd.length() < 5)
+        return;
+    const QString value = cmd.mid(4);
+    if (value.length() < 3)
+        return;
+    bool levelOk, enabledOk;
+    const int level = value.left(2).toInt(&levelOk);
+    const int enabled = value.right(1).toInt(&enabledOk);
+    if (!levelOk || !enabledOk)
+        return;
+    m_ssnrLevelB = qBound(0, level, 20);
+    m_ssnrEnabledB = (enabled == 1);
+    emit processingChangedB();
 }
+
 void RadioState::handlePA(const QString &cmd) {
-    ProcessingHandlers::handlePA(m_processingState, *this, cmd);
+    // PA - Preamp Main: PAnm where n=level, m=on/off
+    if (cmd.length() < 4)
+        return;
+    QString paStr = cmd.mid(2);
+    if (paStr.length() < 2)
+        return;
+
+    bool ok1, ok2;
+    int level = paStr.left(1).toInt(&ok1);
+    int enabled = paStr.mid(1, 1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_preamp = level;
+        m_preampEnabled = (enabled == 1);
+        emit processingChanged();
+    }
 }
+
 void RadioState::handlePASub(const QString &cmd) {
-    ProcessingHandlers::handlePASub(m_processingState, *this, cmd);
+    // PA$ - Preamp Sub
+    if (cmd.length() < 5)
+        return;
+    QString paStr = cmd.mid(3);
+    if (paStr.length() < 2)
+        return;
+
+    bool ok1, ok2;
+    int level = paStr.left(1).toInt(&ok1);
+    int enabled = paStr.mid(1, 1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_preampB = level;
+        m_preampEnabledB = (enabled == 1);
+        emit processingChangedB();
+    }
 }
+
 void RadioState::handleRA(const QString &cmd) {
-    ProcessingHandlers::handleRA(m_processingState, *this, cmd);
+    // RA - Attenuator Main: RAnnotm where nn=level, m=on/off
+    if (cmd.length() < 5)
+        return;
+    QString raStr = cmd.mid(2);
+    if (raStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = raStr.left(2).toInt(&ok1);
+    int enabled = raStr.mid(2, 1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_attenuatorLevel = level;
+        m_attenuatorEnabled = (enabled == 1);
+        emit processingChanged();
+    }
 }
+
 void RadioState::handleRASub(const QString &cmd) {
-    ProcessingHandlers::handleRASub(m_processingState, *this, cmd);
+    // RA$ - Attenuator Sub
+    if (cmd.length() < 6)
+        return;
+    QString raStr = cmd.mid(3);
+    if (raStr.length() < 3)
+        return;
+
+    bool ok1, ok2;
+    int level = raStr.left(2).toInt(&ok1);
+    int enabled = raStr.mid(2, 1).toInt(&ok2);
+    if (ok1 && ok2) {
+        m_attenuatorLevelB = level;
+        m_attenuatorEnabledB = (enabled == 1);
+        emit processingChangedB();
+    }
 }
+
 void RadioState::handleGT(const QString &cmd) {
-    ProcessingHandlers::handleGT(m_processingState, *this, cmd);
+    // GT - AGC Speed Main: GTn where n=0(off)/1(slow)/2(fast)
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int gt = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        if (gt == 0)
+            m_agcSpeed = AGC_Off;
+        else if (gt == 1)
+            m_agcSpeed = AGC_Slow;
+        else if (gt == 2)
+            m_agcSpeed = AGC_Fast;
+        emit processingChanged();
+    }
 }
+
 void RadioState::handleGTSub(const QString &cmd) {
-    ProcessingHandlers::handleGTSub(m_processingState, *this, cmd);
+    // GT$ - AGC Speed Sub
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int gt = cmd.mid(3).toInt(&ok);
+    if (ok) {
+        if (gt == 0)
+            m_agcSpeedB = AGC_Off;
+        else if (gt == 1)
+            m_agcSpeedB = AGC_Slow;
+        else if (gt == 2)
+            m_agcSpeedB = AGC_Fast;
+        emit processingChangedB();
+    }
 }
+
+void RadioState::handleNA(const QString &cmd) {
+    // NA - Auto Notch Main
+    if (cmd.length() < 3)
+        return;
+    bool enabled = (cmd.at(2) == '1');
+    if (m_autoNotchEnabled != enabled) {
+        m_autoNotchEnabled = enabled;
+        emit notchChanged();
+    }
+}
+
+void RadioState::handleNASub(const QString &cmd) {
+    // NA$ - Auto Notch Sub
+    if (cmd.length() < 4)
+        return;
+    bool enabled = (cmd.at(3) == '1');
+    if (m_autoNotchEnabledB != enabled) {
+        m_autoNotchEnabledB = enabled;
+        emit notchBChanged();
+    }
+}
+
 void RadioState::handleNM(const QString &cmd) {
-    ProcessingHandlers::handleNM(m_processingState, *this, cmd);
+    // NM - Manual Notch Main: NMnnnnm or NMm
+    if (cmd.length() < 3)
+        return;
+    QString data = cmd.mid(2);
+    if (data.length() >= 5) {
+        bool ok;
+        int pitch = data.left(4).toInt(&ok);
+        bool enabled = (data.at(4) == '1');
+        bool changed = false;
+        if (ok && pitch >= 150 && pitch <= 5000 && m_manualNotchPitch != pitch) {
+            m_manualNotchPitch = pitch;
+            changed = true;
+        }
+        if (m_manualNotchEnabled != enabled) {
+            m_manualNotchEnabled = enabled;
+            changed = true;
+        }
+        if (changed) {
+            emit notchChanged();
+        }
+    } else if (data.length() >= 1) {
+        bool enabled = (data.at(0) == '1');
+        if (m_manualNotchEnabled != enabled) {
+            m_manualNotchEnabled = enabled;
+            emit notchChanged();
+        }
+    }
 }
+
 void RadioState::handleNMSub(const QString &cmd) {
-    ProcessingHandlers::handleNMSub(m_processingState, *this, cmd);
+    // NM$ - Manual Notch Sub
+    if (cmd.length() < 4)
+        return;
+    QString data = cmd.mid(3);
+    if (data.length() >= 5) {
+        bool ok;
+        int pitch = data.left(4).toInt(&ok);
+        bool enabled = (data.at(4) == '1');
+        bool changed = false;
+        if (ok && pitch >= 150 && pitch <= 5000 && m_manualNotchPitchB != pitch) {
+            m_manualNotchPitchB = pitch;
+            changed = true;
+        }
+        if (m_manualNotchEnabledB != enabled) {
+            m_manualNotchEnabledB = enabled;
+            changed = true;
+        }
+        if (changed) {
+            emit notchBChanged();
+        }
+    } else if (data.length() >= 1) {
+        bool enabled = (data.at(0) == '1');
+        if (m_manualNotchEnabledB != enabled) {
+            m_manualNotchEnabledB = enabled;
+            emit notchBChanged();
+        }
+    }
 }
 
 // =============================================================================
@@ -880,15 +1908,57 @@ void RadioState::handleNMSub(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleFX(const QString &cmd) {
-    AudioEffectsHandlers::handleFX(m_audioEffectsState, *this, cmd);
+    // FX - Audio Effects: FXn where n=0(off)/1(delay)/2(pitch-map)
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int fx = cmd.mid(2).toInt(&ok);
+    if (ok && fx >= 0 && fx <= 2 && fx != m_afxMode) {
+        m_afxMode = fx;
+        emit afxModeChanged(m_afxMode);
+    }
 }
 
 void RadioState::handleAP(const QString &cmd) {
-    AudioEffectsHandlers::handleAP(m_audioEffectsState, *this, cmd);
+    // AP - Audio Peak Filter Main: APmb where m=enabled, b=bandwidth
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int m = cmd.mid(2, 1).toInt(&ok);
+    if (!ok)
+        return;
+    int b = cmd.mid(3, 1).toInt(&ok);
+    if (!ok)
+        return;
+
+    bool enabled = (m == 1);
+    int bandwidth = qBound(0, b, 2);
+    if (enabled != m_apfEnabled || bandwidth != m_apfBandwidth) {
+        m_apfEnabled = enabled;
+        m_apfBandwidth = bandwidth;
+        emit apfChanged(m_apfEnabled, m_apfBandwidth);
+    }
 }
 
 void RadioState::handleAPSub(const QString &cmd) {
-    AudioEffectsHandlers::handleAPSub(m_audioEffectsState, *this, cmd);
+    // AP$ - Audio Peak Filter Sub
+    if (cmd.length() < 5)
+        return;
+    bool ok;
+    int m = cmd.mid(3, 1).toInt(&ok);
+    if (!ok)
+        return;
+    int b = cmd.mid(4, 1).toInt(&ok);
+    if (!ok)
+        return;
+
+    bool enabled = (m == 1);
+    int bandwidth = qBound(0, b, 2);
+    if (enabled != m_apfEnabledB || bandwidth != m_apfBandwidthB) {
+        m_apfEnabledB = enabled;
+        m_apfBandwidthB = bandwidth;
+        emit apfBChanged(m_apfEnabledB, m_apfBandwidthB);
+    }
 }
 
 // =============================================================================
@@ -896,7 +1966,86 @@ void RadioState::handleAPSub(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleLN(const QString &cmd) {
-    FrequencyVfoHandlers::handleLN(m_frequencyVfoState, *this, cmd);
+    // LN - VFO Link
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int ln = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        bool linked = (ln == 1);
+        if (linked != m_vfoLink) {
+            m_vfoLink = linked;
+            emit vfoLinkChanged(m_vfoLink);
+        }
+    }
+}
+
+void RadioState::handleLK(const QString &cmd) {
+    // LK - VFO A Lock
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int lk = cmd.mid(2).toInt(&ok);
+    if (ok) {
+        bool locked = (lk == 1);
+        if (locked != m_lockA) {
+            m_lockA = locked;
+            emit lockAChanged(m_lockA);
+        }
+    }
+}
+
+void RadioState::handleLKSub(const QString &cmd) {
+    // LK$ - VFO B Lock
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int lk = cmd.mid(3).toInt(&ok);
+    if (ok) {
+        bool locked = (lk == 1);
+        if (locked != m_lockB) {
+            m_lockB = locked;
+            emit lockBChanged(m_lockB);
+        }
+    }
+}
+
+void RadioState::handleVT(const QString &cmd) {
+    // VT - Tuning Step Main
+    if (cmd.length() <= 2)
+        return;
+    QString vtStr = cmd.mid(2);
+    if (vtStr.isEmpty())
+        return;
+
+    bool ok;
+    int step = vtStr.left(1).toInt(&ok);
+    if (ok) {
+        int newStep = qBound(0, step, 5);
+        if (newStep != m_tuningStep) {
+            m_tuningStep = newStep;
+            emit tuningStepChanged(m_tuningStep);
+        }
+    }
+}
+
+void RadioState::handleVTSub(const QString &cmd) {
+    // VT$ - Tuning Step Sub
+    if (cmd.length() <= 3)
+        return;
+    QString vtStr = cmd.mid(3);
+    if (vtStr.isEmpty())
+        return;
+
+    bool ok;
+    int step = vtStr.left(1).toInt(&ok);
+    if (ok) {
+        int newStep = qBound(0, step, 5);
+        if (newStep != m_tuningStepB) {
+            m_tuningStepB = newStep;
+            emit tuningStepBChanged(m_tuningStepB);
+        }
+    }
 }
 
 // =============================================================================
@@ -904,15 +2053,95 @@ void RadioState::handleLN(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleVX(const QString &cmd) {
-    AudioEffectsHandlers::handleVX(m_audioEffectsState, *this, cmd);
+    // VX - VOX Enable: VXmn where m=mode (C/V/D), n=0/1
+    if (cmd.length() < 4)
+        return;
+    QChar mode = cmd.at(2);
+    bool enabled = (cmd.at(3) == '1');
+    bool changed = false;
+    if (mode == 'C' && m_voxCW != enabled) {
+        m_voxCW = enabled;
+        changed = true;
+    } else if (mode == 'V' && m_voxVoice != enabled) {
+        m_voxVoice = enabled;
+        changed = true;
+    } else if (mode == 'D' && m_voxData != enabled) {
+        m_voxData = enabled;
+        changed = true;
+    }
+    if (changed) {
+        emit voxChanged(voxEnabled());
+    }
 }
 
 void RadioState::handleVG(const QString &cmd) {
-    AudioEffectsHandlers::handleVG(m_audioEffectsState, *this, cmd);
+    // VG - VOX Gain: VGmnnn where m=V(voice)/D(data), nnn=000-060
+    if (cmd.length() < 5)
+        return;
+    QChar modeChar = cmd.at(2);
+    bool ok;
+    int gain = cmd.mid(3, 3).toInt(&ok);
+    if (ok && gain >= 0 && gain <= 60) {
+        if (modeChar == 'V' && gain != m_voxGainVoice) {
+            m_voxGainVoice = gain;
+            emit voxGainChanged(0, gain);
+        } else if (modeChar == 'D' && gain != m_voxGainData) {
+            m_voxGainData = gain;
+            emit voxGainChanged(1, gain);
+        }
+    }
 }
 
 void RadioState::handleVI(const QString &cmd) {
-    AudioEffectsHandlers::handleVI(m_audioEffectsState, *this, cmd);
+    // VI - Anti-VOX: VInnn where nnn=000-060
+    if (cmd.length() < 5)
+        return;
+    bool ok;
+    int level = cmd.mid(2, 3).toInt(&ok);
+    if (ok && level >= 0 && level <= 60 && level != m_antiVox) {
+        m_antiVox = level;
+        emit antiVoxChanged(level);
+    }
+}
+
+void RadioState::handlePL(const QString &cmd, bool subRx) {
+    // PLnnm targets VFO A; PL$nnm targets VFO B/sub RX.
+    const int parameterStart = subRx ? 3 : 2;
+    if (cmd.length() < parameterStart + 3)
+        return;
+    bool ok = false;
+    const int index = cmd.mid(parameterStart, 2).toInt(&ok);
+    const bool enabled = cmd.at(parameterStart + 2) == '1';
+    if (!ok || index < 1 || index > 50)
+        return;
+    int &storedIndex = subRx ? m_plToneIndexB : m_plToneIndex;
+    bool &storedEnabled = subRx ? m_plToneEnabledB : m_plToneEnabled;
+    if (index != storedIndex || enabled != storedEnabled) {
+        storedIndex = index;
+        storedEnabled = enabled;
+        emit plToneChanged(subRx, index, enabled);
+    }
+}
+
+void RadioState::handleDW(const QString &cmd) {
+    if (cmd.length() < 4) return;
+    bool ok = false;
+    const int value = cmd.mid(2, 2).toInt(&ok);
+    if (!ok || value < 20 || value > 40 || value == m_dataTxBandwidth) return;
+    m_dataTxBandwidth = value;
+    emit dataTxBandwidthChanged(value);
+}
+
+void RadioState::handleRP(const QString &cmd) {
+    if (cmd.length() < 8) return;
+    const QChar mode = cmd.at(2);
+    bool ok = false;
+    const int offset = cmd.mid(3, 5).toInt(&ok);
+    if (!ok || !QString("S+-").contains(mode) || offset < 0 || offset > 99999) return;
+    if (mode == m_repeaterMode && offset == m_repeaterOffsetKhz) return;
+    m_repeaterMode = mode;
+    m_repeaterOffsetKhz = offset;
+    emit repeaterChanged(mode, offset);
 }
 
 // =============================================================================
@@ -920,23 +2149,139 @@ void RadioState::handleVI(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleLO(const QString &cmd) {
-    AudioEffectsHandlers::handleLO(m_audioEffectsState, *this, cmd);
+    // LO - Line Out: LOlllrrrm where lll=left, rrr=right, m=mode
+    if (cmd.length() < 9)
+        return;
+    bool okL, okR;
+    int left = cmd.mid(2, 3).toInt(&okL);
+    int right = cmd.mid(5, 3).toInt(&okR);
+    int mode = cmd.mid(8, 1).toInt();
+
+    if (okL && okR && left >= 0 && left <= 40 && right >= 0 && right <= 40) {
+        bool changed = false;
+        if (left != m_lineOutLeft) {
+            m_lineOutLeft = left;
+            changed = true;
+        }
+        if (right != m_lineOutRight) {
+            m_lineOutRight = right;
+            changed = true;
+        }
+        if ((mode == 1) != m_lineOutRightEqualsLeft) {
+            m_lineOutRightEqualsLeft = (mode == 1);
+            changed = true;
+        }
+        if (changed)
+            emit lineOutChanged();
+    }
 }
 
 void RadioState::handleLI(const QString &cmd) {
-    AudioEffectsHandlers::handleLI(m_audioEffectsState, *this, cmd);
+    // LI - Line In: LIuuullls where uuu=soundcard, lll=linein, s=source
+    if (cmd.length() < 9)
+        return;
+    bool okS, okL;
+    int soundCard = cmd.mid(2, 3).toInt(&okS);
+    int lineIn = cmd.mid(5, 3).toInt(&okL);
+    int source = cmd.mid(8, 1).toInt();
+
+    if (okS && okL && soundCard >= 0 && soundCard <= 250 && lineIn >= 0 && lineIn <= 250 &&
+        (source == 0 || source == 1)) {
+        bool changed = false;
+        if (soundCard != m_lineInSoundCard) {
+            m_lineInSoundCard = soundCard;
+            changed = true;
+        }
+        if (lineIn != m_lineInJack) {
+            m_lineInJack = lineIn;
+            changed = true;
+        }
+        if (source != m_lineInSource) {
+            m_lineInSource = source;
+            changed = true;
+        }
+        if (changed)
+            emit lineInChanged();
+    }
 }
 
 void RadioState::handleMI(const QString &cmd) {
-    AudioEffectsHandlers::handleMI(m_audioEffectsState, *this, cmd);
+    // MI - Mic Input Select
+    if (cmd.length() < 3)
+        return;
+    int input = cmd.mid(2, 1).toInt();
+    if (input >= 0 && input <= 4 && input != m_micInput) {
+        m_micInput = input;
+        emit micInputChanged(m_micInput);
+    }
 }
 
 void RadioState::handleMS(const QString &cmd) {
-    AudioEffectsHandlers::handleMS(m_audioEffectsState, *this, cmd);
+    // MS - Mic Setup: MSabcde
+    if (cmd.length() < 7)
+        return;
+    int frontPreamp = cmd.mid(2, 1).toInt();
+    int frontBias = cmd.mid(3, 1).toInt();
+    int frontButtons = cmd.mid(4, 1).toInt();
+    int rearPreamp = cmd.mid(5, 1).toInt();
+    int rearBias = cmd.mid(6, 1).toInt();
+
+    bool changed = false;
+    if (frontPreamp >= 0 && frontPreamp <= 2 && frontPreamp != m_micFrontPreamp) {
+        m_micFrontPreamp = frontPreamp;
+        changed = true;
+    }
+    if ((frontBias == 0 || frontBias == 1) && frontBias != m_micFrontBias) {
+        m_micFrontBias = frontBias;
+        changed = true;
+    }
+    if ((frontButtons == 0 || frontButtons == 1) && frontButtons != m_micFrontButtons) {
+        m_micFrontButtons = frontButtons;
+        changed = true;
+    }
+    if ((rearPreamp == 0 || rearPreamp == 1) && rearPreamp != m_micRearPreamp) {
+        m_micRearPreamp = rearPreamp;
+        changed = true;
+    }
+    if ((rearBias == 0 || rearBias == 1) && rearBias != m_micRearBias) {
+        m_micRearBias = rearBias;
+        changed = true;
+    }
+    if (changed)
+        emit micSetupChanged();
 }
 
 void RadioState::handleES(const QString &cmd) {
-    AudioEffectsHandlers::handleES(m_audioEffectsState, *this, cmd);
+    // ES - ESSB: ESnbb where n=0/1, bb=bandwidth
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int modeVal = cmd.mid(2, 1).toInt(&ok);
+    if (!ok || (modeVal != 0 && modeVal != 1))
+        return;
+
+    bool newEssb = (modeVal == 1);
+    int newBw = m_ssbTxBw;
+
+    if (cmd.length() >= 5) {
+        newBw = cmd.mid(3, 2).toInt(&ok);
+        if (!ok || newBw < 24 || newBw > 45) {
+            newBw = m_ssbTxBw;
+        }
+    }
+
+    bool changed = false;
+    if (newEssb != m_essbEnabled) {
+        m_essbEnabled = newEssb;
+        changed = true;
+    }
+    if (newBw >= 24 && newBw <= 45 && newBw != m_ssbTxBw) {
+        m_ssbTxBw = newBw;
+        changed = true;
+    }
+    if (changed) {
+        emit essbChanged(m_essbEnabled, m_ssbTxBw);
+    }
 }
 
 // =============================================================================
@@ -944,92 +2289,342 @@ void RadioState::handleES(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleSD(const QString &cmd) {
-    QskHandlers::handleSD(m_qskControlState, *this, cmd);
+    // SD - QSK/VOX Delay: SDxMzzz where x=QSK flag, M=mode, zzz=delay
+    if (cmd.length() < 7)
+        return;
+    QChar qskFlag = cmd.at(2);
+    QChar modeChar = cmd.at(3);
+    bool ok;
+    int delay = cmd.mid(4, 3).toInt(&ok);
+    if (!ok)
+        return;
+
+    // Update QSK enabled state (only meaningful for CW mode)
+    if (modeChar == 'C') {
+        bool qskOn = (qskFlag == '1');
+        if (qskOn != m_qskEnabled) {
+            m_qskEnabled = qskOn;
+            emit qskEnabledChanged(m_qskEnabled);
+        }
+    }
+
+    bool isCurrentMode = false;
+    if (modeChar == 'C') {
+        if (m_qskDelayCW != delay) {
+            m_qskDelayCW = delay;
+            isCurrentMode = (m_mode == CW || m_mode == CW_R);
+        }
+    } else if (modeChar == 'V') {
+        if (m_qskDelayVoice != delay) {
+            m_qskDelayVoice = delay;
+            isCurrentMode = (m_mode == LSB || m_mode == USB || m_mode == AM || m_mode == FM);
+        }
+    } else if (modeChar == 'D') {
+        if (m_qskDelayData != delay) {
+            m_qskDelayData = delay;
+            isCurrentMode = (m_mode == DATA || m_mode == DATA_R);
+        }
+    }
+    if (isCurrentMode) {
+        emit qskDelayChanged(delay);
+    }
+}
+
+void RadioState::handleSL(const QString &cmd) {
+    if (cmd.length() <= 2)
+        return;
+    bool ok = false;
+    const int tier = cmd.mid(2).toInt(&ok);
+    if (!ok || tier < 0 || tier > 7 || tier == m_streamingLatency)
+        return;
+    m_streamingLatency = tier;
+    emit streamingLatencyChanged(tier);
 }
 
 // =============================================================================
 // Individual Command Handlers - Control State
 // =============================================================================
 
-void RadioState::handleSL(const QString &cmd) {
-    DataControlHandlers::handleSL(m_dataControlState, *this, cmd);
-}
-
 void RadioState::handleSB(const QString &cmd) {
-    RxTxMeterHandlers::handleSB(m_rxTxMeterState, *this, cmd);
+    // SB - Sub Receiver: SB0=off, SB1=on, SB3=on (diversity)
+    if (cmd.length() <= 2)
+        return;
+    m_subReceiverEnabled = (cmd.mid(2) != "0");
+    emit subRxEnabledChanged(m_subReceiverEnabled);
 }
 
 void RadioState::handleDV(const QString &cmd) {
-    RxTxMeterHandlers::handleDV(m_rxTxMeterState, *this, cmd);
+    // DV - Diversity
+    if (cmd.length() <= 2)
+        return;
+    bool newState = (cmd.mid(2) == "1");
+    if (newState != m_diversityEnabled) {
+        m_diversityEnabled = newState;
+        emit diversityChanged(m_diversityEnabled);
+    }
 }
 
 void RadioState::handleTS(const QString &cmd) {
-    RxTxMeterHandlers::handleTS(m_rxTxMeterState, *this, cmd);
+    // TS - Test Mode
+    if (cmd.length() < 3)
+        return;
+    bool enabled = (cmd.mid(2, 1) == "1");
+    if (enabled != m_testMode) {
+        m_testMode = enabled;
+        emit testModeChanged(m_testMode);
+    }
 }
 
 void RadioState::handleBS(const QString &cmd) {
-    RxTxMeterHandlers::handleBS(m_rxTxMeterState, *this, cmd);
-}
-
-void RadioState::setBSetEnabled(bool enabled) {
-    RxTxMeterHandlers::setBSetEnabled(m_rxTxMeterState, *this, enabled);
+    // BS - B SET
+    if (cmd.length() < 3)
+        return;
+    bool enabled = (cmd.mid(2, 1) == "1");
+    if (enabled != m_bSetEnabled) {
+        m_bSetEnabled = enabled;
+        emit bSetChanged(m_bSetEnabled);
+    }
 }
 
 // =============================================================================
 // Individual Command Handlers - Antenna
 // =============================================================================
 
-// Antenna CAT handlers — delegate to AntennaHandlers namespace.
 void RadioState::handleAN(const QString &cmd) {
-    AntennaHandlers::handleAN(m_antennaState, *this, cmd);
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int an = cmd.mid(2).toInt(&ok);
+    if (ok && an >= 1 && an <= 6 && an != m_selectedAntenna) {
+        m_selectedAntenna = an;
+        emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
+    }
 }
+
+void RadioState::handleAR(const QString &cmd) {
+    if (cmd.startsWith("AR$"))
+        return;
+    if (cmd.length() <= 2)
+        return;
+    bool ok;
+    int ar = cmd.mid(2).toInt(&ok);
+    if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntenna) {
+        m_receiveAntenna = ar;
+        emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
+    }
+}
+
+void RadioState::handleARSub(const QString &cmd) {
+    if (cmd.length() <= 3)
+        return;
+    bool ok;
+    int ar = cmd.mid(3).toInt(&ok);
+    if (ok && ar >= 0 && ar <= 7 && ar != m_receiveAntennaSub) {
+        m_receiveAntennaSub = ar;
+        emit antennaChanged(m_selectedAntenna, m_receiveAntenna, m_receiveAntennaSub);
+    }
+}
+
 void RadioState::handleAT(const QString &cmd) {
-    AntennaHandlers::handleAT(m_antennaState, *this, cmd);
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int at = cmd.mid(2).toInt(&ok);
+    if (ok && at >= 0 && at <= 2 && at != m_atuMode) {
+        m_atuMode = at;
+        emit atuModeChanged(m_atuMode);
+    }
 }
+
 void RadioState::handleACN(const QString &cmd) {
-    AntennaHandlers::handleACN(m_antennaState, *this, cmd);
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int index = cmd.mid(3, 1).toInt(&ok);
+    if (ok && index >= 1 && index <= 7) {
+        QString name = cmd.mid(4).trimmed();
+        if (!name.isEmpty() && name != m_antennaNames.value(index)) {
+            m_antennaNames[index] = name;
+            emit antennaNameChanged(index, name);
+        }
+    }
 }
+
 void RadioState::handleACM(const QString &cmd) {
-    AntennaHandlers::handleACM(m_antennaState, *this, cmd);
+    if (cmd.length() < 11)
+        return;
+    bool displayAll = (cmd.at(3) == '1');
+    bool changed = (displayAll != m_mainRxDisplayAll);
+    m_mainRxDisplayAll = displayAll;
+    for (int i = 0; i < 7; i++) {
+        bool enabled = (cmd.at(4 + i) == '1');
+        if (enabled != m_mainRxAntMask[i]) {
+            m_mainRxAntMask[i] = enabled;
+            changed = true;
+        }
+    }
+    if (changed)
+        emit mainRxAntCfgChanged();
 }
+
 void RadioState::handleACS(const QString &cmd) {
-    AntennaHandlers::handleACS(m_antennaState, *this, cmd);
+    if (cmd.length() < 11)
+        return;
+    bool displayAll = (cmd.at(3) == '1');
+    bool changed = (displayAll != m_subRxDisplayAll);
+    m_subRxDisplayAll = displayAll;
+    for (int i = 0; i < 7; i++) {
+        bool enabled = (cmd.at(4 + i) == '1');
+        if (enabled != m_subRxAntMask[i]) {
+            m_subRxAntMask[i] = enabled;
+            changed = true;
+        }
+    }
+    if (changed)
+        emit subRxAntCfgChanged();
 }
+
 void RadioState::handleACT(const QString &cmd) {
-    AntennaHandlers::handleACT(m_antennaState, *this, cmd);
+    if (cmd.length() < 7)
+        return;
+    bool displayAll = (cmd.at(3) == '1');
+    bool changed = (displayAll != m_txDisplayAll);
+    m_txDisplayAll = displayAll;
+    for (int i = 0; i < 3; i++) {
+        bool enabled = (cmd.at(4 + i) == '1');
+        if (enabled != m_txAntMask[i]) {
+            m_txAntMask[i] = enabled;
+            changed = true;
+        }
+    }
+    if (changed)
+        emit txAntCfgChanged();
 }
 
 // =============================================================================
 // Individual Command Handlers - RIT/XIT
 // =============================================================================
 
-// RIT / XIT CAT handlers — delegate to FrequencyVfoHandlers namespace.
 void RadioState::handleRT(const QString &cmd) {
-    FrequencyVfoHandlers::handleRT(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
+        return;
+    bool enabled = (cmd.at(2) == '1');
+    if (enabled != m_ritEnabled) {
+        m_ritEnabled = enabled;
+        emit ritXitChanged(m_ritEnabled, m_xitEnabled, m_ritXitOffset);
+    }
 }
+
+void RadioState::handleRTSub(const QString &cmd) {
+    if (cmd.length() < 4 || (cmd.at(3) != '0' && cmd.at(3) != '1'))
+        return;
+    const bool enabled = (cmd.at(3) == '1');
+    if (enabled != m_ritEnabledB) {
+        m_ritEnabledB = enabled;
+        emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
+    }
+}
+
 void RadioState::handleXT(const QString &cmd) {
-    FrequencyVfoHandlers::handleXT(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() < 3 || (cmd.at(2) != '0' && cmd.at(2) != '1'))
+        return;
+    bool enabled = (cmd.at(2) == '1');
+    if (enabled != m_xitEnabled) {
+        m_xitEnabled = enabled;
+        emit ritXitChanged(m_ritEnabled, m_xitEnabled, m_ritXitOffset);
+    }
 }
+
 void RadioState::handleRO(const QString &cmd) {
-    FrequencyVfoHandlers::handleRO(m_frequencyVfoState, *this, cmd);
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int offset = cmd.mid(2).toInt(&ok);
+    if (ok && offset != m_ritXitOffset) {
+        m_ritXitOffset = offset;
+        emit ritXitChanged(m_ritEnabled, m_xitEnabled, m_ritXitOffset);
+    }
+}
+
+void RadioState::handleROSub(const QString &cmd) {
+    if (cmd.length() < 4)
+        return;
+    bool ok = false;
+    const int offset = cmd.mid(3).toInt(&ok);
+    if (ok && offset != m_ritXitOffsetB) {
+        m_ritXitOffsetB = offset;
+        emit ritXitBChanged(m_ritEnabledB, m_ritXitOffsetB);
+    }
 }
 
 // =============================================================================
 // Individual Command Handlers - Text Decode
 // =============================================================================
 
-// Text decode CAT handlers — delegate to TextDecodeHandlers namespace.
 void RadioState::handleTD(const QString &cmd) {
-    TextDecodeHandlers::handleTD(m_textDecodeState, *this, cmd);
+    if (cmd.length() < 5)
+        return;
+    int mode = cmd.mid(2, 1).toInt();
+    int threshold = cmd.mid(3, 1).toInt();
+    int lines = cmd.mid(4, 1).toInt();
+    bool changed = false;
+    if (mode != m_textDecodeMode) {
+        m_textDecodeMode = mode;
+        changed = true;
+    }
+    if (threshold != m_textDecodeThreshold) {
+        m_textDecodeThreshold = threshold;
+        changed = true;
+    }
+    if (lines != m_textDecodeLines && lines >= 1 && lines <= 9) {
+        m_textDecodeLines = lines;
+        changed = true;
+    }
+    if (changed)
+        emit textDecodeChanged();
 }
+
 void RadioState::handleTDSub(const QString &cmd) {
-    TextDecodeHandlers::handleTDSub(m_textDecodeState, *this, cmd);
+    if (cmd.length() < 6)
+        return;
+    int mode = cmd.mid(3, 1).toInt();
+    int threshold = cmd.mid(4, 1).toInt();
+    int lines = cmd.mid(5, 1).toInt();
+    bool changed = false;
+    if (mode != m_textDecodeModeB) {
+        m_textDecodeModeB = mode;
+        changed = true;
+    }
+    if (threshold != m_textDecodeThresholdB) {
+        m_textDecodeThresholdB = threshold;
+        changed = true;
+    }
+    if (lines != m_textDecodeLinesB && lines >= 1 && lines <= 9) {
+        m_textDecodeLinesB = lines;
+        changed = true;
+    }
+    if (changed)
+        emit textDecodeBChanged();
 }
+
 void RadioState::handleTB(const QString &cmd) {
-    TextDecodeHandlers::handleTB(*this, cmd);
+    if (cmd.length() < 5)
+        return;
+    QString text = cmd.mid(5);
+    if (text.endsWith(';'))
+        text.chop(1);
+    if (!text.isEmpty())
+        emit textBufferReceived(text, false);
 }
+
 void RadioState::handleTBSub(const QString &cmd) {
-    TextDecodeHandlers::handleTBSub(*this, cmd);
+    if (cmd.length() < 6)
+        return;
+    QString text = cmd.mid(6);
+    if (text.endsWith(';'))
+        text.chop(1);
+    if (!text.isEmpty())
+        emit textBufferReceived(text, true);
 }
 
 // =============================================================================
@@ -1037,16 +2632,35 @@ void RadioState::handleTBSub(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleDT(const QString &cmd) {
-    DataControlHandlers::handleDT(m_dataControlState, *this, cmd);
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int subMode = cmd.mid(2).toInt(&ok);
+    if (!ok || subMode < 0 || subMode > 3)
+        return;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_dataSubModeOptimisticTime < 500)
+        return;
+    if (subMode != m_dataSubMode) {
+        m_dataSubMode = subMode;
+        emit dataSubModeChanged(m_dataSubMode);
+    }
 }
+
 void RadioState::handleDTSub(const QString &cmd) {
-    DataControlHandlers::handleDTSub(m_dataControlState, *this, cmd);
-}
-void RadioState::handleDR(const QString &cmd) {
-    DataControlHandlers::handleDR(m_dataControlState, *this, cmd);
-}
-void RadioState::handleDRSub(const QString &cmd) {
-    DataControlHandlers::handleDRSub(m_dataControlState, *this, cmd);
+    if (cmd.length() < 4)
+        return;
+    bool ok;
+    int subMode = cmd.mid(3).toInt(&ok);
+    if (!ok || subMode < 0 || subMode > 3)
+        return;
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_dataSubModeBOptimisticTime < 500)
+        return;
+    if (subMode != m_dataSubModeB) {
+        m_dataSubModeB = subMode;
+        emit dataSubModeBChanged(m_dataSubModeB);
+    }
 }
 
 // =============================================================================
@@ -1054,11 +2668,37 @@ void RadioState::handleDRSub(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleRE(const QString &cmd) {
-    AudioEffectsHandlers::handleRE(m_audioEffectsState, *this, cmd);
+    if (cmd.length() < 26)
+        return;
+    bool changed = false;
+    for (int i = 0; i < 8; i++) {
+        bool ok;
+        int val = cmd.mid(2 + i * 3, 3).toInt(&ok);
+        if (ok && val >= -16 && val <= 16 && val != m_rxEqBands[i]) {
+            m_rxEqBands[i] = val;
+            changed = true;
+            emit rxEqBandChanged(i, val);
+        }
+    }
+    if (changed)
+        emit rxEqChanged();
 }
 
 void RadioState::handleTE(const QString &cmd) {
-    AudioEffectsHandlers::handleTE(m_audioEffectsState, *this, cmd);
+    if (cmd.length() < 26)
+        return;
+    bool changed = false;
+    for (int i = 0; i < 8; i++) {
+        bool ok;
+        int val = cmd.mid(2 + i * 3, 3).toInt(&ok);
+        if (ok && val >= -16 && val <= 16 && val != m_txEqBands[i]) {
+            m_txEqBands[i] = val;
+            changed = true;
+            emit txEqBandChanged(i, val);
+        }
+    }
+    if (changed)
+        emit txEqChanged();
 }
 
 // =============================================================================
@@ -1066,107 +2706,401 @@ void RadioState::handleTE(const QString &cmd) {
 // =============================================================================
 
 void RadioState::handleID(const QString &cmd) {
-    RxTxMeterHandlers::handleID(m_rxTxMeterState, *this, cmd);
+    if (cmd.length() > 2)
+        m_radioID = cmd.mid(2);
 }
 
 void RadioState::handleOM(const QString &cmd) {
-    RxTxMeterHandlers::handleOM(m_rxTxMeterState, *this, cmd);
+    // OM format: 12-char string where each position indicates an option
+    // Positions: 0=ATU, 1=PA, 2=XVTR, 3=SubRX, 4=HD, 5=Mini, 6=Linear, 7=KPA1500, 8=model marker
+    if (cmd.length() <= 2)
+        return;
+    m_optionModules = cmd.mid(2).trimmed();
+    if (m_optionModules.length() > 8) {
+        bool hasS = m_optionModules.length() > 3 && m_optionModules[3] == 'S';
+        bool hasH = m_optionModules.length() > 4 && m_optionModules[4] == 'H';
+        bool has4 = m_optionModules.length() > 8 && m_optionModules[8] == '4';
+
+        if (hasH && hasS && has4) {
+            m_radioModel = "K4HD";
+        } else if (hasS && has4) {
+            m_radioModel = "K4D";
+        } else if (has4) {
+            m_radioModel = "K4";
+        }
+    }
 }
 
 void RadioState::handleRV(const QString &cmd) {
-    RxTxMeterHandlers::handleRV(m_rxTxMeterState, *this, cmd);
+    // RV.COMPONENT-VERSION format (e.g., "RV.DDC0-00.65 (0:35)")
+    if (cmd.length() <= 3)
+        return;
+    QString versionData = cmd.mid(3);
+    int dashIndex = versionData.indexOf('-');
+    if (dashIndex > 0) {
+        QString component = versionData.left(dashIndex);
+        QString version = versionData.mid(dashIndex + 1);
+        m_firmwareVersions[component] = version;
+    }
 }
 
 void RadioState::handleSIFP(const QString &cmd) {
-    RxTxMeterHandlers::handleSIFP(m_rxTxMeterState, *this, cmd);
+    QString data = cmd.mid(4);
+    // Parse VS (voltage)
+    int vsIndex = data.indexOf("VS:");
+    if (vsIndex >= 0) {
+        int commaIndex = data.indexOf(',', vsIndex);
+        QString vsStr =
+            (commaIndex > vsIndex) ? data.mid(vsIndex + 3, commaIndex - vsIndex - 3) : data.mid(vsIndex + 3);
+        bool ok;
+        double voltage = vsStr.toDouble(&ok);
+        if (ok && voltage != m_supplyVoltage) {
+            m_supplyVoltage = voltage;
+            emit supplyVoltageChanged(m_supplyVoltage);
+        }
+    }
+    // Parse IS (current)
+    int isIndex = data.indexOf("IS:");
+    if (isIndex >= 0) {
+        int commaIndex = data.indexOf(',', isIndex);
+        QString isStr =
+            (commaIndex > isIndex) ? data.mid(isIndex + 3, commaIndex - isIndex - 3) : data.mid(isIndex + 3);
+        bool ok;
+        double current = isStr.toDouble(&ok);
+        if (ok && current != m_supplyCurrent) {
+            m_supplyCurrent = current;
+            emit supplyCurrentChanged(m_supplyCurrent);
+        }
+    }
 }
 
 void RadioState::handleSIRF(const QString &cmd) {
-    RxTxMeterHandlers::handleSIRF(m_rxTxMeterState, *this, cmd);
+    // Current QK4 uses the exact SIRF field names: PT is the final PA
+    // heatsink and LT is the lower-PA heatsink. Tokenizing avoids accidental
+    // partial matches if future firmware adds similarly named fields.
+    const QStringList tokens = cmd.mid(4).split(',', Qt::SkipEmptyParts);
+    for (const QString &token : tokens) {
+        const int colon = token.indexOf(':');
+        if (colon <= 0)
+            continue;
+        const QString key = token.left(colon);
+        bool ok = false;
+        const int value = token.mid(colon + 1).toInt(&ok);
+        if (!ok)
+            continue;
+        if (key == "PT" && value != m_paTemperatureC) {
+            m_paTemperatureC = value;
+            emit paTemperatureChanged(value);
+        } else if (key == "LT" && value != m_lpaTemperatureC) {
+            m_lpaTemperatureC = value;
+            emit lpaTemperatureChanged(value);
+        }
+    }
+}
+
+void RadioState::handleSIRC(const QString &cmd) {
+    Q_UNUSED(cmd)
 }
 
 void RadioState::handleMN(const QString &cmd) {
-    RxTxMeterHandlers::handleMN(m_rxTxMeterState, *this, cmd);
+    if (cmd.length() < 3)
+        return;
+    bool ok;
+    int bank = cmd.mid(2).toInt(&ok);
+    if (ok && bank >= 1 && bank <= 4 && bank != m_messageBank) {
+        m_messageBank = bank;
+        emit messageBankChanged(m_messageBank);
+    }
 }
 
 void RadioState::handleER(const QString &cmd) {
-    RxTxMeterHandlers::handleER(m_rxTxMeterState, *this, cmd);
-}
-
-// Mode-dispatched accessors/setters.
-// The K4 partitions several settings (monitor level, VOX, QSK/VOX delay) into
-// CW / DATA / Voice buckets; these helpers select the right bucket based on
-// the current operating mode so callers don't reimplement the switch.
-int RadioState::monitorLevelForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        return m_audioEffectsState.monitorLevelCW;
-    case DATA:
-    case DATA_R:
-        return m_audioEffectsState.monitorLevelData;
-    default:
-        return m_audioEffectsState.monitorLevelVoice;
+    int colonPos = cmd.indexOf(':');
+    if (colonPos > 2) {
+        bool ok;
+        int errorCode = cmd.mid(2, colonPos - 2).toInt(&ok);
+        if (ok)
+            emit errorNotificationReceived(errorCode, cmd.mid(colonPos + 1));
     }
 }
 
-int RadioState::monitorModeCode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        return 0;
-    case DATA:
-    case DATA_R:
-        return 1;
-    default:
-        return 2;
+// =============================================================================
+// Individual Command Handlers - Display (# prefix)
+// =============================================================================
+
+void RadioState::handleDisplayREF(const QString &cmd) {
+    if (cmd.startsWith("#REF$") || cmd.length() <= 4)
+        return;
+    bool ok;
+    int level = cmd.mid(4).toInt(&ok);
+    if (ok && level != m_refLevel) {
+        m_refLevel = level;
+        emit refLevelChanged(m_refLevel);
     }
 }
 
-bool RadioState::voxForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        return m_audioEffectsState.voxCW;
-    case DATA:
-    case DATA_R:
-        return m_audioEffectsState.voxData;
-    default:
-        return m_audioEffectsState.voxVoice;
+void RadioState::handleDisplayREFSub(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int level = cmd.mid(5).toInt(&ok);
+    if (ok && level != m_refLevelB) {
+        m_refLevelB = level;
+        emit refLevelBChanged(m_refLevelB);
     }
 }
 
-int RadioState::delayForCurrentMode() const {
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        return m_qskControlState.qskDelayCW;
-    case DATA:
-    case DATA_R:
-        return m_qskControlState.qskDelayData;
-    default:
-        return m_qskControlState.qskDelayVoice;
+void RadioState::handleDisplaySCL(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int scale = cmd.mid(4).toInt(&ok);
+    if (ok && scale >= 10 && scale <= 150 && scale != m_scale) {
+        m_scale = scale;
+        emit scaleChanged(m_scale);
     }
 }
 
-void RadioState::setDelayForCurrentMode(int delay) {
-    delay = qBound(0, delay, 255);
-    int *target = nullptr;
-    switch (mode()) {
-    case CW:
-    case CW_R:
-        target = &m_qskControlState.qskDelayCW;
-        break;
-    case DATA:
-    case DATA_R:
-        target = &m_qskControlState.qskDelayData;
-        break;
-    default:
-        target = &m_qskControlState.qskDelayVoice;
-        break;
+void RadioState::handleDisplaySPN(const QString &cmd) {
+    if (cmd.startsWith("#SPN$") || cmd.length() <= 4)
+        return;
+    bool ok;
+    int span = cmd.mid(4).toInt(&ok);
+    if (ok && span > 0 && span != m_spanHz) {
+        m_spanHz = span;
+        emit spanChanged(m_spanHz);
     }
-    if (*target != delay) {
-        *target = delay;
-        emit qskDelayChanged(delay);
+}
+
+void RadioState::handleDisplaySPNSub(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int span = cmd.mid(5).toInt(&ok);
+    if (ok && span > 0 && span != m_spanHzB) {
+        m_spanHzB = span;
+        emit spanBChanged(m_spanHzB);
+    }
+}
+
+void RadioState::handleDisplayMP(const QString &cmd) {
+    if (cmd.startsWith("#MP$") || cmd.length() <= 3)
+        return;
+    bool enabled = (cmd.at(3) == '1');
+    if (enabled != m_miniPanAEnabled) {
+        m_miniPanAEnabled = enabled;
+        emit miniPanAEnabledChanged(m_miniPanAEnabled);
+    }
+}
+
+void RadioState::handleDisplayMPSub(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool enabled = (cmd.at(4) == '1');
+    if (enabled != m_miniPanBEnabled) {
+        m_miniPanBEnabled = enabled;
+        emit miniPanBEnabledChanged(m_miniPanBEnabled);
+    }
+}
+
+void RadioState::handleDisplayDPM(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int mode = cmd.mid(4).toInt(&ok);
+    if (ok && mode >= 0 && mode <= 2 && mode != m_dualPanModeLcd) {
+        m_dualPanModeLcd = mode;
+        emit dualPanModeLcdChanged(m_dualPanModeLcd);
+    }
+}
+
+void RadioState::handleDisplayHDPM(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int mode = cmd.mid(5).toInt(&ok);
+    if (ok && mode >= 0 && mode <= 2 && mode != m_dualPanModeExt) {
+        m_dualPanModeExt = mode;
+        emit dualPanModeExtChanged(m_dualPanModeExt);
+    }
+}
+
+void RadioState::handleDisplayDSM(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int mode = cmd.mid(4).toInt(&ok);
+    if (ok && (mode == 0 || mode == 1) && mode != m_displayModeLcd) {
+        m_displayModeLcd = mode;
+        emit displayModeLcdChanged(m_displayModeLcd);
+    }
+}
+
+void RadioState::handleDisplayHDSM(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int mode = cmd.mid(5).toInt(&ok);
+    if (ok && (mode == 0 || mode == 1) && mode != m_displayModeExt) {
+        m_displayModeExt = mode;
+        emit displayModeExtChanged(m_displayModeExt);
+    }
+}
+
+void RadioState::handleDisplayFPS(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int fps = cmd.mid(4).toInt(&ok);
+    if (ok && fps >= 12 && fps <= 30 && fps != m_displayFps) {
+        m_displayFps = fps;
+        emit displayFpsChanged(m_displayFps);
+    }
+}
+
+void RadioState::handleDisplayWFC(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int color = cmd.mid(4).toInt(&ok);
+    if (ok && color >= 0 && color <= 4 && color != m_waterfallColor) {
+        m_waterfallColor = color;
+        emit waterfallColorChanged(m_waterfallColor);
+    }
+}
+
+void RadioState::handleDisplayWFH(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int height = cmd.mid(4).toInt(&ok);
+    if (ok && height >= 0 && height <= 100 && height != m_waterfallHeight) {
+        m_waterfallHeight = height;
+        emit waterfallHeightChanged(m_waterfallHeight);
+    }
+}
+
+void RadioState::handleDisplayHWFH(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int height = cmd.mid(5).toInt(&ok);
+    if (ok && height >= 0 && height <= 100 && height != m_waterfallHeightExt) {
+        m_waterfallHeightExt = height;
+        emit waterfallHeightExtChanged(m_waterfallHeightExt);
+    }
+}
+
+void RadioState::handleDisplayAVG(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int avg = cmd.mid(4).toInt(&ok);
+    if (ok && avg >= 1 && avg <= 20 && avg != m_averaging) {
+        m_averaging = avg;
+        emit averagingChanged(m_averaging);
+    }
+}
+
+void RadioState::handleDisplayPKM(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int pkm = cmd.mid(4).toInt(&ok);
+    if (ok && (pkm == 0 || pkm == 1) && pkm != m_peakMode) {
+        m_peakMode = pkm;
+        emit peakModeChanged(m_peakMode > 0);
+    }
+}
+
+void RadioState::handleDisplayFXT(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int fxt = cmd.mid(4).toInt(&ok);
+    if (ok && (fxt == 0 || fxt == 1) && fxt != m_fixedTune) {
+        m_fixedTune = fxt;
+        emit fixedTuneChanged(m_fixedTune, m_fixedTuneMode);
+    }
+}
+
+void RadioState::handleDisplayFXA(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int fxa = cmd.mid(4).toInt(&ok);
+    if (ok && fxa >= 0 && fxa <= 4 && fxa != m_fixedTuneMode) {
+        m_fixedTuneMode = fxa;
+        emit fixedTuneChanged(m_fixedTune, m_fixedTuneMode);
+    }
+}
+
+void RadioState::handleDisplayFRZ(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int frz = cmd.mid(4).toInt(&ok);
+    if (ok && (frz == 0 || frz == 1) && frz != m_freeze) {
+        m_freeze = frz;
+        emit freezeChanged(m_freeze > 0);
+    }
+}
+
+void RadioState::handleDisplayVFA(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int vfa = cmd.mid(4).toInt(&ok);
+    if (ok && vfa >= 0 && vfa <= 3 && vfa != m_vfoACursor) {
+        m_vfoACursor = vfa;
+        emit vfoACursorChanged(m_vfoACursor);
+    }
+}
+
+void RadioState::handleDisplayVFB(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int vfb = cmd.mid(4).toInt(&ok);
+    if (ok && vfb >= 0 && vfb <= 3 && vfb != m_vfoBCursor) {
+        m_vfoBCursor = vfb;
+        emit vfoBCursorChanged(m_vfoBCursor);
+    }
+}
+
+void RadioState::handleDisplayAR(const QString &cmd) {
+    // #ARaadd+oom: the final mode field is numeric (0=manual, 1=auto).
+    // Accept the older A/M interpretation too for compatibility with any
+    // firmware that reports the symbolic form.
+    if (cmd.length() < 4)
+        return;
+    QChar mode = cmd.at(cmd.length() - 1);
+    if (mode != '0' && mode != '1' && mode != 'A' && mode != 'M')
+        return;
+    int newValue = (mode == '1' || mode == 'A') ? 1 : 0;
+    if (newValue != m_autoRefLevel) {
+        m_autoRefLevel = newValue;
+        emit autoRefLevelChanged(m_autoRefLevel > 0);
+    }
+}
+
+void RadioState::handleDisplayNB(const QString &cmd) {
+    if (cmd.length() <= 4)
+        return;
+    bool ok;
+    int mode = cmd.mid(4).toInt(&ok);
+    if (ok && mode >= 0 && mode <= 2 && mode != m_ddcNbMode) {
+        m_ddcNbMode = mode;
+        emit ddcNbModeChanged(m_ddcNbMode);
+    }
+}
+
+void RadioState::handleDisplayNBL(const QString &cmd) {
+    if (cmd.length() <= 5)
+        return;
+    bool ok;
+    int level = cmd.mid(5).toInt(&ok);
+    if (ok && level >= 0 && level <= 14 && level != m_ddcNbLevel) {
+        m_ddcNbLevel = level;
+        emit ddcNbLevelChanged(m_ddcNbLevel);
     }
 }

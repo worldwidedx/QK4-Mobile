@@ -1,9 +1,18 @@
-# Proprietary/Internal Documents - NEVER COMMIT
+# Credentials and local configuration
+.env
+.env.*
+*.jks
+*.keystore
+android/local.properties
+android/.gradle/
+local.properties
+
+# Proprietary/internal documents
 *.pdf
 CLAUDE.md
 **/CLAUDE.md
 
-# AI tools / MCP / Claude Code
+# AI tool state that is not part of the repository skill
 .claude/
 .mcp.json
 tools/
@@ -11,22 +20,23 @@ tools/
 HaliKey_QK4_Integration_Notes.md
 docs/generated/
 
-# Phase 0.5 golden CAT-trace fixture — local only, contains recorded K4
-# session data. The replay test harness skips gracefully if absent.
-tests/golden/
-capture_k4_golden.py
-
 # Python cache
 __pycache__/
 *.pyc
 
 # Build artifacts
 /build/
-/build-san/
-/build-asan/
+/build-host/
+/build-tests/
+/build-tests-*/
+/build-android-arm64/
+/build-android-arm64-release/
+/build-android-*/
+*.apk
+*.idsig
+*.aab
 *.o
 *.d
-*.a
 *.so
 *.dylib
 
@@ -34,7 +44,6 @@ __pycache__/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-compile_commands.json
 Makefile
 
 # Qt Creator / IDE
@@ -45,10 +54,13 @@ Makefile
 # IDE
 .vscode/
 .idea/
-.cache/
-CMakePresets.json
 *.swp
 *~
+
+# Debug captures created during phone testing
+/*.png
+/peak-ui.xml
+/ui-dump*.xml
 
 # macOS
 .DS_Store
@@ -58,7 +70,6 @@ CMakePresets.json
 moc_*.cpp
 qrc_*.cpp
 ui_*.h
-
 
 # Windows
 *.exe

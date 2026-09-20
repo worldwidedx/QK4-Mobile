@@ -1,29 +1,11 @@
 #include "kpa1500client.h"
-#include <QLoggingCategory>
-
-Q_LOGGING_CATEGORY(netKpa, "net.kpa")
-
-// KPA1500 band number to label (same numbering as K4 BN command)
-static QString bandNumberToLabel(const QString &bn) {
-    static const QMap<int, QString> map = {
-        {0, "160m"}, {1, "80m"}, {2, "60m"}, {3, "40m"}, {4, "30m"}, {5, "20m"},
-        {6, "17m"},  {7, "15m"}, {8, "12m"}, {9, "10m"}, {10, "6m"},
-    };
-    bool ok;
-    int num = bn.toInt(&ok);
-    if (ok && map.contains(num))
-        return map.value(num);
-    return bn; // fallback to raw value
-}
+#include <QDebug>
 
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
-// Note: ^FS is Fan Speed (not fault status), removed from polling.
-// ^VM1 (PA voltage) and ^VM2 (PA current) were removed — nothing in QK4
-// displays them today; if/when a UI consumer is added, restore them here
-// alongside the parser branches and re-introduce paVoltage/paCurrent state.
+// Note: ^FS is Fan Speed (not fault status), removed from polling
 const QString KPA1500Client::POLL_COMMANDS =
-    "^BN;^WS;^TM;^RVM;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
+    "^BN;^WS;^TM;^VI;^FC;^OS;^FL;^AI;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
 KPA1500Client::KPA1500Client(QObject *parent)
     : QObject(parent), m_socket(new QTcpSocket(this)), m_pollTimer(new QTimer(this)), m_port(1500),
@@ -107,35 +89,21 @@ void KPA1500Client::setState(ConnectionState state) {
 }
 
 void KPA1500Client::onSocketConnected() {
-    // WHY: control commands are small writes; without TCP_NODELAY they can be coalesced into
-    // 40 ms Nagle/delayed-ACK windows. KeepAlive handles NAT timeout on long-running sessions.
-    m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
-    m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
-    qCDebug(netKpa) << "KPA1500Client: Connected to" << m_host << ":" << m_port;
+    qDebug() << "KPA1500Client: Connected to" << m_host << ":" << m_port;
     setState(Connected);
     emit connected();
 }
 
 void KPA1500Client::onSocketDisconnected() {
-    qCDebug(netKpa) << "KPA1500Client: Disconnected";
+    qDebug() << "KPA1500Client: Disconnected";
     stopPolling();
     setState(Disconnected);
     emit disconnected();
 }
 
 void KPA1500Client::onReadyRead() {
-    // WHY: cap the receive buffer per CONVENTIONS.md Rule 5. KPA1500 responses are short and
-    // always ';'-terminated; 64KB is generous headroom for split reads. A malformed response
-    // that never terminates would otherwise grow this unbounded.
-    static constexpr int kMaxBufferSize = 64 * 1024;
     QByteArray data = m_socket->readAll();
     m_receiveBuffer.append(QString::fromLatin1(data));
-    if (m_receiveBuffer.size() > kMaxBufferSize) {
-        qCWarning(netKpa) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
-        m_receiveBuffer.clear();
-        disconnectFromHost();
-        return;
-    }
 
     // Parse complete responses (terminated by ';')
     parseResponse(m_receiveBuffer);
@@ -144,7 +112,7 @@ void KPA1500Client::onReadyRead() {
 void KPA1500Client::onSocketError(QAbstractSocket::SocketError error) {
     Q_UNUSED(error)
     QString errorString = m_socket->errorString();
-    qCWarning(netKpa) << "KPA1500Client: Socket error:" << errorString;
+    qWarning() << "KPA1500Client: Socket error:" << errorString;
     emit errorOccurred(errorString);
 
     stopPolling();
@@ -186,19 +154,21 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
 
     // Parse based on command prefix
-    // ^BN - Band Number (convert to label e.g. "20m")
+    // ^BN - Band Name
     if (cmd.startsWith("BN")) {
-        QString band = bandNumberToLabel(cmd.mid(2));
-        // Band name is polled by Kpa1500Page via bandName() getter — no signal needed.
-        m_bandName = band;
+        QString band = cmd.mid(2);
+        if (m_bandName != band) {
+            m_bandName = band;
+            emit bandChanged(band);
+        }
     }
     // ^SN - Serial Number
     else if (cmd.startsWith("SN")) {
         m_serialNumber = cmd.mid(2);
     }
-    // ^RVM - Firmware Revision (format: ^RVMnn.nn;)
-    else if (cmd.startsWith("RVM")) {
-        m_firmwareVersion = cmd.mid(3);
+    // ^VI - Firmware Version Info
+    else if (cmd.startsWith("VI")) {
+        m_firmwareVersion = cmd.mid(2);
     }
     // ^OS - Operate/Standby Mode (0=Standby, 1=Operate)
     else if (cmd.startsWith("OS")) {
@@ -275,6 +245,32 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
             emit powerChanged(m_forwardPower, m_reflectedPower, m_drivePower);
         }
     }
+    // ^VM1 - PA Voltage
+    else if (cmd.startsWith("VM1")) {
+        bool ok;
+        double voltage = cmd.mid(3).toDouble(&ok);
+        if (ok) {
+            // VM1 reports in millivolts, convert to volts
+            voltage = voltage / 1000.0;
+            if (m_paVoltage != voltage) {
+                m_paVoltage = voltage;
+                emit paVoltageChanged(voltage);
+            }
+        }
+    }
+    // ^VM2 - PA Current
+    else if (cmd.startsWith("VM2")) {
+        bool ok;
+        double current = cmd.mid(3).toDouble(&ok);
+        if (ok) {
+            // VM2 reports in milliamps, convert to amps
+            current = current / 1000.0;
+            if (m_paCurrent != current) {
+                m_paCurrent = current;
+                emit paCurrentChanged(current);
+            }
+        }
+    }
     // ^AN - Antenna Select (returns ^ANx; where x=1-9, or ^ANxx; for 10-32)
     else if (cmd.startsWith("AN")) {
         bool ok;
@@ -284,23 +280,13 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
             emit antennaChanged(antenna);
         }
     }
-    // ^AI - ATU Inline relay state (^AI1; = relays inline, ^AI0; = relays bypassed)
+    // ^AI - ATU Inline (returns ^AI1; for inline, ^AI0; for bypassed)
     else if (cmd.startsWith("AI")) {
         if (cmd.length() >= 3) {
             bool inline_ = (cmd[2] == '1');
             if (m_atuInline != inline_) {
                 m_atuInline = inline_;
                 emit atuInlineChanged(inline_);
-            }
-        }
-    }
-    // ^AM - ATU Mode (^AMI; = inline/enabled, ^AMB; = bypassed/disabled)
-    else if (cmd.startsWith("AM")) {
-        if (cmd.length() >= 3) {
-            bool modeInline = (cmd[2] == 'I');
-            if (m_atuModeInline != modeInline) {
-                m_atuModeInline = modeInline;
-                emit atuModeChanged(modeInline);
             }
         }
     }

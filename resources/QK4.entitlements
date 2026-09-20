@@ -14,7 +14,7 @@
     <key>com.apple.security.device.audio-output</key>
     <true/>
 
-    <!-- USB access for KPOD (HID) and KPOD+ (vendor-specific) -->
+    <!-- USB HID access for KPOD -->
     <key>com.apple.security.device.usb</key>
     <true/>
 

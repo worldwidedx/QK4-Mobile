@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Qt's default activity theme adds an Android action bar.  On a phone
+         in landscape that consumes the exact space the operating dock needs. -->
+    <style name="K4PhoneTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:statusBarColor">#111111</item>
+        <item name="android:navigationBarColor">#111111</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

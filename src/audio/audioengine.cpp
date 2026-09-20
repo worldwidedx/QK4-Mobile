@@ -1,29 +1,156 @@
 #include "audioengine.h"
-#include "audio/audiologging.h"
-#include "audio/opusdecoder.h" // NORMALIZE_16BIT constant
-#include "audio/opusencoder.h"
-#include "network/protocol.h" // buildAudioPacket
-#include "utils/radioutils.h" // RX jitter-buffer watermarks
+#include "opusencoder.h"
+#include "../network/protocol.h"
 #include <QMediaDevices>
 #include <QAudioDevice>
+#ifdef Q_OS_ANDROID
+#include <QtMultimedia/private/qaudiodevice_p.h>
+#endif
 #include <QDebug>
+#include <algorithm>
 #include <cmath>
+#ifdef Q_OS_ANDROID
+#include <QJniObject>
+#include <QJniEnvironment>
+#include <qcoreapplication_platform.h>
+#endif
+
+#ifdef Q_OS_ANDROID
+namespace {
+void setAndroidTransmitRoute(bool active) {
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid())
+        return;
+
+    QJniObject::callStaticMethod<void>(
+            "com/w9wdx/qk4phone/AndroidAudioRouter", "setTransmitActive",
+            "(Landroid/content/Context;Z)V", context.object(), active);
+}
+
+int androidWiredOutputDeviceId() {
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid())
+        return -1;
+
+    return QJniObject::callStaticMethod<jint>(
+            "com/w9wdx/qk4phone/AndroidAudioRouter", "getPreferredWiredOutputDeviceId",
+            "(Landroid/content/Context;)I", context.object());
+}
+
+int androidOutputSampleRate(int deviceId) {
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid() || deviceId < 0)
+        return 0;
+
+    return QJniObject::callStaticMethod<jint>(
+            "com/w9wdx/qk4phone/AndroidAudioRouter", "getOutputSampleRate",
+            "(Landroid/content/Context;I)I", context.object(), deviceId);
+}
+
+bool startAndroidPlayback()
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    return context.isValid() && QJniObject::callStaticMethod<jboolean>(
+            "com/w9wdx/qk4phone/AndroidAudioPlayback", "start",
+            "(Landroid/content/Context;II)Z", context.object(), 48000, 2);
+}
+
+void stopAndroidPlayback()
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (context.isValid())
+        QJniObject::callStaticMethod<void>("com/w9wdx/qk4phone/AndroidAudioPlayback", "stop",
+                                            "(Landroid/content/Context;)V", context.object());
+}
+
+qint64 writeAndroidPlayback(const QByteArray &data)
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid() || data.isEmpty())
+        return -1;
+    QJniEnvironment env;
+    jbyteArray bytes = env->NewByteArray(data.size());
+    if (!bytes || env.checkAndClearExceptions())
+        return -1;
+    env->SetByteArrayRegion(bytes, 0, data.size(),
+                            reinterpret_cast<const jbyte *>(data.constData()));
+    const jint result = QJniObject::callStaticMethod<jint>(
+            "com/w9wdx/qk4phone/AndroidAudioPlayback", "write",
+            "(Landroid/content/Context;[BI)I", context.object(), bytes, data.size());
+    env->DeleteLocalRef(bytes);
+    return result;
+}
+
+bool startAndroidUsbMicrophone()
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    return context.isValid() && QJniObject::callStaticMethod<jboolean>(
+            "com/w9wdx/qk4phone/AndroidUsbMicrophone", "start",
+            "(Landroid/content/Context;)Z", context.object());
+}
+
+void stopAndroidUsbMicrophone()
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (context.isValid())
+        QJniObject::callStaticMethod<void>(
+                "com/w9wdx/qk4phone/AndroidUsbMicrophone", "stop",
+                "(Landroid/content/Context;)V", context.object());
+}
+
+QByteArray readAndroidUsbMicrophone(int maximumBytes)
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid() || maximumBytes <= 0)
+        return {};
+
+    QJniEnvironment env;
+    jbyteArray bytes = env->NewByteArray(maximumBytes);
+    if (!bytes || env.checkAndClearExceptions())
+        return {};
+
+    const jint read = QJniObject::callStaticMethod<jint>(
+            "com/w9wdx/qk4phone/AndroidUsbMicrophone", "read",
+            "(Landroid/content/Context;[BI)I", context.object(), bytes, maximumBytes);
+
+    QByteArray pcm16;
+    if (read > 0) {
+        pcm16.resize(read);
+        env->GetByteArrayRegion(bytes, 0, read,
+                                reinterpret_cast<jbyte *>(pcm16.data()));
+    }
+    env->DeleteLocalRef(bytes);
+    return pcm16;
+}
+
+QAudioDevice androidExplicitOutputDevice(int deviceId, const QAudioFormat &format) {
+    QAudioDevicePrivate::AudioDeviceFormat deviceFormat;
+    deviceFormat.preferredFormat = format;
+    deviceFormat.minimumSampleRate = 8000;
+    deviceFormat.maximumSampleRate = 192000;
+    deviceFormat.minimumChannelCount = 1;
+    deviceFormat.maximumChannelCount = 8;
+    deviceFormat.supportedSampleFormats = qAllSupportedSampleFormats();
+    deviceFormat.channelConfiguration = QAudioFormat::ChannelConfigUnknown;
+
+    return QAudioDevicePrivate::createQAudioDevice(std::make_unique<QAudioDevicePrivate>(
+            QByteArray::number(deviceId), QAudioDevice::Output,
+            QStringLiteral("Android wired/USB media output"), false, std::move(deviceFormat)));
+}
+} // namespace
+#endif
 
 AudioEngine::AudioEngine(QObject *parent)
     : QObject(parent), m_audioSink(nullptr), m_audioSinkDevice(nullptr), m_audioSource(nullptr),
       m_audioSourceDevice(nullptr), m_opusEncoder(new OpusEncoder(nullptr)), m_micPollTimer(nullptr) {
 
-    // Opus encoder for TX. 12kHz mono — K4 expects mono frames (mono → stereo
-    // duplication for EM0/EM1 happens inline below; Opus encoder handles its
-    // own mono-to-stereo encoding internally for EM2/EM3). Initialized here so
-    // the audio thread (where encode runs) has it ready before the first
-    // setPttActive(true) call.
     m_opusEncoder->initialize(12000, 1);
 
     // Output format: K4 uses 12kHz stereo Float32 PCM (L=Main RX, R=Sub RX)
     m_outputFormat.setSampleRate(12000);
     m_outputFormat.setChannelCount(2);
     m_outputFormat.setSampleFormat(QAudioFormat::Float);
+    m_sinkFormat = m_outputFormat;
 
     // Input format: Use native 48kHz for microphone capture (most hardware supports this)
     // We'll resample to 12kHz before encoding for K4 TX
@@ -36,33 +163,37 @@ AudioEngine::AudioEngine(QObject *parent)
     m_micPollTimer->setInterval(10); // Poll every 10ms for low latency
     connect(m_micPollTimer, &QTimer::timeout, this, &AudioEngine::onMicDataReady);
 
+    m_sstvPacerTimer = new QTimer(this);
+    m_sstvPacerTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_sstvPacerTimer, &QTimer::timeout, this, &AudioEngine::onSstvPacer);
+
     m_feedTimer = new QTimer(this);
     m_feedTimer->setInterval(FEED_INTERVAL_MS);
     connect(m_feedTimer, &QTimer::timeout, this, &AudioEngine::feedAudioDevice);
 
-    // Pre-size hot-path buffers so the per-poll / per-frame paths reuse capacity.
-    // m_micBuffer holds 12kHz S16LE samples queued up to one max frame (SL7 = 1440
-    // samples = 2880 bytes); 2× that gives headroom for partial frames + the next
-    // poll's data before we compact. m_resampleBuf12k holds 48kHz→12kHz output
-    // for one poll cycle (INPUT_BUFFER_SIZE = 19200 bytes of 48kHz Float32 → 4800
-    // bytes of 12kHz Float32). m_feedBatch is dimensioned for ~4 packets per cycle.
-    m_micBuffer.reserve(2 * 1440 * sizeof(qint16));
+    // Android may switch a Bluetooth endpoint between media playback and
+    // headset capture without changing Qt's device identifier.  Coalesce
+    // route notifications and rebuild only our local sink after it settles.
+    m_routeRefreshTimer = new QTimer(this);
+    m_routeRefreshTimer->setSingleShot(true);
+    connect(m_routeRefreshTimer, &QTimer::timeout, this, &AudioEngine::refreshSystemAudioRoute);
+
+#ifdef Q_OS_ANDROID
+    // QMediaDevices omits several USB-C audio classes on Android. Poll the
+    // platform device list at a low rate so attach/remove is detected even
+    // when Qt never emits audioOutputsChanged(). The actual rebuild remains
+    // debounced by m_routeRefreshTimer.
+    m_androidRoutePollTimer = new QTimer(this);
+    m_androidRoutePollTimer->setInterval(300);
+    connect(m_androidRoutePollTimer, &QTimer::timeout,
+            this, &AudioEngine::pollAndroidOutputRoute);
+#endif
+
+    // Size the microphone hot-path buffers before the first PTT.
+    m_micBuffer.reserve(2 * 1440 * static_cast<int>(sizeof(qint16)));
     m_resampleBuf12k.reserve(INPUT_BUFFER_SIZE / 4);
     m_feedBatch.reserve(4);
 
-    // WHY setupAudioInput() is deferred until the first openMic() call:
-    // Qt's mic-permission callback on macOS runs on the main-thread runloop. During connection
-    // startup, AudioController calls into the AudioEngine from the IO thread via
-    // BlockingQueuedConnection; if we opened the input here we would block the IO thread waiting
-    // for the main thread to deliver the permission result, while the main thread would be
-    // blocked on the `RDY;` round-trip waiting on the same IO thread. Deferring to the first PTT
-    // press breaks the cycle: by that point the connection is fully up and the main thread is
-    // free to process the permission dialog. Once opened, the mic stays open for the remainder
-    // of the connection so subsequent PTT presses are instant — see openMic() for details.
-
-    // Monitor OS device/default changes so a "System Default" selection follows the OS
-    // live. Parented to this engine, so moveToThread() carries it to the audio thread and
-    // its signals arrive there — the same thread that owns the sink/source.
     m_mediaDevices = new QMediaDevices(this);
     connect(m_mediaDevices, &QMediaDevices::audioInputsChanged, this, &AudioEngine::onSystemDefaultInputChanged);
     connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this, &AudioEngine::onSystemDefaultOutputChanged);
@@ -75,14 +206,17 @@ AudioEngine::~AudioEngine() {
 }
 
 bool AudioEngine::start() {
-    bool outputOk = setupAudioOutput(); // also flushes the queue + re-arms prebuffering
+    bool outputOk = setupAudioOutput();
 
     if (outputOk) {
         m_feedTimer->start();
+#ifdef Q_OS_ANDROID
+        m_androidRoutePollTimer->start();
+#endif
     }
 
-    // Audio input setup deferred to the first openMic() call (first PTT press) to avoid
-    // triggering the macOS mic permission dialog during connection — see ctor comment.
+    // Keep input setup lazy. Opening it with the first PTT prevents Android's
+    // audio backend from being torn down and renegotiated on every hold.
 
     return outputOk;
 }
@@ -92,6 +226,13 @@ void AudioEngine::stop() {
     if (m_feedTimer) {
         m_feedTimer->stop();
     }
+#ifdef Q_OS_ANDROID
+    if (m_androidRoutePollTimer)
+        m_androidRoutePollTimer->stop();
+    if (m_routeRefreshTimer)
+        m_routeRefreshTimer->stop();
+    m_pendingAndroidWiredOutputId = -1;
+#endif
     {
         QMutexLocker lock(&m_queueMutex);
         m_audioQueue.clear();
@@ -99,11 +240,12 @@ void AudioEngine::stop() {
         m_prebuffering = true;
     }
     m_writeBuffer.clear();
+    resetOutputResampler();
 
-    // Stop mic polling timer
-    if (m_micPollTimer) {
-        m_micPollTimer->stop();
-    }
+    m_pttActive.store(false, std::memory_order_release);
+    stopSstvTransmit();
+    m_txSequence = 0;
+    closeMic();
 
     if (m_audioSink) {
         m_audioSink->stop();
@@ -111,9 +253,16 @@ void AudioEngine::stop() {
         m_audioSink = nullptr;
         m_audioSinkDevice = nullptr;
     }
-
+#ifdef Q_OS_ANDROID
+    if (m_androidUsbMicrophoneActive) {
+        stopAndroidUsbMicrophone();
+        m_androidUsbMicrophoneActive = false;
+    }
+    if (m_androidNativePlaybackActive)
+        stopAndroidPlayback();
+    m_androidNativePlaybackActive = false;
+#endif
     if (m_audioSource) {
-        m_audioSource->stop();
         delete m_audioSource;
         m_audioSource = nullptr;
         m_audioSourceDevice = nullptr;
@@ -123,9 +272,40 @@ void AudioEngine::stop() {
     m_micReadOffset = 0;
 }
 
-bool AudioEngine::setupAudioOutput() {
+bool AudioEngine::setupAudioOutput(bool resetPlayback) {
+#ifdef Q_OS_ANDROID
+    // Qt 6.11's AAudio sink tears itself down when a USB endpoint is attached
+    // during receive. Use Android's media AudioTrack only for Android output;
+    // K4 decode, mix, resample, TCP/TLS, and TX input remain unchanged.
+    m_sinkSampleRate = 48000;
+    if (!startAndroidPlayback()) {
+        qWarning() << "AudioEngine: Failed to start Android audio playback";
+        return false;
+    }
+    m_androidNativePlaybackActive = true;
+    if (resetPlayback)
+        flushQueue();
+    if (!resetPlayback)
+        feedAudioDevice();
+    return true;
+#endif
     // Find the output device - use selected device or fall back to default
     QAudioDevice outputDevice;
+
+#ifdef Q_OS_ANDROID
+    // Qt's Android device enumerator omits USB_HEADSET and some USB_DEVICE
+    // types. Query Android directly and feed its id to the AAudio stream so a
+    // USB-C headset is used from app launch as well as when hot-plugged.
+    const int wiredOutputId = androidWiredOutputDeviceId();
+    m_activeAndroidWiredOutputId = wiredOutputId;
+    m_pendingAndroidWiredOutputId = wiredOutputId;
+    if (wiredOutputId >= 0) {
+        outputDevice = androidExplicitOutputDevice(wiredOutputId, m_outputFormat);
+        const int nativeRate = androidOutputSampleRate(wiredOutputId);
+        if (nativeRate >= 8000)
+            m_sinkSampleRate = nativeRate;
+    }
+#endif
 
     if (!m_selectedOutputDeviceId.isEmpty()) {
         // Try to find the selected device
@@ -140,39 +320,76 @@ bool AudioEngine::setupAudioOutput() {
     // Fall back to default if selected device not found
     if (outputDevice.isNull()) {
         outputDevice = QMediaDevices::defaultAudioOutput();
+        m_sinkSampleRate = m_outputFormat.sampleRate();
     }
 
     if (outputDevice.isNull()) {
-        qCWarning(qk4Audio) << "AudioEngine: No audio output device available";
+        qWarning() << "AudioEngine: No audio output device available";
         return false;
     }
 
-    if (!outputDevice.isFormatSupported(m_outputFormat)) {
-        qCWarning(qk4Audio) << "AudioEngine: 12kHz output format not supported by device";
+    m_sinkFormat = m_outputFormat;
+    m_sinkFormat.setSampleRate(m_sinkSampleRate);
+    if (!outputDevice.isFormatSupported(m_sinkFormat)) {
+        qWarning() << "AudioEngine: output format not supported by device" << m_sinkFormat;
         return false;
     }
 
     m_activeOutputDeviceId = outputDevice.id();
-    m_audioSink = new QAudioSink(outputDevice, m_outputFormat, this);
-    m_audioSink->setBufferSize(OUTPUT_BUFFER_SIZE);
+    m_audioSink = new QAudioSink(outputDevice, m_sinkFormat, this);
+    const int outputBytesPerMs = (m_sinkSampleRate * m_sinkFormat.channelCount()
+                                  * static_cast<int>(sizeof(float))) / 1000;
+    m_audioSink->setBufferSize(500 * outputBytesPerMs);
+
+    QAudioSink *const observedSink = m_audioSink;
+    connect(observedSink, &QAudioSink::stateChanged, this,
+            [this, observedSink](QtAudio::State state) {
+#ifdef Q_OS_ANDROID
+        // Ignore queued state changes from a sink that has already been
+        // retired.  Android otherwise reports the old sink as stopped after
+        // its successor has opened, which immediately destroys the successor.
+        if (observedSink != m_audioSink)
+            return;
+
+        // A physical route/profile transition can stop the active Android
+        // sink.  Recreate only after the device-change burst has settled; do
+        // not affect the K4 stream or PTT gate.
+        if (!m_replacingAudioOutput && state == QtAudio::StoppedState &&
+            observedSink->error() != QtAudio::NoError) {
+            scheduleSystemAudioRouteRefresh(900);
+        }
+#else
+        Q_UNUSED(state)
+#endif
+    });
 
     m_audioSinkDevice = m_audioSink->start();
     if (!m_audioSinkDevice) {
-        qCWarning(qk4Audio) << "AudioEngine: Failed to start audio output";
+        qWarning() << "AudioEngine: Failed to start audio output";
         delete m_audioSink;
         m_audioSink = nullptr;
         return false;
     }
 
-    // Volume is always 1.0 — actual volume control is in the K4's AG command
+    // Receiver volume is applied by the per-channel mixer. Keep the platform
+    // sink at unity, matching current QK4 mainline.
     m_audioSink->setVolume(1.0f);
 
-    // WHY: every sink (re)build must re-arm prebuffering and drop any backlog. setupAudioOutput()
-    // is called from start() AND the mid-stream rebuild paths (onSystemDefaultOutputChanged,
-    // setOutputDevice); without this, a rebuild inherits the queue that piled up while the sink was
-    // down (e.g. on the PTT-edge device churn) and that latency becomes permanent. Single source of
-    // truth here so no caller can forget. (flushQueue resets m_queueBytes + m_prebuffering.)
-    flushQueue();
+    if (resetPlayback)
+        flushQueue();
+
+    // Android's AAudio backend asks for data immediately after start. Prime
+    // the local sink so a route-replacement stream cannot be closed before
+    // the next K4 RX packet arrives.
+    const QByteArray initialSilence(50 * outputBytesPerMs, '\0');
+    m_audioSinkDevice->write(initialSilence);
+
+    if (!resetPlayback) {
+        // Preserve the K4 RX jitter buffer through a physical device change.
+        // m_writeBuffer is cleared by the caller because it may have been
+        // resampled for the retired device's rate.
+        feedAudioDevice();
+    }
 
     return true;
 }
@@ -197,12 +414,12 @@ bool AudioEngine::setupAudioInput() {
     }
 
     if (inputDevice.isNull()) {
-        qCWarning(qk4Audio) << "AudioEngine: No audio input device available";
+        qWarning() << "AudioEngine: No audio input device available";
         return false;
     }
 
     if (!inputDevice.isFormatSupported(m_inputFormat)) {
-        qCWarning(qk4Audio) << "AudioEngine: 48kHz input format not supported by device";
+        qWarning() << "AudioEngine: 48kHz input format not supported by device";
         return false;
     }
 
@@ -220,21 +437,17 @@ void AudioEngine::enqueueAudio(const QByteArray &pcmData) {
 
     QMutexLocker lock(&m_queueMutex);
 
-    // Self-correcting jitter buffer: if a stall (PTT mic init, output-device rebuild, network
-    // burst) ratcheted the queue up past the high-water mark, drop the OLDEST (most-delayed) audio
-    // back to the target depth so latency recovers instead of staying permanently high. Watermarks
-    // scale with the current packet size (one decoded K4 SL-bundle) so the buffer is proportional
-    // to the chosen SL tier — see RadioUtils::jitter*Bytes. One small forward skip; newest audio is
-    // kept playing.
     const int pktBytes = pcmData.size();
-    if (m_queueBytes + pktBytes > RadioUtils::jitterHighWaterBytes(pktBytes)) {
-        const int target = RadioUtils::jitterTargetBytes(pktBytes);
-        while (m_queueBytes > target && !m_audioQueue.isEmpty()) {
+
+    // Mainline's self-correcting jitter buffer: after a transient stall,
+    // discard oldest audio until latency returns to the normal target depth.
+    const int highWaterBytes = pktBytes * 5;
+    const int targetBytes = pktBytes * 2;
+    if (m_queueBytes + pktBytes > highWaterBytes) {
+        while (m_queueBytes > targetBytes && !m_audioQueue.isEmpty())
             m_queueBytes -= m_audioQueue.dequeue().size();
-        }
     }
 
-    // Absolute backstop: never let the queue exceed 1s of audio regardless of packet size.
     while (m_queueBytes + pktBytes > MAX_QUEUE_BYTES && !m_audioQueue.isEmpty()) {
         m_queueBytes -= m_audioQueue.dequeue().size();
     }
@@ -249,18 +462,109 @@ void AudioEngine::flushQueue() {
     m_queueBytes = 0;
     m_prebuffering = true;
     m_writeBuffer.clear();
+    resetOutputResampler();
+}
+
+void AudioEngine::resetOutputResampler() {
+    m_outputResamplerPrimed = false;
+    m_outputResamplerPreviousLeft = 0.0f;
+    m_outputResamplerPreviousRight = 0.0f;
+    m_outputResampleBuffer.clear();
+}
+
+const QByteArray &AudioEngine::resampleOutputPacket(const QByteArray &packet) {
+    const int inputFrames = packet.size() / (2 * static_cast<int>(sizeof(float)));
+    if (inputFrames <= 0) {
+        m_outputResampleBuffer.clear();
+        return m_outputResampleBuffer;
+    }
+
+    // Android playback is a fixed, exact 4:1 conversion. Carry the previous
+    // stereo frame across K4 packets so interpolation never restarts at a
+    // packet boundary. Resetting interpolation independently for every packet
+    // creates a periodic click/rasp that is especially obvious on CW tones.
+    if (m_sinkSampleRate == 48000 && m_outputFormat.sampleRate() == 12000) {
+        constexpr int ratio = 4;
+        m_outputResampleBuffer.resize(inputFrames * ratio * 2 * static_cast<int>(sizeof(float)));
+        const float *input = reinterpret_cast<const float *>(packet.constData());
+        float *output = reinterpret_cast<float *>(m_outputResampleBuffer.data());
+        int outputFrame = 0;
+        int inputFrame = 0;
+
+        if (!m_outputResamplerPrimed) {
+            m_outputResamplerPreviousLeft = input[0];
+            m_outputResamplerPreviousRight = input[1];
+            m_outputResamplerPrimed = true;
+            for (int phase = 0; phase < ratio; ++phase) {
+                output[outputFrame * 2] = m_outputResamplerPreviousLeft;
+                output[outputFrame * 2 + 1] = m_outputResamplerPreviousRight;
+                ++outputFrame;
+            }
+            inputFrame = 1;
+        }
+
+        for (; inputFrame < inputFrames; ++inputFrame) {
+            const float currentLeft = input[inputFrame * 2];
+            const float currentRight = input[inputFrame * 2 + 1];
+            for (int phase = 0; phase < ratio; ++phase) {
+                const float fraction = static_cast<float>(phase) / ratio;
+                output[outputFrame * 2] = m_outputResamplerPreviousLeft
+                        + (currentLeft - m_outputResamplerPreviousLeft) * fraction;
+                output[outputFrame * 2 + 1] = m_outputResamplerPreviousRight
+                        + (currentRight - m_outputResamplerPreviousRight) * fraction;
+                ++outputFrame;
+            }
+            m_outputResamplerPreviousLeft = currentLeft;
+            m_outputResamplerPreviousRight = currentRight;
+        }
+        return m_outputResampleBuffer;
+    }
+
+    // Retain the established general-rate fallback for non-Android sinks.
+    const int outputFrames = qRound(static_cast<double>(inputFrames) * m_sinkSampleRate
+                                    / m_outputFormat.sampleRate());
+    m_outputResampleBuffer.resize(outputFrames * 2 * static_cast<int>(sizeof(float)));
+    const float *input = reinterpret_cast<const float *>(packet.constData());
+    float *output = reinterpret_cast<float *>(m_outputResampleBuffer.data());
+    for (int frame = 0; frame < outputFrames; ++frame) {
+        const double position = static_cast<double>(frame) * m_outputFormat.sampleRate()
+                                / m_sinkSampleRate;
+        const int before = qBound(0, static_cast<int>(position), inputFrames - 1);
+        const int after = qMin(before + 1, inputFrames - 1);
+        const float fraction = static_cast<float>(position - before);
+        output[frame * 2] = input[before * 2]
+                + (input[after * 2] - input[before * 2]) * fraction;
+        output[frame * 2 + 1] = input[before * 2 + 1]
+                + (input[after * 2 + 1] - input[before * 2 + 1]) * fraction;
+    }
+    return m_outputResampleBuffer;
 }
 
 void AudioEngine::feedAudioDevice() {
+#ifdef Q_OS_ANDROID
+    if (!m_androidNativePlaybackActive)
+        return;
+#else
     if (!m_audioSinkDevice)
         return;
+#endif
 
     // Drain any leftover write buffer from a previous partial write
     if (!m_writeBuffer.isEmpty()) {
-        int bytesFree = m_audioSink->bytesFree();
+        int bytesFree = 0;
+#ifdef Q_OS_ANDROID
+        bytesFree = m_writeBuffer.size();
+#else
+        bytesFree = m_audioSink->bytesFree();
+#endif
         if (bytesFree > 0) {
             qint64 toWrite = qMin(static_cast<qint64>(m_writeBuffer.size()), static_cast<qint64>(bytesFree));
-            qint64 written = m_audioSinkDevice->write(m_writeBuffer.constData(), toWrite);
+            qint64 written = 0;
+#ifdef Q_OS_ANDROID
+            written = writeAndroidPlayback(m_writeBuffer.left(toWrite));
+#else
+            written = m_audioSinkDevice->write(m_writeBuffer.constData(), toWrite);
+#endif
             if (written > 0)
                 m_writeBuffer.remove(0, static_cast<int>(written));
         }
@@ -269,13 +573,17 @@ void AudioEngine::feedAudioDevice() {
     }
 
     // Query sink capacity (audio-thread-only, no mutex needed)
-    int bytesFree = m_audioSink->bytesFree();
+    int bytesFree = 0;
+#ifdef Q_OS_ANDROID
+    bytesFree = MAX_QUEUE_BYTES;
+#else
+    bytesFree = m_audioSink->bytesFree();
+#endif
 
-    // Drain queue under a short lock, then write outside the lock. m_feedBatch
-    // is a member to avoid constructing a fresh QList on every 10 ms tick.
+    // Reuse the batch instead of allocating at the 100 Hz feed rate.
     m_feedBatch.clear();
-    int preDrainQueueBytes;
-    bool snapshotPrebuffering;
+    int preDrainQueueBytes = 0;
+    bool snapshotPrebuffering = true;
     {
         QMutexLocker lock(&m_queueMutex);
 
@@ -289,7 +597,6 @@ void AudioEngine::feedAudioDevice() {
             m_prebuffering = false;
         }
 
-        // Snapshot queue depth BEFORE draining (steady-state depth)
         preDrainQueueBytes = m_queueBytes;
         snapshotPrebuffering = m_prebuffering;
 
@@ -303,6 +610,14 @@ void AudioEngine::feedAudioDevice() {
             m_queueBytes -= pkt.size();
             bytesFree -= headSize;
             m_feedBatch.append(std::move(pkt));
+#ifdef Q_OS_ANDROID
+            // A non-blocking AudioTrack write can be partial. Keep later
+            // packets queued until this packet (including any staged tail)
+            // has been accepted, so returning on a partial write cannot drop
+            // already-dequeued audio. At 100 Hz this still drains four times
+            // faster than the observed 40 ms K4 packet cadence.
+            break;
+#endif
         }
     }
 
@@ -311,11 +626,43 @@ void AudioEngine::feedAudioDevice() {
     // Apply mix/volume and write to audio sink without holding the lock
     for (QByteArray &packet : m_feedBatch) {
         applyMixAndVolume(packet);
-        qint64 written = m_audioSinkDevice->write(packet.constData(), packet.size());
-        if (written < packet.size()) {
-            // Partial write — save remainder for next feed cycle
-            m_writeBuffer.append(packet.constData() + written, packet.size() - static_cast<int>(written));
+        const QByteArray *playbackPacket = &packet;
+        if (m_sinkSampleRate != m_outputFormat.sampleRate())
+            playbackPacket = &resampleOutputPacket(packet);
+
+        qint64 written = 0;
+#ifdef Q_OS_ANDROID
+        QByteArray pcm16;
+        const int sampleCount = playbackPacket->size() / static_cast<int>(sizeof(float));
+        pcm16.resize(sampleCount * static_cast<int>(sizeof(qint16)));
+        const float *input = reinterpret_cast<const float *>(playbackPacket->constData());
+        qint16 *output = reinterpret_cast<qint16 *>(pcm16.data());
+        for (int i = 0; i < sampleCount; ++i)
+            output[i] = static_cast<qint16>(qBound(-1.0f, input[i], 1.0f) * 32767.0f);
+        written = writeAndroidPlayback(pcm16);
+#else
+        written = m_audioSinkDevice->write(playbackPacket->constData(), playbackPacket->size());
+#endif
+#ifdef Q_OS_ANDROID
+        if (written < 0) {
+            qWarning() << "AudioEngine: Android playback write failed";
+            return;
         }
+        if (written < pcm16.size()) {
+            // WRITE_NON_BLOCKING may accept only part of a packet. Preserve
+            // every remaining byte and stop this batch so later audio cannot
+            // overtake it. Dropping this tail creates an audible discontinuity.
+            m_writeBuffer.append(pcm16.constData() + written,
+                                 pcm16.size() - static_cast<int>(written));
+            return;
+        }
+#else
+        if (written < playbackPacket->size()) {
+            // Partial write — save remainder for next feed cycle
+            m_writeBuffer.append(playbackPacket->constData() + written,
+                                 playbackPacket->size() - static_cast<int>(written));
+        }
+#endif
     }
 }
 
@@ -397,61 +744,205 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
 }
 
 void AudioEngine::openMic() {
-    // Idempotent: already open → return immediately so subsequent PTT presses don't pay
-    // the OS audio backend renegotiation cost.
+#ifdef Q_OS_ANDROID
+    if (m_micEnabled.load(std::memory_order_relaxed) && m_androidUsbMicrophoneActive)
+        return;
+
+    // Native Android capture is used only when a physical wired/USB input is
+    // present and accepts explicit selection. Otherwise retain QAudioSource
+    // exactly for the phone microphone and Bluetooth headsets.
+    if (startAndroidUsbMicrophone()) {
+        m_androidUsbMicrophoneActive = true;
+        m_micEnabled.store(true, std::memory_order_relaxed);
+        m_micPollTimer->start();
+        return;
+    }
+#endif
+    // Idempotent: after the first PTT, subsequent presses must be instant.
     if (m_micEnabled.load(std::memory_order_relaxed) && m_audioSourceDevice)
         return;
 
-    // Lazy mic initialization — deferred from start() to avoid triggering the macOS mic
-    // permission dialog during connection (which would deadlock; see ctor comment).
-    if (!m_audioSource) {
-        if (!setupAudioInput()) {
-            qCWarning(qk4Audio) << "AudioEngine: Failed to setup audio input";
-            return;
-        }
+    if (!m_audioSource && !setupAudioInput()) {
+        qWarning() << "AudioEngine: microphone input is unavailable";
+        return;
     }
 
     m_audioSourceDevice = m_audioSource->start();
     if (!m_audioSourceDevice) {
-        qCWarning(qk4Audio) << "AudioEngine: Failed to start microphone device";
+        qWarning() << "AudioEngine: Failed to start microphone device";
         return;
     }
 
     m_micEnabled.store(true, std::memory_order_relaxed);
-    // Use timer-based polling instead of readyRead signal
-    // (readyRead doesn't fire reliably on all platforms).
     m_micPollTimer->start();
 }
 
 void AudioEngine::closeMic() {
-    if (!m_micEnabled.load(std::memory_order_relaxed))
+    if (!m_micEnabled.exchange(false, std::memory_order_acq_rel))
         return;
 
-    m_micEnabled.store(false, std::memory_order_relaxed);
     m_micPollTimer->stop();
-    if (m_audioSource) {
+#ifdef Q_OS_ANDROID
+    if (m_androidUsbMicrophoneActive) {
+        stopAndroidUsbMicrophone();
+        m_androidUsbMicrophoneActive = false;
+    } else
+#endif
+    if (m_audioSource)
         m_audioSource->stop();
-    }
     m_audioSourceDevice = nullptr;
     m_micBuffer.clear();
     m_micReadOffset = 0;
 }
 
-void AudioEngine::flushMicBuffer() {
-    m_micBuffer.clear();
-    m_micReadOffset = 0;
+void AudioEngine::setPttActive(bool active) {
+    if (active && (m_sstvPrepared || (m_digitalControl && (m_digitalControl->generation.load() != 0
+        || m_digitalControl->scheduledGeneration.load() != 0))))
+        return;
+    m_pttActive.store(active, std::memory_order_release);
+    if (active) {
+#ifdef Q_OS_ANDROID
+        // Ask Android to select a two-way external endpoint before opening
+        // capture, so QAudioSource receives the headset microphone.
+        setAndroidTransmitRoute(true);
+#endif
+        m_txSequence = 0;
+        openMic();
+        m_micBuffer.clear();
+        m_micReadOffset = 0;
+    }
+#ifdef Q_OS_ANDROID
+    else {
+        // Android must release capture after TX. Keeping it open pins
+        // Bluetooth in communications mode and leaves media RX silent. This
+        // is local device lifecycle only; the K4 PTT and packet protocol stay
+        // unchanged.
+        closeMic();
+        delete m_audioSource;
+        m_audioSource = nullptr;
+        m_audioSourceDevice = nullptr;
+        m_activeMicDeviceId.clear();
+        setAndroidTransmitRoute(false);
+        scheduleSystemAudioRouteRefresh(150);
+    }
+#endif
+    // On release capture remains running; complete frames are consumed but
+    // not sent. This is the current QK4 mainline lifecycle.
+}
+
+void AudioEngine::setEncodeMode(int mode) {
+    m_encodeMode.store(qBound(0, mode, 3), std::memory_order_relaxed);
+}
+
+void AudioEngine::setFrameSamples(int samples) {
+    m_frameSamples.store(samples, std::memory_order_relaxed);
+}
+
+void AudioEngine::beginFt8Encoding(quint64 generation) {
+    if (!m_digitalControl || !m_digitalControl->allows(generation)) return;
+    if (m_sstvPrepared || m_pttActive.load() || (m_opusEncoder && !m_opusEncoder->reset())) {
+        m_digitalControl->audioFault.store(generation);
+        m_digitalControl->close(generation);
+        return;
+    }
+    m_ft8EncodingGeneration = generation;
+    m_txSequence = 0;
+    m_digitalAudio.reset(m_digitalControl->gain.load());
+}
+void AudioEngine::encodeFt8Frame(const QVector<qint16> &input, int emitted, int total, quint64 generation) {
+    if (generation != m_ft8EncodingGeneration || !m_digitalControl->allows(generation)) return;
+    auto samples = input;
+    if (!m_digitalAudio.process(samples, *m_digitalControl, generation)) return;
+    m_ft8Emitted = emitted;
+    m_ft8Total = total;
+    const QByteArray frame(reinterpret_cast<const char *>(samples.constData()), samples.size() * sizeof(qint16));
+    encodeAndSendFrame(frame, samples.size(), m_encodeMode.load(), true);
+}
+void AudioEngine::finishFt8Encoding(quint64 generation) {
+    if (m_ft8EncodingGeneration == generation) m_ft8EncodingGeneration = 0;
+}
+void AudioEngine::prepareSstvTransmit(const QImage &frame, int modeId,
+                                      const QString &morseId, int morseWpm,
+                                      const QString &fskId,
+                                      quint64 generation) {
+    m_sstvGeneration = generation;
+    m_calibrationTone = false;
+    if (m_sstvActive.load(std::memory_order_acquire)) {
+        emit sstvPrepared(false, QStringLiteral("SSTV transmission is already active."), 0, generation);
+        return;
+    }
+    QString error;
+    constexpr int SstvPreRollMs = 400;
+    constexpr int SstvPostRollMs = 300;
+    const bool ready = m_sstvEncoder.begin(frame, static_cast<SstvModeId>(modeId), &error,
+                                           morseId, morseWpm, fskId,
+                                           SstvPreRollMs, SstvPostRollMs);
+    m_sstvPrepared = ready;
+    emit sstvPrepared(ready, error, ready ? m_sstvEncoder.totalSamples() : 0, generation);
+}
+
+void AudioEngine::beginSstvTransmit() {
+    if (!m_digitalControl || !m_digitalControl->allows(m_sstvGeneration.load()))
+        return;
+    if (!m_sstvPrepared || m_sstvActive.exchange(true, std::memory_order_acq_rel))
+        return;
+
+    // Each modem transmission starts with a clean codec history and packet
+    // sequence. Speech from an earlier PTT session must not influence the
+    // first SSTV leader packet.
+    m_txSequence = 0;
+    m_digitalAudio.reset(m_digitalControl->gain.load(std::memory_order_acquire));
+    if (m_opusEncoder && !m_opusEncoder->reset()) {
+        const quint64 generation = m_sstvGeneration;
+        m_digitalControl->audioFault.store(generation, std::memory_order_release);
+        m_digitalControl->close(generation);
+        m_sstvActive.store(false, std::memory_order_release);
+        m_sstvPrepared = false;
+        emit sstvFailed(QStringLiteral("The K4 audio encoder could not be reset for SSTV."), generation);
+        return;
+    }
+
+    // Do not call setPttActive(true): it opens Android microphone capture.
+    // SSTV is program audio and must keep the mic fully out of the path.
+    const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
+    m_sstvPacerTimer->start(qMax(1, qRound(1000.0 * frameSamples / SstvEncoder::SampleRate)));
+}
+
+void AudioEngine::stopSstvTransmit() {
+    const bool wasActive = m_sstvActive.exchange(false, std::memory_order_acq_rel);
+    if (m_sstvPacerTimer)
+        m_sstvPacerTimer->stop();
+    m_sstvPrepared = false;
+    m_sstvEncoder = SstvEncoder();
+    if (wasActive)
+        emit sstvFinished(m_sstvGeneration);
+}
+
+void AudioEngine::requestSstvStop() {
+    if (m_digitalControl)
+        m_digitalControl->close(m_sstvGeneration.load(std::memory_order_acquire));
+    m_sstvActive.store(false, std::memory_order_release);
+}
+
+void AudioEngine::prepareDigitalCalibration(int toneHz, quint64 generation) {
+    if (m_sstvActive.load(std::memory_order_acquire) || m_pttActive.load()) {
+        emit digitalCalibrationPreparationFailed("Calibration unavailable: another audio transmission is active.", generation);
+        return;
+    }
+    m_sstvGeneration = generation;
+    m_calibrationHz = qBound(100, toneHz, 3200);
+    m_calibrationPhase = 0;
+    m_calibrationTone = true;
+    m_sstvPrepared = true;
+    emit digitalCalibrationPrepared(generation);
 }
 
 const QByteArray &AudioEngine::resample48kTo12k(const QByteArray &input48k) {
     // Simple 4:1 decimation with averaging filter (48kHz / 4 = 12kHz).
-    // Writes into the pre-allocated m_resampleBuf12k member; resize() at the
-    // pre-reserved capacity is alloc-free.
     const float *inputSamples = reinterpret_cast<const float *>(input48k.constData());
     int inputCount = input48k.size() / sizeof(float);
     int outputCount = inputCount / 4;
-    const int outputBytes = outputCount * static_cast<int>(sizeof(float));
-
-    m_resampleBuf12k.resize(outputBytes);
+    m_resampleBuf12k.resize(outputCount * static_cast<int>(sizeof(float)));
     float *output = reinterpret_cast<float *>(m_resampleBuf12k.data());
 
     for (int i = 0; i < outputCount; i++) {
@@ -465,21 +956,40 @@ const QByteArray &AudioEngine::resample48kTo12k(const QByteArray &input48k) {
         }
         output[i] = (count > 0) ? (sum / count) : 0.0f;
     }
-
     return m_resampleBuf12k;
 }
 
 void AudioEngine::onMicDataReady() {
-    if (!m_audioSourceDevice || !m_micEnabled.load(std::memory_order_relaxed))
+    if (!m_micEnabled.load(std::memory_order_relaxed))
         return;
 
-    QByteArray data48k = m_audioSourceDevice->readAll();
+    QByteArray data48k;
+#ifdef Q_OS_ANDROID
+    if (m_androidUsbMicrophoneActive) {
+        // Android provides S16 PCM at 48 kHz. Convert it to the Float32 48 kHz
+        // representation which the established QK4 resample/encode path uses.
+        const QByteArray pcm16 = readAndroidUsbMicrophone(INPUT_BUFFER_SIZE / 2);
+        const int sampleCount = pcm16.size() / static_cast<int>(sizeof(qint16));
+        if (sampleCount > 0) {
+            data48k.resize(sampleCount * static_cast<int>(sizeof(float)));
+            const qint16 *input = reinterpret_cast<const qint16 *>(pcm16.constData());
+            float *output = reinterpret_cast<float *>(data48k.data());
+            for (int i = 0; i < sampleCount; ++i)
+                output[i] = static_cast<float>(input[i]) / 32768.0f;
+        }
+    } else
+#endif
+    {
+        if (!m_audioSourceDevice)
+            return;
+        data48k = m_audioSourceDevice->readAll();
+    }
     if (data48k.isEmpty()) {
         // No data available yet - this is normal, just wait for next poll
         return;
     }
 
-    // Resample from 48kHz to 12kHz (writes into pre-allocated member buffer)
+    // Resample from 48kHz to 12kHz into the reusable hot-path buffer.
     const QByteArray &data12k = resample48kTo12k(data48k);
 
     // Convert Float32 to S16LE, apply gain, and buffer for frame-based emission
@@ -488,106 +998,120 @@ void AudioEngine::onMicDataReady() {
 
     const float gain = m_micGain.load(std::memory_order_relaxed);
 
-    // Convert Float32 to S16LE with gain applied (cubic curve already baked into m_micGain)
+    // Convert and append to the frame buffer with gain applied.
     for (int i = 0; i < floatSamples; i++) {
         float sample = qBound(-1.0f, floatData[i] * gain, 1.0f);
         qint16 s16Sample = static_cast<qint16>(sample * 32767.0f);
         m_micBuffer.append(reinterpret_cast<const char *>(&s16Sample), sizeof(qint16));
     }
 
-    // Emit complete frames (size matches SL tier: 240/480/720/1440 samples).
-    // m_micReadOffset advances per emitted frame instead of remove(0, n)'s O(N)
-    // memmove on every poll. We compact only when the offset has grown past
-    // half the buffer's size — keeps amortized work O(1) per frame.
-    const int frameBytes = m_frameSamples.load(std::memory_order_relaxed) * static_cast<int>(sizeof(qint16));
     const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
+    const int frameBytes = frameSamples * static_cast<int>(sizeof(qint16));
     const bool pttActive = m_pttActive.load(std::memory_order_acquire);
+    const bool sstvActive = m_sstvActive.load(std::memory_order_acquire);
     const int encodeMode = m_encodeMode.load(std::memory_order_relaxed);
 
     while (m_micBuffer.size() - m_micReadOffset >= frameBytes) {
-        if (pttActive) {
-            // Use fromRawData to avoid a copy; immediately consumed inside this
-            // tick on the audio thread — the underlying buffer doesn't move.
+        if (pttActive && !sstvActive) {
             const QByteArray frame = QByteArray::fromRawData(m_micBuffer.constData() + m_micReadOffset, frameBytes);
             encodeAndSendFrame(frame, frameSamples, encodeMode);
         }
         m_micReadOffset += frameBytes;
     }
-    // Compact lazily: only when the consumed prefix is at least half the buffer.
     if (m_micReadOffset > 0 && m_micReadOffset * 2 >= m_micBuffer.size()) {
         m_micBuffer.remove(0, m_micReadOffset);
         m_micReadOffset = 0;
     }
 }
 
-void AudioEngine::encodeAndSendFrame(const QByteArray &s16leMonoFrame, int frameSamples, int encodeMode) {
-    // Runs on the audio thread. Translates the captured S16LE mono frame into
-    // the K4 wire format and emits txPacketReady. PR 12 moved this logic out
-    // of AudioController::onMicrophoneFrame (which ran on the main thread)
-    // so a busy GUI event loop no longer stalls voice TX packet emission.
-    QByteArray audioData;
-
-    switch (encodeMode) {
-    case 0: // EM0 — RAW 32-bit float stereo
-    {
-        const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = s16leMonoFrame.size() / static_cast<int>(sizeof(qint16));
-        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(float))); // Stereo output
-        float *output = reinterpret_cast<float *>(audioData.data());
-        for (int i = 0; i < sampleCount; i++) {
-            const float normalized = static_cast<float>(samples[i]) * OpusDecoder::NORMALIZE_16BIT;
-            output[i * 2] = normalized;     // Left = Main
-            output[i * 2 + 1] = normalized; // Right = Sub (duplicate)
-        }
-        break;
-    }
-
-    case 1: // EM1 — RAW 16-bit S16LE stereo
-    {
-        const qint16 *samples = reinterpret_cast<const qint16 *>(s16leMonoFrame.constData());
-        const int sampleCount = s16leMonoFrame.size() / static_cast<int>(sizeof(qint16));
-        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(qint16))); // Stereo output
-        qint16 *output = reinterpret_cast<qint16 *>(audioData.data());
-        for (int i = 0; i < sampleCount; i++) {
-            output[i * 2] = samples[i];     // Left = Main
-            output[i * 2 + 1] = samples[i]; // Right = Sub (duplicate)
-        }
-        break;
-    }
-
-    case 2: // EM2 — Opus int
-    case 3: // EM3 — Opus float
-    default:
-        if (m_opusEncoder)
-            audioData = m_opusEncoder->encode(s16leMonoFrame, frameSamples);
-        break;
-    }
-
-    if (audioData.isEmpty())
+void AudioEngine::onSstvPacer() {
+    if (!m_sstvActive.load(std::memory_order_acquire))
         return;
 
-    QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++, encodeMode, frameSamples);
-    emit txPacketReady(packet);
-}
-
-void AudioEngine::setEncodeMode(int mode) {
-    m_encodeMode.store(mode, std::memory_order_relaxed);
-}
-
-void AudioEngine::setPttActive(bool active) {
-    // Q_INVOKABLE — invoked via QueuedConnection from AudioController on the
-    // main thread, so this method body runs on the audio thread.
-    m_pttActive.store(active, std::memory_order_release);
-    if (active) {
-        m_txSequence = 0; // Restart sequence counter for each transmission
-        openMic();        // Idempotent — see openMic() WHY comment
-        // Flush partial-frame tail from previous transmission so it can't leak
-        // into this one's first frame.
-        m_micBuffer.clear();
-        m_micReadOffset = 0;
+    const int frameSamples = m_frameSamples.load(std::memory_order_relaxed);
+    QVector<qint16> samples;
+    if (m_calibrationTone) {
+        samples.resize(frameSamples);
+        for (auto &sample : samples) {
+            sample = qint16(qRound(std::sin(m_calibrationPhase) * 26213.0));
+            m_calibrationPhase = std::fmod(m_calibrationPhase + 2.0 * M_PI * m_calibrationHz / 12000.0, 2.0 * M_PI);
+        }
+    } else
+        samples = m_sstvEncoder.nextSamples(frameSamples);
+    if (!m_digitalControl || !m_digitalAudio.process(samples, *m_digitalControl, m_sstvGeneration.load())) {
+        stopSstvTransmit();
+        return; // I/O watchdog owns the fault report and immediate unkey.
     }
-    // PTT release: leave mic open. Next frames will be dropped by the
-    // pttActive check at the top of onMicDataReady.
+    if (!samples.isEmpty()) {
+        // K4/Opus packetization requires the configured SL frame size. Pad
+        // only the final packet; encoder progress still reports on-air image
+        // samples and therefore reaches exactly totalSamples.
+        if (samples.size() < frameSamples) {
+            const qsizetype imageSamples = samples.size();
+            samples.resize(frameSamples);
+            std::fill(samples.begin() + imageSamples, samples.end(), 0);
+        }
+        const QByteArray frame(reinterpret_cast<const char *>(samples.constData()),
+                               samples.size() * static_cast<int>(sizeof(qint16)));
+        encodeAndSendFrame(frame, frameSamples, m_encodeMode.load(std::memory_order_relaxed), true);
+    }
+    if (!m_calibrationTone && m_sstvEncoder.isComplete())
+        stopSstvTransmit();
+}
+
+void AudioEngine::encodeAndSendFrame(const QByteArray &s16leData, int frameSamples, int encodeMode,
+                                     bool sstvProgram) {
+    QByteArray audioData;
+    const qint16 *samples = reinterpret_cast<const qint16 *>(s16leData.constData());
+    const int sampleCount = s16leData.size() / static_cast<int>(sizeof(qint16));
+
+    switch (encodeMode) {
+    case 0: { // EM0: stereo Float32
+        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(float)));
+        float *output = reinterpret_cast<float *>(audioData.data());
+        for (int i = 0; i < sampleCount; ++i) {
+            const float normalized = static_cast<float>(samples[i]) / 32768.0f;
+            output[i * 2] = normalized;
+            output[i * 2 + 1] = normalized;
+        }
+        break;
+    }
+    case 1: { // EM1: stereo S16LE
+        audioData.resize(sampleCount * 2 * static_cast<int>(sizeof(qint16)));
+        qint16 *output = reinterpret_cast<qint16 *>(audioData.data());
+        for (int i = 0; i < sampleCount; ++i) {
+            output[i * 2] = samples[i];
+            output[i * 2 + 1] = samples[i];
+        }
+        break;
+    }
+    case 2:
+    case 3:
+    default:
+        audioData = m_opusEncoder ? m_opusEncoder->encode(s16leData, frameSamples, sstvProgram) : QByteArray();
+        break;
+    }
+
+    if (!audioData.isEmpty()) {
+        const QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++, encodeMode, frameSamples);
+        if (sstvProgram && m_ft8EncodingGeneration)
+            emit sstvPacketReady(packet, m_ft8Emitted, m_ft8Total, m_ft8Total, m_ft8EncodingGeneration);
+        else if (sstvProgram)
+            emit sstvPacketReady(packet, m_sstvEncoder.emittedSamples(),
+                                 m_sstvEncoder.totalSamples(), m_sstvEncoder.imageSamples(),
+                                 m_sstvGeneration);
+        else
+            emit txPacketReady(packet);
+    } else if (sstvProgram) {
+        const quint64 generation = m_ft8EncodingGeneration ? m_ft8EncodingGeneration : m_sstvGeneration.load();
+        if (m_digitalControl) {
+            m_digitalControl->audioFault.store(generation, std::memory_order_release);
+            m_digitalControl->close(generation);
+        }
+        emit sstvFailed(QStringLiteral("The selected K4 audio encoding could not carry SSTV program audio."),
+                        generation);
+        stopSstvTransmit();
+    }
 }
 
 void AudioEngine::setMainVolume(float volume) {
@@ -617,37 +1141,34 @@ void AudioEngine::setBalanceOffset(int offset) {
 }
 
 void AudioEngine::setMicGain(float gain) {
-    // Cubic curve: slider 0-1 maps to gain 0-1 with fine control at low levels
-    // e.g., 40% slider → 0.064x gain, 70% → 0.343x, 100% → 1.0x (unity)
-    float cubic = gain * gain * gain;
+    const float cubic = gain * gain * gain;
     m_micGain.store(qBound(0.0f, cubic, 1.0f), std::memory_order_relaxed);
 }
 
-void AudioEngine::setFrameSamples(int samples) {
-    m_frameSamples.store(samples, std::memory_order_relaxed);
-}
-
 void AudioEngine::setMicDevice(const QString &deviceId) {
+#ifdef Q_OS_ANDROID
+    Q_UNUSED(deviceId)
+    // Android headset and USB routes are dynamic.  Always use its current
+    // default input rather than pinning an old, device-specific Qt id.
+    return;
+#else
     if (m_selectedMicDeviceId != deviceId) {
         m_selectedMicDeviceId = deviceId;
 
-        // If mic is currently open, restart it with the new device.
-        bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
-        if (wasOpen) {
+        bool wasEnabled = m_micEnabled.load(std::memory_order_relaxed);
+        if (wasEnabled)
             closeMic();
-        }
 
-        // Tear down the existing audio source — it will be recreated lazily by the next
-        // openMic() call with the new device ID.
+        // Recreate the audio source with the new device
         if (m_audioSource) {
             delete m_audioSource;
             m_audioSource = nullptr;
         }
-
-        if (wasOpen) {
+        // setupAudioInput remains lazy, matching mainline's device lifecycle.
+        if (wasEnabled)
             openMic();
-        }
     }
+#endif
 }
 
 QString AudioEngine::micDeviceId() const {
@@ -669,6 +1190,11 @@ QList<QPair<QString, QString>> AudioEngine::availableInputDevices() {
 }
 
 void AudioEngine::setOutputDevice(const QString &deviceId) {
+#ifdef Q_OS_ANDROID
+    Q_UNUSED(deviceId)
+    // See setMicDevice(): mobile routes must remain under Android's control.
+    return;
+#else
     if (m_selectedOutputDeviceId != deviceId) {
         m_selectedOutputDeviceId = deviceId;
 
@@ -682,21 +1208,36 @@ void AudioEngine::setOutputDevice(const QString &deviceId) {
             setupAudioOutput();
         }
     }
+#endif
 }
 
 void AudioEngine::onSystemDefaultInputChanged() {
-    // Only follow the OS default when the user hasn't pinned a specific device.
-    if (!m_selectedMicDeviceId.isEmpty())
+#ifdef Q_OS_ANDROID
+    // Recreate capture only when Android reports an input-device change.  This
+    // adopts a headset microphone (when it has one) while retaining the
+    // established PTT packet gate and its normal open-capture lifecycle.
+    if (m_audioSource) {
+        const bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
+        if (wasOpen)
+            closeMic();
+        delete m_audioSource;
+        m_audioSource = nullptr;
+        m_audioSourceDevice = nullptr;
+        m_activeMicDeviceId.clear();
+        if (wasOpen)
+            openMic();
+    }
+    scheduleSystemAudioRouteRefresh(900);
+    return;
+#endif
+    if (!m_selectedMicDeviceId.isEmpty() || !m_audioSource)
         return;
-    // Nothing built yet — the next openMic() resolves the current default fresh.
-    if (!m_audioSource)
-        return;
+
     const QString newDefault = QMediaDevices::defaultAudioInput().id();
     if (newDefault.isEmpty() || newDefault == m_activeMicDeviceId)
-        return; // effective default unchanged
+        return;
 
-    // Rebuild the source on the new default, preserving the open/closed state.
-    bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
+    const bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
     if (wasOpen)
         closeMic();
     delete m_audioSource;
@@ -706,10 +1247,13 @@ void AudioEngine::onSystemDefaultInputChanged() {
 }
 
 void AudioEngine::onSystemDefaultOutputChanged() {
-    if (!m_selectedOutputDeviceId.isEmpty())
+#ifdef Q_OS_ANDROID
+    scheduleSystemAudioRouteRefresh(900);
+    return;
+#endif
+    if (!m_selectedOutputDeviceId.isEmpty() || !m_audioSink)
         return;
-    if (!m_audioSink)
-        return; // output not started yet — start() will resolve the current default
+
     const QString newDefault = QMediaDevices::defaultAudioOutput().id();
     if (newDefault.isEmpty() || newDefault == m_activeOutputDeviceId)
         return;
@@ -719,6 +1263,65 @@ void AudioEngine::onSystemDefaultOutputChanged() {
     m_audioSink = nullptr;
     m_audioSinkDevice = nullptr;
     setupAudioOutput();
+}
+
+void AudioEngine::scheduleSystemAudioRouteRefresh(int delayMs) {
+#ifdef Q_OS_ANDROID
+    if (!m_routeRefreshTimer)
+        return;
+
+    // Android commonly emits several input/output notifications while a
+    // USB-C or Bluetooth endpoint is being attached or detached.  Restart
+    // the single-shot timer on every event; the sink is rebuilt once, only
+    // after the last event has been quiet long enough for AudioPolicy/AAudio
+    // to expose a stable route.
+    m_routeRefreshTimer->start(qMax(900, delayMs));
+#else
+    Q_UNUSED(delayMs)
+#endif
+}
+
+void AudioEngine::refreshSystemAudioRoute() {
+#ifdef Q_OS_ANDROID
+    if (!m_audioSink)
+        return;
+
+    m_replacingAudioOutput = true;
+    QAudioSink *const retiredSink = m_audioSink;
+    m_audioSink = nullptr;
+    m_audioSinkDevice = nullptr;
+    m_activeOutputDeviceId.clear();
+    retiredSink->stop();
+    delete retiredSink;
+
+    // Partial writes are encoded at the retired sink's rate and cannot carry
+    // across the route change. Keep the undecoded K4 RX jitter buffer instead
+    // so the replacement sink is primed with real receive audio.
+    m_writeBuffer.clear();
+
+    if (setupAudioOutput(false))
+        qDebug() << "AudioEngine: refreshed Android playback route";
+
+    m_replacingAudioOutput = false;
+#endif
+}
+
+void AudioEngine::pollAndroidOutputRoute() {
+#ifdef Q_OS_ANDROID
+    if (!m_audioSink || m_replacingAudioOutput)
+        return;
+
+    const int currentWiredOutputId = androidWiredOutputDeviceId();
+    if (currentWiredOutputId == m_activeAndroidWiredOutputId ||
+        currentWiredOutputId == m_pendingAndroidWiredOutputId) {
+        return;
+    }
+
+    // A direct Android route change is new. Do not restart the debounce timer
+    // on each poll; only restart it if the selected endpoint changes again.
+    m_pendingAndroidWiredOutputId = currentWiredOutputId;
+    scheduleSystemAudioRouteRefresh(900);
+#endif
 }
 
 QString AudioEngine::outputDeviceId() const {

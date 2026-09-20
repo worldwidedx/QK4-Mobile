@@ -1,21 +1,19 @@
 #include "tcpclient.h"
-#include <QDateTime>
+#include <QDebug>
+#include <QHostAddress>
 #include <QHostInfo>
-#include <QLoggingCategory>
 #include <QSslCipher>
 #include <QSslConfiguration>
 #include <QSslPreSharedKeyAuthenticator>
 #include <QSslSocket>
-#include <QTime>
-
-Q_LOGGING_CATEGORY(catTx, "CAT.TX")
-Q_LOGGING_CATEGORY(netTcp, "net.tcp")
+#include <QDateTime>
+#include <cmath>
 
 TcpClient::TcpClient(QObject *parent)
-    : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_authTimer(new QTimer(this)),
-      m_connectTimer(new QTimer(this)), m_pingTimer(new QTimer(this)), m_retryTimer(new QTimer(this)),
-      m_port(K4Protocol::DEFAULT_PORT), m_useTls(false), m_encodeMode(3), m_streamingLatency(3),
-      m_authResponseReceived(false) {
+    : QObject(parent), m_socket(new QSslSocket(this)), m_protocol(new Protocol(this)), m_connectTimer(new QTimer(this)),
+      m_authTimer(new QTimer(this)),
+      m_pingTimer(new QTimer(this)), m_port(K4Protocol::DEFAULT_PORT), m_useTls(false), m_encodeMode(3),
+      m_streamingLatency(3), m_authResponseReceived(false) {
     // Socket signals
     connect(m_socket, &QSslSocket::connected, this, &TcpClient::onSocketConnected);
     connect(m_socket, &QSslSocket::encrypted, this, &TcpClient::onSocketEncrypted);
@@ -28,62 +26,54 @@ TcpClient::TcpClient(QObject *parent)
     connect(m_socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
             &TcpClient::onPreSharedKeyAuthenticationRequired);
 
+    // Connect timeout timer (single shot) - covers TCP/TLS handshake phase
+    m_connectTimer->setSingleShot(true);
+    connect(m_connectTimer, &QTimer::timeout, this, &TcpClient::onConnectTimeout);
+
     // Auth timeout timer (single shot)
     m_authTimer->setSingleShot(true);
     connect(m_authTimer, &QTimer::timeout, this, &TcpClient::onAuthTimeout);
 
-    // Connect timeout timer — fires if TCP/TLS connection never establishes
-    m_connectTimer->setSingleShot(true);
-    connect(m_connectTimer, &QTimer::timeout, this, &TcpClient::onConnectTimeout);
-
     // Ping timer for keep-alive
     m_pingTimer->setInterval(K4Protocol::PING_INTERVAL_MS);
     connect(m_pingTimer, &QTimer::timeout, this, &TcpClient::onPingTimer);
-
-    // Retry timer — single-shot, fires attemptConnection() after transient network errors
-    m_retryTimer->setSingleShot(true);
-    connect(m_retryTimer, &QTimer::timeout, this, &TcpClient::attemptConnection);
 
     // Protocol signals - any packet means auth succeeded
     connect(m_protocol, &Protocol::packetReceived, this, [this](quint8 type, const QByteArray &payload) {
         Q_UNUSED(payload)
         if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
             m_authResponseReceived = true;
+            m_connectTimer->stop();
             m_authTimer->stop();
-            qCDebug(netTcp) << "Authentication successful, received packet type:" << type;
+            qDebug() << "Authentication successful, received packet type:" << type;
             setState(Connected);
             emit authenticated();
             startPingTimer();
 
-            // Send startup macro BEFORE RDY so the state dump reflects the macro changes
-            if (!m_startupMacro.isEmpty()) {
-                qCDebug(netTcp) << "Sending startup macro (pre-RDY):" << m_startupMacro;
-                sendCAT(m_startupMacro);
-                m_startupMacro.clear();
-            }
-
             // Send initialization sequence
             // RDY triggers comprehensive state dump containing all radio state:
-            // FA, FB, MD, MD$, BW, BW$, IS, IS$, CW, KS, PC, SD (per mode), SQ, RG, SQ$, RG$,
-            // RT, XT, RO, RT$, RO$, BS, AN, AR, AR$, PA, PA$, RA, RA$, NB, NB$, NR, NR$, NM, NM$,
+            // FA, FB, MD, MD$, BW, BW$, IS, CW, KS, PC, SD (per mode), SQ, RG, SQ$, RG$,
             // #SPN, #REF, VXC, VXV, VXD, and all menu definitions (MEDF)
             sendCAT(K4Protocol::Commands::READY);              // Triggers comprehensive state dump
             sendCAT(K4Protocol::Commands::ENABLE_K4_MODE);     // Enable advanced K4 protocol mode
             sendCAT(K4Protocol::Commands::ENABLE_LONG_ERRORS); // Request long format error messages
             // Set audio encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
-            qCDebug(netTcp) << "Sending:" << QString("EM%1;").arg(m_encodeMode);
+            qDebug() << "Sending:" << QString("EM%1;").arg(m_encodeMode);
             sendCAT(QString("EM%1;").arg(m_encodeMode));
             // Set streaming audio latency (0-7, higher values for high-latency connections)
-            qCDebug(netTcp) << "Sending:" << QString("SL%1;").arg(m_streamingLatency);
+            qDebug() << "Sending:" << QString("SL%1;").arg(m_streamingLatency);
             sendCAT(QString("SL%1;").arg(m_streamingLatency));
         }
     });
     connect(m_protocol, &Protocol::catResponseReceived, this, &TcpClient::onCatResponse);
+    m_digitalTimer = new QTimer(this);
+    m_digitalTimer->setInterval(50);
+    m_digitalTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_digitalTimer, &QTimer::timeout, this, &TcpClient::serviceDigitalTxProtection);
+    m_digitalClock.start();
 }
 
 TcpClient::~TcpClient() {
-    m_connectTimer->stop();
-    m_retryTimer->stop();
     stopPingTimer();
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         m_socket->abort();
@@ -92,13 +82,8 @@ TcpClient::~TcpClient() {
 
 void TcpClient::connectToHost(const QString &host, quint16 port, const QString &password, bool useTls,
                               const QString &identity, int encodeMode, int streamingLatency) {
-    qCDebug(netTcp) << "connectToHost called, state=" << m_state.load(std::memory_order_acquire)
-                    << "socket=" << m_socket->state();
     if (m_state.load(std::memory_order_acquire) != Disconnected) {
-        qCDebug(netTcp) << "Not disconnected, calling disconnectFromHost first";
         disconnectFromHost();
-        qCDebug(netTcp) << "After disconnect: state=" << m_state.load(std::memory_order_acquire)
-                        << "socket=" << m_socket->state();
     }
 
     m_host = host;
@@ -110,39 +95,42 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
     m_streamingLatency = streamingLatency; // Remote streaming audio latency (0-7)
     m_authResponseReceived = false;
 
-    m_retryCount = 0;
     setState(Connecting);
+    // Start this before a possible .local lookup as well as the TCP/TLS phase:
+    // an unreachable hostname must not leave the phone permanently Connecting.
+    m_connectTimer->start(K4Protocol::CONNECTION_TIMEOUT_MS);
 
-    // Resolve .local (mDNS) hostnames before connecting — Qt's SSL socket
-    // may not go through the system mDNS resolver, causing connection timeouts.
-    // K4, K4D, and K4Z radios only listen on IPv4, so prefer IPv4 results.
-    // The context-object overload of lookupHost() cancels if `this` is destroyed.
+    // K4 servers are commonly advertised as <name>.local. Resolve those names
+    // explicitly and prefer IPv4 because the K4 remote server listens on IPv4.
+    // Qt's SSL socket does not reliably use Android's mDNS resolver directly.
     if (m_host.endsWith(QStringLiteral(".local"), Qt::CaseInsensitive)) {
-        qCDebug(netTcp) << "Resolving mDNS hostname:" << m_host;
-        QHostInfo::lookupHost(m_host, this, [this](const QHostInfo &info) {
-            // Guard: user may have disconnected while resolution was in flight
+        const QString requestedHost = m_host;
+        qDebug() << "Resolving mDNS hostname:" << requestedHost;
+        QHostInfo::lookupHost(requestedHost, this, [this, requestedHost](const QHostInfo &info) {
+            // The user may have cancelled or the overall connection timeout may
+            // have fired while name resolution was in progress.
             if (m_state.load(std::memory_order_acquire) != Connecting)
                 return;
 
             if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-                qCWarning(netTcp) << "mDNS resolution failed for" << m_host << ":" << info.errorString();
-                emit errorOccurred(QString("Could not resolve %1: %2").arg(m_host, info.errorString()));
+                m_connectTimer->stop();
+                emit errorOccurred(QString("Could not resolve %1: %2").arg(requestedHost, info.errorString()));
                 setState(Disconnected);
                 return;
             }
-            // Prefer IPv4 — K4, K4D, and K4Z radios only listen on IPv4
-            QString resolved;
-            for (const auto &addr : info.addresses()) {
-                if (addr.protocol() == QAbstractSocket::IPv4Protocol) {
-                    resolved = addr.toString();
+
+            QString resolvedHost;
+            for (const QHostAddress &address : info.addresses()) {
+                if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+                    resolvedHost = address.toString();
                     break;
                 }
             }
-            if (resolved.isEmpty()) {
-                resolved = info.addresses().first().toString();
-            }
-            qCDebug(netTcp) << "Resolved" << m_host << "to" << resolved;
-            m_host = resolved;
+            if (resolvedHost.isEmpty())
+                resolvedHost = info.addresses().first().toString();
+
+            qDebug() << "Resolved" << requestedHost << "to" << resolvedHost;
+            m_host = resolvedHost;
             attemptConnection();
         });
         return;
@@ -152,18 +140,23 @@ void TcpClient::connectToHost(const QString &host, quint16 port, const QString &
 }
 
 void TcpClient::attemptConnection() {
-    qCDebug(netTcp) << "attemptConnection host=" << m_host << "port=" << m_port << "tls=" << m_useTls
-                    << "socketState=" << m_socket->state()
-                    << "thread=" << reinterpret_cast<quintptr>(QThread::currentThread());
-
     if (m_useTls) {
-        // Log OpenSSL version Qt is using (first attempt only)
-        if (m_retryCount == 0) {
-            qCDebug(netTcp) << "=== SSL Library Info ===";
-            qCDebug(netTcp) << "  Build version:" << QSslSocket::sslLibraryBuildVersionString();
-            qCDebug(netTcp) << "  Runtime version:" << QSslSocket::sslLibraryVersionString();
-            qCDebug(netTcp) << "  Supports SSL:" << QSslSocket::supportsSsl();
+        // On Android the TLS backend is present in Qt, but OpenSSL itself is a
+        // separately bundled runtime.  Fail before opening the K4 socket if
+        // that runtime could not be loaded, rather than reporting the opaque
+        // TLSInitializationFailedError from QSslSocket.
+        if (!QSslSocket::supportsSsl()) {
+            m_connectTimer->stop();
+            emit errorOccurred(QStringLiteral("TLS is unavailable: the OpenSSL runtime could not be loaded."));
+            setState(Disconnected);
+            return;
         }
+
+        // Log OpenSSL version Qt is using
+        qDebug() << "=== SSL Library Info ===";
+        qDebug() << "  Build version:" << QSslSocket::sslLibraryBuildVersionString();
+        qDebug() << "  Runtime version:" << QSslSocket::sslLibraryVersionString();
+        qDebug() << "  Supports SSL:" << QSslSocket::supportsSsl();
 
         // Configure TLS for PSK authentication - require TLS 1.2 minimum
         QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
@@ -172,59 +165,40 @@ void TcpClient::attemptConnection() {
 
         // Filter to only TLS 1.2+ PSK ciphers
         QList<QSslCipher> tls12PskCiphers;
-        if (m_retryCount == 0) {
-            qCDebug(netTcp) << "=== Available PSK Ciphers ===";
-        }
+        qDebug() << "=== Available PSK Ciphers ===";
         for (const QSslCipher &cipher : QSslConfiguration::supportedCiphers()) {
             if (cipher.name().contains("PSK")) {
-                if (m_retryCount == 0) {
-                    qCDebug(netTcp) << "  " << cipher.name() << "(" << cipher.protocolString() << ")";
-                }
+                qDebug() << "  " << cipher.name() << "(" << cipher.protocolString() << ")";
                 // Only include TLS 1.2+ ciphers
                 if (cipher.protocol() == QSsl::TlsV1_2 || cipher.protocol() == QSsl::TlsV1_3) {
                     tls12PskCiphers.append(cipher);
                 }
             }
         }
-        if (m_retryCount == 0) {
-            qCDebug(netTcp) << "=== Offering" << tls12PskCiphers.size() << "TLS 1.2+ PSK ciphers ===";
-            for (const QSslCipher &cipher : tls12PskCiphers) {
-                qCDebug(netTcp) << "  " << cipher.name();
-            }
+        qDebug() << "=== Offering" << tls12PskCiphers.size() << "TLS 1.2+ PSK ciphers ===";
+        for (const QSslCipher &cipher : tls12PskCiphers) {
+            qDebug() << "  " << cipher.name();
         }
-        if (tls12PskCiphers.isEmpty()) {
-            // WHY: the Schannel and cert-only backends expose no PSK ciphersuites. Starting
-            // the handshake anyway surfaces as a generic connection timeout, indistinguishable
-            // from a wrong PSK or a firewall drop — which is what made the Windows packaging
-            // regression (missing qopensslbackend.dll) so expensive to diagnose from the field.
-            const QString backend = QSslSocket::activeBackend();
-            qCWarning(netTcp) << "No TLS-PSK ciphers available; active backend =" << backend;
-            emit errorOccurred(QString("TLS unavailable: the active TLS backend (%1) has no PSK "
-                                       "support. Reinstall QK4, or connect on the unencrypted port.")
-                                   .arg(backend));
-            setState(Disconnected);
-            return;
+        if (!tls12PskCiphers.isEmpty()) {
+            sslConfig.setCiphers(tls12PskCiphers);
         }
-        sslConfig.setCiphers(tls12PskCiphers);
 
         m_socket->setSslConfiguration(sslConfig);
 
-        qCDebug(netTcp) << "Connecting with TLS/PSK to" << m_host << ":" << m_port;
+        qDebug() << "Connecting with TLS/PSK to" << m_host << ":" << m_port;
         m_socket->connectToHostEncrypted(m_host, m_port);
     } else {
-        qCDebug(netTcp) << "Connecting (unencrypted) to" << m_host << ":" << m_port;
+        qDebug() << "Connecting (unencrypted) to" << m_host << ":" << m_port;
         m_socket->connectToHost(m_host, m_port);
     }
-
-    m_connectTimer->start(K4Protocol::CONNECTION_TIMEOUT_MS);
 }
 
 void TcpClient::disconnectFromHost() {
-    qCDebug(netTcp) << "disconnectFromHost called, state=" << m_state.load(std::memory_order_acquire)
-                    << "socket=" << m_socket->state();
-    m_connectTimer->stop();
-    m_retryTimer->stop();
+    m_digitalGuard.stop();
+    m_digitalTimer->stop();
+    m_sstvAudioGate = false;
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
@@ -248,39 +222,30 @@ TcpClient::ConnectionState TcpClient::connectionState() const {
 
 void TcpClient::sendCAT(const QString &command) {
     if (QThread::currentThread() != thread()) {
-        qCDebug(catTx) << "cross-thread marshal:" << command;
         QMetaObject::invokeMethod(this, "sendCAT", Qt::QueuedConnection, Q_ARG(QString, command));
         return;
     }
     if (m_state.load(std::memory_order_acquire) == Connected) {
         QByteArray packet = Protocol::buildCATPacket(command);
         m_socket->write(packet);
-        m_socket->flush();
-        qCDebug(catTx) << "sent:" << command << "(" << packet.size() << "bytes)";
-        // Mirror the KPOD+ "TX@" trace format for KZ commands so HaliKey-keyer emits can be
-        // correlated 1:1 against cw.keyer traces and KPOD+ EP02 KZ@ traces.
-        if (command.startsWith(QLatin1String("KZ"))) {
-            qCDebug(catTx).noquote() << "TX@" << QTime::currentTime().toString(QStringLiteral("HH:mm:ss.zzz")) << "["
-                                     << command << "]";
-        }
-    } else {
-        qCWarning(catTx) << "DROPPED (state=" << m_state.load(std::memory_order_acquire) << "):" << command;
+        m_socket->flush(); // Ensure immediate send
     }
 }
 
-void TcpClient::sendCATBytes(const QByteArray &raw) {
-    int len = raw.size();
-    while (len > 0 && raw.at(len - 1) == '\0')
-        --len;
-    if (len > 0) {
-        const QString cmd = QString::fromLatin1(raw.constData(), len);
-        // Diagnostic: pair with the hw.kpodplus EP02 emit log to measure end-to-end
-        // device-emit → wire-write latency. Same HH:mm:ss.zzz format so a simple diff
-        // between matching "KZ@" and "TX@" lines tells you how long each batch took to
-        // forward across the Qt event-queue + I/O thread + TLS encrypt + kernel send.
-        qCDebug(catTx).noquote() << "TX@" << QTime::currentTime().toString("HH:mm:ss.zzz") << "[" << cmd << "]";
-        sendCAT(cmd);
+void TcpClient::sendMacro(const QString &command) {
+    if (command.trimmed().isEmpty())
+        return;
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "sendMacro", Qt::QueuedConnection, Q_ARG(QString, command));
+        return;
     }
+    // AI4 does not echo this client's SETs. Reuse the connection's full state
+    // readback after the complete macro, including the extra display queries.
+    // Keep these writes together on the I/O thread; do not rerun connection
+    // setup or infer state from arbitrary macro text (switches, toggles, etc.).
+    sendCAT(command);
+    sendCAT(K4Protocol::Commands::READY);
+    sendCAT(K4Protocol::Commands::ADDITIONAL_STATE_QUERIES);
 }
 
 void TcpClient::sendRaw(const QByteArray &data) {
@@ -293,11 +258,172 @@ void TcpClient::sendRaw(const QByteArray &data) {
     }
 }
 
+void TcpClient::beginSstvAudioTransmit(quint64 generation) {
+    beginDigitalAudioTransmit(int(DigitalTxGuard::Mode::Sstv), generation);
+}
+
+void TcpClient::acknowledgeDigitalTxFault() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "acknowledgeDigitalTxFault", Qt::QueuedConnection);
+        return;
+    }
+    m_digitalGuard.acknowledge();
+}
+
+void TcpClient::beginScheduledDigitalAudio(int mode, quint64 generation) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, mode, generation] { beginScheduledDigitalAudio(mode, generation); });
+        return;
+    }
+    if (m_digitalControl->scheduledGeneration.load() != generation) return;
+    beginDigitalAudioTransmit(mode, generation);
+}
+void TcpClient::stopScheduledDigitalAudio(quint64 generation) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, generation] { stopScheduledDigitalAudio(generation); });
+        return;
+    }
+    auto expected = generation;
+    m_digitalControl->scheduledGeneration.compare_exchange_strong(expected, 0);
+    if (m_sstvAudioGate && m_sstvAudioGeneration == generation)
+        stopDigitalAudioAndUnkey();
+    emit scheduledDigitalAudioStopped(generation);
+}
+void TcpClient::beginDigitalAudioTransmit(int mode, quint64 generation) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "beginDigitalAudioTransmit", Qt::QueuedConnection,
+                                  Q_ARG(int, mode), Q_ARG(quint64, generation));
+        return;
+    }
+    const auto reject = [this, mode, generation](const QString &reason) {
+        emit digitalAudioTransmitFailed(mode, reason, generation);
+        if (mode == int(DigitalTxGuard::Mode::Sstv))
+            emit sstvAudioTransmitFailed(reason, generation);
+        if (m_calibrationPhase == CalibrationPhase::Running && mode == m_calibrationMode
+            && generation == m_calibrationGeneration)
+            finishDigitalCalibration(false, reason);
+    };
+    if (m_calibrationPhase != CalibrationPhase::None
+        && (m_calibrationPhase != CalibrationPhase::Running || mode != m_calibrationMode
+            || generation != m_calibrationGeneration)) {
+        reject(QStringLiteral("TX not started: audio calibration is in progress."));
+        return;
+    }
+    if (mode < int(DigitalTxGuard::Mode::Ft8) || mode > int(DigitalTxGuard::Mode::Sstv)) {
+        reject(QStringLiteral("Digital transmission requested an unknown mode."));
+        return;
+    }
+    if (m_state.load(std::memory_order_acquire) != Connected
+        || m_socket->state() != QAbstractSocket::ConnectedState) {
+        reject(QStringLiteral("The K4 connection is no longer available."));
+        return;
+    }
+    if (!m_digitalGuard.begin(DigitalTxGuard::Mode(mode), generation, m_digitalClock.elapsed(),
+                             m_calibrationPhase == CalibrationPhase::Running)) {
+        reject(m_digitalGuard.latched() ? m_digitalGuard.reason()
+                                       : QStringLiteral("Digital transmit protection is already in use."));
+        return;
+    }
+    // CAT and gate changes execute on the same I/O thread, keeping the
+    // lifecycle ordered relative to program-audio writes. MainWindow applies
+    // a fixed key-up guard before releasing SSTV audio; a state query is not
+    // required because some working K4 connections do not echo TQ1 here.
+    // Enable/query meters only for a deliberate digital transmission. A radio
+    // that cannot supply fresh TM readings fails closed through the watchdog.
+    if (mode != int(DigitalTxGuard::Mode::Sstv) && m_calibrationPhase == CalibrationPhase::None
+        && m_digitalControl->scheduledGeneration.load() != generation) {
+        m_digitalGuard.stop();
+        return;
+    }
+    m_socket->write(Protocol::buildCATPacket(QStringLiteral("TM1;TM;TX;")));
+    m_socket->flush();
+    m_sstvAudioGate = true;
+    m_sstvAudioGeneration = generation;
+    m_nextMeterQuery = m_digitalClock.elapsed() + 250;
+    m_digitalTimer->start();
+    emit digitalTxProtectionStatus(mode, QStringLiteral("TX protection: waiting for K4 ALC readings"), false, generation);
+    qInfo() << "SSTV TX CAT command queued" << "generation" << generation;
+    emit digitalAudioKeyRequested(mode, generation);
+    if (mode == int(DigitalTxGuard::Mode::Sstv))
+        emit sstvAudioKeyRequested(generation);
+}
+
+void TcpClient::sendSstvAudio(const QByteArray &data, int emittedSamples, int totalSamples,
+                              int imageSamples, quint64 generation) {
+    sendDigitalAudio(data, emittedSamples, totalSamples, imageSamples, generation);
+}
+void TcpClient::sendDigitalAudio(const QByteArray &data, int emittedSamples, int totalSamples,
+                                int imageSamples, quint64 generation) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "sendDigitalAudio", Qt::QueuedConnection,
+                                  Q_ARG(QByteArray, data), Q_ARG(int, emittedSamples), Q_ARG(int, totalSamples),
+                                  Q_ARG(int, imageSamples),
+                                  Q_ARG(quint64, generation));
+        return;
+    }
+    if (m_sstvAudioGate && generation == m_sstvAudioGeneration
+        && m_socket->state() == QAbstractSocket::ConnectedState) {
+        handleDigitalTxAction(m_digitalGuard.tick(m_digitalClock.elapsed()));
+        if (!m_sstvAudioGate || !m_digitalControl->allows(generation))
+            return;
+        // Bound queued program audio if the K4 link stalls. Brief TCP
+        // buffering is already covered by this limit; once exceeded, stop
+        // rather than dropping a tone packet and transmitting a corrupt image.
+        const qint64 backlogLimit = qMax<qint64>(8192, data.size() * 4LL);
+        if (m_socket->bytesToWrite() > backlogLimit) {
+            handleDigitalTxAction(m_digitalGuard.trip(QStringLiteral("TX stopped: the K4 audio link stalled.")));
+            return;
+        }
+        const qint64 written = m_socket->write(data);
+        if (written == data.size()) {
+            if (!data.isEmpty()) m_digitalGuard.audioAccepted(m_digitalClock.elapsed());
+            if (totalSamples > 0 && emittedSamples >= totalSamples
+                && m_digitalControl->scheduledGeneration.load() == generation)
+                confirmScheduledAudioDrained(emittedSamples, totalSamples, imageSamples, generation, m_digitalClock.elapsed() + 500);
+            else
+                emit sstvAudioAccepted(emittedSamples, totalSamples, imageSamples, generation);
+        } else {
+            handleDigitalTxAction(m_digitalGuard.trip(QStringLiteral("TX stopped: the K4 audio link rejected a packet.")));
+        }
+    }
+}
+
+void TcpClient::confirmScheduledAudioDrained(int emitted, int total, int image, quint64 gen, qint64 deadline) {
+    if (!m_sstvAudioGate || !m_digitalControl->allows(gen) || m_sstvAudioGeneration != gen) return;
+    if (m_socket->bytesToWrite() == 0) {
+        emit sstvAudioAccepted(emitted, total, image, gen);
+    } else if (m_digitalClock.elapsed() >= deadline) {
+        handleDigitalTxAction(m_digitalGuard.trip("TX stopped: the final audio packet did not drain."));
+    } else {
+        QTimer::singleShot(10, this, [this, emitted, total, image, gen, deadline] {
+            confirmScheduledAudioDrained(emitted, total, image, gen, deadline);
+        });
+    }
+}
+void TcpClient::stopSstvAudioAndUnkey() {
+    stopDigitalAudioAndUnkey();
+}
+void TcpClient::stopDigitalAudioAndUnkey() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "stopDigitalAudioAndUnkey", Qt::QueuedConnection);
+        return;
+    }
+    if (m_calibrationPhase != CalibrationPhase::None) {
+        cancelDigitalCalibration();
+        return;
+    }
+    m_sstvAudioGate = false;
+    m_digitalGuard.stop();
+    m_digitalTimer->stop();
+    ++m_sstvAudioGeneration;
+    if (m_socket->state() == QAbstractSocket::ConnectedState) {
+        m_socket->write(Protocol::buildCATPacket(QStringLiteral("RX;")));
+        m_socket->flush();
+    }
+}
+
 void TcpClient::setState(ConnectionState state) {
-    const ConnectionState prev = m_state.load(std::memory_order_acquire);
-    if (prev != state) {
-        static const char *names[] = {"Disconnected", "Connecting", "Authenticating", "Connected"};
-        qCDebug(netTcp) << "State:" << names[prev] << "->" << names[state];
+    if (m_state.load(std::memory_order_acquire) != state) {
         m_state.store(state, std::memory_order_release);
         m_connected.store(state == Connected, std::memory_order_relaxed);
         emit stateChanged(state);
@@ -305,28 +431,36 @@ void TcpClient::setState(ConnectionState state) {
         if (state == Connected) {
             emit connected();
         } else if (state == Disconnected) {
+            m_digitalGuard.stop();
+            m_digitalTimer->stop();
+            m_sstvAudioGate = false;
+            if (m_calibrationPhase != CalibrationPhase::None) {
+                m_calibrationSuccess = false;
+                m_calibrationText = "Calibration stopped: connection lost. Verify K4 TEST mode; previous saved level retained.";
+                completeDigitalCalibration();
+            }
             emit disconnected();
         }
     }
 }
 
 void TcpClient::onSocketConnected() {
-    // WHY: small-write CAT traffic (KZ keying bursts in particular) plus K4-side delayed-ACK
-    // produces ~40 ms RTT stalls when Nagle is on. Setting LowDelayOption after the TCP socket
-    // is connected applies TCP_NODELAY to the actual FD and benefits the TLS handshake itself.
-    // KeepAliveOption catches half-open sockets across NAT keepalive expirations on WAN links.
+    // Match current QK4: audio and CAT are small, timing-sensitive writes.
+    // Android's default Nagle behavior can combine them behind the K4's
+    // delayed ACKs long enough to starve TX audio and make the radio unkey.
+    // Apply these after connect so they target the live socket descriptor.
     m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
 
     if (m_useTls) {
         // TLS connection: TCP connected, now waiting for TLS handshake to complete
         // The encrypted() signal will fire when TLS is fully established
-        qCDebug(netTcp) << "TCP connected, starting TLS handshake...";
+        qDebug() << "TCP connected, starting TLS handshake...";
         // Don't change state yet - wait for encrypted() signal
     } else {
-        // Non-TLS: TCP connected — stop connect timer, start auth phase
+        // Non-TLS: need to send SHA-384 password hash
+        qDebug() << "Socket connected, sending authentication...";
         m_connectTimer->stop();
-        qCDebug(netTcp) << "Socket connected, sending authentication...";
         setState(Authenticating);
         sendAuthentication();
         m_authTimer->start(K4Protocol::AUTH_TIMEOUT_MS);
@@ -334,14 +468,14 @@ void TcpClient::onSocketConnected() {
 }
 
 void TcpClient::onSocketEncrypted() {
-    m_connectTimer->stop();
     // TLS handshake completed successfully
     QSslCipher negotiated = m_socket->sessionCipher();
-    qCDebug(netTcp) << "=== TLS/PSK Connection Established ===";
-    qCDebug(netTcp) << "  Negotiated cipher:" << negotiated.name();
-    qCDebug(netTcp) << "  Protocol:" << negotiated.protocolString();
-    qCDebug(netTcp) << "  Key exchange:" << negotiated.keyExchangeMethod();
-    qCDebug(netTcp) << "  Encryption:" << negotiated.encryptionMethod();
+    qDebug() << "=== TLS/PSK Connection Established ===";
+    qDebug() << "  Negotiated cipher:" << negotiated.name();
+    qDebug() << "  Protocol:" << negotiated.protocolString();
+    qDebug() << "  Key exchange:" << negotiated.keyExchangeMethod();
+    qDebug() << "  Encryption:" << negotiated.encryptionMethod();
+    m_connectTimer->stop();
     setState(Authenticating);
     // Start auth timeout - waiting for first packet to confirm connection works
     m_authTimer->start(K4Protocol::AUTH_TIMEOUT_MS);
@@ -349,9 +483,10 @@ void TcpClient::onSocketEncrypted() {
 }
 
 void TcpClient::onSocketDisconnected() {
-    qCDebug(netTcp) << "Socket disconnected (was state=" << m_state.load(std::memory_order_acquire)
-                    << "authReceived=" << m_authResponseReceived << ")";
+    qDebug() << "Socket disconnected";
+    m_sstvAudioGate = false;
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
@@ -368,34 +503,15 @@ void TcpClient::onReadyRead() {
 }
 
 void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
-    m_connectTimer->stop();
+    Q_UNUSED(error)
     stopPingTimer();
+    m_connectTimer->stop();
     m_authTimer->stop();
 
     QString errorMsg = m_socket->errorString();
-    const ConnectionState stateNow = m_state.load(std::memory_order_acquire);
-    qCDebug(netTcp) << "Socket error:" << error << errorMsg << "state=" << stateNow << "socket=" << m_socket->state()
-                    << "retry=" << m_retryCount;
+    qDebug() << "Socket error:" << errorMsg;
 
-    // On local subnets, macOS returns EHOSTUNREACH immediately when the ARP cache
-    // is cold (no MAC address entry for the destination IP). This happens consistently
-    // on first connect after a fresh app launch via Finder/open — the kernel's connect()
-    // syscall fails synchronously instead of waiting for ARP resolution. The ARP request
-    // IS sent, so a brief retry after 500ms succeeds once the ARP reply populates the cache.
-    // This is not a workaround — it's correct handling of a real network transient.
-    constexpr int kArpRetryIntervalMs = 500;
-    constexpr int kArpMaxRetries = 2;
-    bool arpTransient =
-        (error == QAbstractSocket::NetworkError && stateNow == Connecting && m_retryCount < kArpMaxRetries);
-    if (arpTransient) {
-        m_retryCount++;
-        qCDebug(netTcp) << "ARP-cold retry" << m_retryCount << "in" << kArpRetryIntervalMs << "ms";
-        m_socket->abort();
-        m_retryTimer->start(kArpRetryIntervalMs);
-        return;
-    }
-
-    if (stateNow == Authenticating) {
+    if (m_state.load(std::memory_order_acquire) == Authenticating) {
         emit authenticationFailed();
     }
 
@@ -403,37 +519,36 @@ void TcpClient::onSocketError(QAbstractSocket::SocketError error) {
     setState(Disconnected);
 }
 
+void TcpClient::onConnectTimeout() {
+    if (m_state.load(std::memory_order_acquire) == Connecting) {
+        qDebug() << "Connection timeout for" << m_host << ":" << m_port;
+        emit errorOccurred(QString("Connection timeout - cannot reach %1:%2").arg(m_host).arg(m_port));
+        disconnectFromHost();
+    }
+}
+
 void TcpClient::onSslErrors(const QList<QSslError> &errors) {
     // Log SSL errors but continue - PSK doesn't use certificates so some errors are expected
     for (const QSslError &error : errors) {
-        qCDebug(netTcp) << "SSL error (ignored for PSK):" << error.errorString();
+        qDebug() << "SSL error (ignored for PSK):" << error.errorString();
     }
     // Ignore all SSL errors for PSK connections (no certificate verification)
     m_socket->ignoreSslErrors();
 }
 
 void TcpClient::onPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator) {
-    qCDebug(netTcp) << "PSK authentication requested, identity hint:" << authenticator->identityHint();
+    qDebug() << "PSK authentication requested, identity hint:" << authenticator->identityHint();
 
     // Set the identity (empty or user-specified) and the pre-shared key (password field)
     authenticator->setIdentity(m_identity.toUtf8());
     authenticator->setPreSharedKey(m_password.toUtf8());
 
-    qCDebug(netTcp) << "PSK credentials provided, identity:" << (m_identity.isEmpty() ? "(empty)" : m_identity);
-}
-
-void TcpClient::onConnectTimeout() {
-    if (m_state.load(std::memory_order_acquire) == Connecting) {
-        qCDebug(netTcp) << "Connection timeout - failed to establish" << (m_useTls ? "TLS" : "TCP") << "connection";
-        emit errorOccurred("Connection timed out - radio unreachable");
-        m_socket->abort();
-        setState(Disconnected);
-    }
+    qDebug() << "PSK credentials provided, identity:" << (m_identity.isEmpty() ? "(empty)" : m_identity);
 }
 
 void TcpClient::onAuthTimeout() {
     if (m_state.load(std::memory_order_acquire) == Authenticating && !m_authResponseReceived) {
-        qCDebug(netTcp) << "Authentication timeout";
+        qDebug() << "Authentication timeout";
         emit authenticationFailed();
         emit errorOccurred("Authentication timeout - no response from radio");
         disconnectFromHost();
@@ -442,23 +557,145 @@ void TcpClient::onAuthTimeout() {
 
 void TcpClient::onPingTimer() {
     if (m_state.load(std::memory_order_acquire) == Connected) {
-        qint64 epoch = QDateTime::currentSecsSinceEpoch();
-        sendCAT(QString("PING%1;").arg(epoch));
+        sendCAT(QString("PING%1;").arg(QDateTime::currentSecsSinceEpoch()));
         m_pingElapsed.start();
     }
 }
 
 void TcpClient::onCatResponse(const QString &response) {
-    if (response.startsWith("PONG")) {
-        m_latencyMs = static_cast<int>(m_pingElapsed.elapsed());
-        emit latencyChanged(m_latencyMs);
+    for (const auto &part : response.split(';', Qt::SkipEmptyParts)) {
+        const auto command = part.trimmed();
+        if (command == "TS0" || command == "TS1") {
+            if (m_calibrationPhase == CalibrationPhase::ReadTest) {
+                m_restoreTest = command == "TS0";
+                m_calibrationPhase = CalibrationPhase::EnableTest;
+                m_calibrationDeadline = m_digitalClock.elapsed() + 2500;
+                sendCAT(QStringLiteral("TS1;TS;"));
+            } else if (m_calibrationPhase == CalibrationPhase::EnableTest && command == "TS1") {
+                m_calibrationPhase = CalibrationPhase::Running;
+                beginDigitalAudioTransmit(m_calibrationMode, m_calibrationGeneration);
+            } else if (m_calibrationPhase == CalibrationPhase::Running && command == "TS0") {
+                handleDigitalTxAction(m_digitalGuard.trip("Calibration stopped: K4 TEST mode was disabled."));
+            } else if (m_calibrationPhase == CalibrationPhase::RestoreTest && command == "TS0")
+                completeDigitalCalibration();
+        }
+        const bool calibrationMeter = m_digitalGuard.active() && m_digitalGuard.calibrating()
+            && command.startsWith("TM") && command.size() == 14;
+        const auto action = m_digitalGuard.meter(command, m_digitalClock.elapsed());
+        if (calibrationMeter)
+            qInfo().noquote() << "Digital TX calibration" << m_digitalClock.elapsed()
+                             << m_digitalGuard.meterDiagnostic() << "action" << int(action);
+        handleDigitalTxAction(action);
+        if (m_digitalGuard.active() && command.startsWith("TM") && command.size() == 14) {
+            const float gain = m_digitalControl->gain.load();
+            const QString status = m_digitalGuard.calibrating()
+                ? QString("Calibrating in K4 TEST mode · settling / validating\n%1").arg(m_digitalGuard.meterDiagnostic())
+                : m_digitalGuard.reduced()
+                    ? QString("Audio drive reduced automatically · %1 dB · protection on").arg(20 * std::log10(gain), 0, 'f', 0)
+                    : QString("TX protection active");
+            if (action != DigitalTxGuard::Action::Reduced)
+                emit digitalTxProtectionStatus(int(m_digitalGuard.mode()), status, false, m_digitalGuard.generation());
+        }
     }
+    if (response.startsWith("PONG") && m_pingElapsed.isValid())
+        emit latencyChanged(static_cast<int>(m_pingElapsed.elapsed()));
+}
+
+void TcpClient::serviceDigitalTxProtection() {
+    const qint64 now = m_digitalClock.elapsed();
+    if (m_calibrationPhase != CalibrationPhase::None && m_calibrationPhase != CalibrationPhase::Running
+        && now >= m_calibrationDeadline) {
+        if (m_calibrationPhase == CalibrationPhase::RestoreTest) {
+            m_calibrationSuccess = false;
+            m_calibrationText = "Calibration stopped: verify the K4 TEST setting; restoration was not confirmed.";
+            completeDigitalCalibration();
+        } else
+            finishDigitalCalibration(false, "Calibration stopped: K4 TEST mode could not be confirmed.");
+        return;
+    }
+    handleDigitalTxAction(m_digitalGuard.tick(now));
+    if (m_digitalGuard.active() && now >= m_nextMeterQuery) {
+        m_nextMeterQuery = now + 250;
+        sendCAT(QStringLiteral("TM;"));
+    }
+}
+void TcpClient::handleDigitalTxAction(DigitalTxGuard::Action action) {
+    const int mode = int(m_digitalGuard.mode());
+    const quint64 generation = m_digitalGuard.generation();
+    if (action == DigitalTxGuard::Action::Reduced) {
+        emit digitalAudioDriveReduced(mode, m_digitalControl->gain.load(std::memory_order_acquire), generation);
+        emit digitalTxProtectionStatus(mode, "Audio drive reduced automatically · TX protection active", false, generation);
+    } else if (action == DigitalTxGuard::Action::Calibrated) {
+        finishDigitalCalibration(true, "TX audio calibrated and saved · automatic protection remains active");
+    } else if (action == DigitalTxGuard::Action::Tripped) {
+        const QString reason = m_digitalGuard.reason();
+        emit digitalTxProtectionStatus(mode, reason, true, generation);
+        if (m_calibrationPhase == CalibrationPhase::Running) {
+            finishDigitalCalibration(false, reason);
+            return;
+        }
+        // Unkey on the socket's own thread before notifying the UI. Closing the
+        // shared generation also stops the audio producer and rejects its queue.
+        stopSstvAudioAndUnkey();
+        emit digitalAudioTransmitFailed(mode, reason, generation);
+        if (mode == int(DigitalTxGuard::Mode::Sstv))
+            emit sstvAudioTransmitFailed(reason, generation);
+    }
+}
+
+void TcpClient::beginDigitalCalibration(int mode, quint64 generation) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "beginDigitalCalibration", Qt::QueuedConnection,
+                                  Q_ARG(int, mode), Q_ARG(quint64, generation));
+        return;
+    }
+    if (!isConnected() || m_digitalGuard.active() || m_calibrationPhase != CalibrationPhase::None
+        || generation == 0 || mode < 0 || mode > int(DigitalTxGuard::Mode::Sstv)) {
+        emit digitalCalibrationFinished(mode, false, 0, "Calibration unavailable: connect and return the K4 to receive.", generation);
+        return;
+    }
+    m_calibrationMode = mode;
+    m_calibrationGeneration = generation;
+    m_restoreTest = false;
+    m_calibrationPhase = CalibrationPhase::ReadTest;
+    m_calibrationDeadline = m_digitalClock.elapsed() + 2500;
+    m_digitalTimer->start();
+    sendCAT(QStringLiteral("TS;"));
+    emit digitalTxProtectionStatus(mode, "Calibration: checking K4 TEST mode", false, generation);
+}
+void TcpClient::cancelDigitalCalibration() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "cancelDigitalCalibration", Qt::QueuedConnection);
+        return;
+    }
+    if (m_calibrationPhase != CalibrationPhase::None && m_calibrationPhase != CalibrationPhase::RestoreTest)
+        finishDigitalCalibration(false, "Calibration cancelled · previous saved level retained");
+}
+void TcpClient::finishDigitalCalibration(bool success, const QString &text) {
+    m_calibrationSuccess = success;
+    m_calibrationGain = m_digitalControl->gain.load();
+    m_calibrationText = text;
+    m_calibrationPhase = CalibrationPhase::None;
+    stopSstvAudioAndUnkey(); // RX precedes restoration; no tone can reach normal TX.
+    if (m_restoreTest && isConnected()) {
+        m_calibrationPhase = CalibrationPhase::RestoreTest;
+        m_calibrationDeadline = m_digitalClock.elapsed() + 2500;
+        m_digitalTimer->start();
+        sendCAT(QStringLiteral("TS0;TS;"));
+    } else
+        completeDigitalCalibration();
+}
+void TcpClient::completeDigitalCalibration() {
+    m_calibrationPhase = CalibrationPhase::None;
+    m_digitalTimer->stop();
+    emit digitalCalibrationFinished(m_calibrationMode, m_calibrationSuccess, m_calibrationGain,
+                                     m_calibrationText, m_calibrationGeneration);
 }
 
 void TcpClient::sendAuthentication() {
     // Build SHA-384 hash of password as hex string
     QByteArray authData = Protocol::buildAuthData(m_password);
-    qCDebug(netTcp) << "Sending auth hash (" << authData.size() << "bytes)";
+    qDebug() << "Sending auth hash (" << authData.size() << "bytes)";
 
     // Send raw auth data (not wrapped in K4 packet - just the hex string)
     m_socket->write(authData);

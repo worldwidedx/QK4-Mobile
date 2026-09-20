@@ -1,0 +1,4 @@
+interface:
+  display_name: "QK4 Android Development"
+  short_description: "Build and maintain the QK4 Android radio app"
+  default_prompt: "Use $qk4-android to continue development of the QK4 Android application."

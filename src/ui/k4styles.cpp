@@ -1,0 +1,836 @@
+#include "k4styles.h"
+#include <QtGlobal>
+#include <algorithm>
+
+namespace {
+// Internal helper to generate CSS linear-gradient strings
+QString gradientCss(const char *top, const char *mid1, const char *mid2, const char *bottom) {
+    return QString("qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                   "stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4)")
+        .arg(top, mid1, mid2, bottom);
+}
+
+// Reversed gradient for pressed states
+QString gradientCssReversed(const char *top, const char *mid1, const char *mid2, const char *bottom) {
+    return QString("qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                   "stop:0 %1, stop:0.4 %2, stop:0.6 %3, stop:1 %4)")
+        .arg(bottom, mid2, mid1, top);
+}
+
+bool g_compactLayout = false;
+
+void applyDefaultDimensions() {
+    using namespace K4Styles::Dimensions;
+
+    BorderWidth = 2;
+    BorderRadius = 6;
+    BorderRadiusLarge = 8;
+
+    ShadowRadius = 16;
+    ShadowOffsetX = 2;
+    ShadowOffsetY = 4;
+    ShadowMargin = ShadowRadius + 4;
+    ShadowLayers = 8;
+
+    ButtonHeightLarge = 44;
+    ButtonHeightMedium = 36;
+    ButtonHeightSmall = 28;
+    ButtonHeightMini = 24;
+
+    PopupButtonWidth = 70;
+    PopupButtonHeight = 44;
+    PopupButtonSpacing = 8;
+    MenuBarButtonWidth = 90;
+    PopupContentMargin = 12;
+
+    SeparatorHeight = 1;
+    MenuItemHeight = 40;
+    MenuBarHeight = 52;
+
+    FormLabelWidth = 80;
+    VfoSquareSize = 45;
+    NavButtonWidth = 54;
+    SidePanelWidth = 105;
+    MemoryButtonWidth = 42;
+
+    CenterPanelWidth = 330;
+    VfoColumnWidth = 270;
+    VfoContentHeight = 150;
+    VfoMeterWidth = 260;
+    SpectrumMinHeight = 300;
+    VfoIndicatorBadgeWidth = 34;
+    VfoIndicatorBadgeHeight = 30;
+
+    VfoSquareWidgetSize = 30;
+    VfoSquareWidgetTotalHeight = 40;
+    VfoRowHeight = 65;
+    VfoSubDivLabelWidth = 36;
+    VfoSubDivLabelHeight = 14;
+
+    FontSizeTiny = 7;
+    FontSizeSmall = 8;
+    FontSizeNormal = 9;
+    FontSizeMedium = 10;
+    FontSizeLarge = 11;
+    FontSizeButton = 12;
+    FontSizePopup = 14;
+    FontSizeTitle = 16;
+    FontSizeFrequency = 32;
+
+    PopupTitleSize = 12;
+    PopupButtonSize = 11;
+    PopupValueSize = 12;
+    PopupAltTextSize = 10;
+
+    SliderGrooveHeight = 6;
+    SliderHandleWidth = 16;
+    SliderHandleMargin = -5;
+    SliderBorderRadius = 3;
+    SliderHandleRadius = 8;
+    SliderValueLabelWidth = 40;
+
+    DialogMargin = 20;
+    TabListWidth = 150;
+    InputFieldWidthSmall = 100;
+    InputFieldWidthMedium = 120;
+    CheckboxSize = 18;
+    PaddingSmall = 6;
+    PaddingMedium = 10;
+    PaddingLarge = 15;
+}
+
+void applyCompactDimensions() {
+    using namespace K4Styles::Dimensions;
+
+    BorderWidth = 1;
+    BorderRadius = 5;
+    BorderRadiusLarge = 6;
+
+    ShadowRadius = 10;
+    ShadowOffsetX = 1;
+    ShadowOffsetY = 2;
+    ShadowMargin = ShadowRadius + 4;
+    ShadowLayers = 6;
+
+    // Keep the complete live radio console within a landscape phone's short
+    // edge.  The separate Controls screen supplies roomy touch controls.
+    ButtonHeightLarge = 32;
+    ButtonHeightMedium = 28;
+    ButtonHeightSmall = 22;
+    ButtonHeightMini = 20;
+
+    PopupButtonWidth = 58;
+    PopupButtonHeight = 34;
+    PopupButtonSpacing = 4;
+    MenuBarButtonWidth = 62;
+    PopupContentMargin = 8;
+
+    MenuItemHeight = 32;
+    MenuBarHeight = 36;
+
+    VfoSquareSize = 30;
+    NavButtonWidth = 42;
+    // Original QK4 control banks are now presented side-by-side in the
+    // phone Controls screen, so each needs room for its two-column grid.
+    SidePanelWidth = 170;
+    MemoryButtonWidth = 34;
+
+    // 62 px filter shapes on both sides plus the 80 px RIT/XIT readout.
+    // Keeping this geometry visible is more valuable than a wider empty
+    // center column on the phone console.
+    CenterPanelWidth = 214;
+    // Seven receiver-status fields share one row. Size the VFO block for the
+    // longest live forms (AGC-S, PRE-3, ATT-21, SSNR, NTCH-A/M, APF-150)
+    // instead of the three-character idle abbreviations.
+    VfoColumnWidth = 230;
+    VfoContentHeight = 86;
+    VfoMeterWidth = 230;
+    SpectrumMinHeight = 0;
+    VfoIndicatorBadgeWidth = 24;
+    VfoIndicatorBadgeHeight = 20;
+
+    VfoSquareWidgetSize = 20;
+    VfoSquareWidgetTotalHeight = 26;
+    VfoRowHeight = 38;
+    VfoSubDivLabelWidth = 24;
+    VfoSubDivLabelHeight = 10;
+
+    FontSizeTiny = 6;
+    FontSizeSmall = 7;
+    FontSizeNormal = 8;
+    FontSizeMedium = 9;
+    FontSizeLarge = 8;
+    FontSizeButton = 10;
+    FontSizePopup = 12;
+    FontSizeTitle = 13;
+    FontSizeFrequency = 20;
+
+    PopupTitleSize = 10;
+    PopupButtonSize = 9;
+    PopupValueSize = 10;
+    PopupAltTextSize = 9;
+
+    // Phone touch targets: make horizontal sliders easier to drag with thumb
+    SliderGrooveHeight = 9;
+    SliderHandleWidth = 24;
+    SliderHandleMargin = -8;
+    SliderBorderRadius = 4;
+    SliderHandleRadius = 12;
+    SliderValueLabelWidth = 32;
+
+    DialogMargin = 12;
+    TabListWidth = 120;
+    InputFieldWidthSmall = 84;
+    InputFieldWidthMedium = 96;
+    CheckboxSize = 16;
+    PaddingSmall = 4;
+    PaddingMedium = 6;
+    PaddingLarge = 10;
+}
+} // anonymous namespace
+
+namespace K4Styles {
+
+void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qreal physicalDiagonalInches,
+                        bool forceCompact) {
+    applyDefaultDimensions();
+
+    // TEMPORARY: Until the tablet layout has been physically validated, use the
+    // proven landscape phone layout on every Android screen size. Keep the
+    // original size-based selection below for restoration once tablet testing
+    // is available.
+    Q_UNUSED(availableSize);
+    Q_UNUSED(devicePixelRatio);
+    Q_UNUSED(physicalDiagonalInches);
+    Q_UNUSED(forceCompact);
+    const bool useCompact = true;
+    /*
+    bool forceCompactEnvOk = false;
+    bool forceRegularEnvOk = false;
+    const int forceCompactEnv = qEnvironmentVariableIntValue("QK4_FORCE_COMPACT_UI", &forceCompactEnvOk);
+    const int forceRegularEnv = qEnvironmentVariableIntValue("QK4_FORCE_REGULAR_UI", &forceRegularEnvOk);
+    const bool forceCompactByEnv = forceCompactEnvOk && forceCompactEnv > 0;
+    const bool forceRegularByEnv = forceRegularEnvOk && forceRegularEnv > 0;
+
+    const int shortEdge = std::min(availableSize.width(), availableSize.height());
+    const int longEdge = std::max(availableSize.width(), availableSize.height());
+    const int nativeShortEdge = qRound(static_cast<qreal>(shortEdge) * qMax<qreal>(1.0, devicePixelRatio));
+
+    const bool logicalPhone = (shortEdge <= 540) || (shortEdge <= 700 && longEdge <= 1200);
+    const bool densePhone = (shortEdge <= 900 && nativeShortEdge <= 1300 && longEdge <= 2600);
+    const bool physicalPhone = (physicalDiagonalInches > 0.0 && physicalDiagonalInches <= 7.2);
+
+    bool useCompact = forceCompact || forceCompactByEnv || logicalPhone || densePhone || physicalPhone;
+    if (forceRegularByEnv) {
+        useCompact = false;
+    }
+    */
+
+    g_compactLayout = useCompact;
+    if (useCompact) {
+        applyCompactDimensions();
+    }
+}
+
+bool isCompactLayout() {
+    return g_compactLayout;
+}
+
+QString popupButtonNormal() {
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: #FFFFFF;
+            border: 2px solid #606060;
+            border-radius: 6px;
+            font-size: %1px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+            border: 2px solid #808080;
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #2a2a2a,
+                stop:0.4 #353535,
+                stop:0.6 #3a3a3a,
+                stop:1 #4a4a4a);
+        }
+    )")
+        .arg(Dimensions::PopupButtonSize);
+}
+
+QString popupButtonSelected() {
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #E0E0E0,
+                stop:0.4 #D0D0D0,
+                stop:0.6 #C8C8C8,
+                stop:1 #B8B8B8);
+            color: #333333;
+            border: 2px solid #AAAAAA;
+            border-radius: 6px;
+            font-size: %1px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #F0F0F0,
+                stop:0.4 #E0E0E0,
+                stop:0.6 #D8D8D8,
+                stop:1 #C8C8C8);
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #B8B8B8,
+                stop:0.4 #C8C8C8,
+                stop:0.6 #D0D0D0,
+                stop:1 #E0E0E0);
+        }
+    )")
+        .arg(Dimensions::PopupButtonSize);
+}
+
+QString menuBarButton() {
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: #FFFFFF;
+            border: 2px solid #606060;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %1px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+            border: 2px solid #808080;
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #2a2a2a,
+                stop:0.4 #353535,
+                stop:0.6 #3a3a3a,
+                stop:1 #4a4a4a);
+            border: 2px solid #909090;
+        }
+    )")
+        .arg(Dimensions::PopupButtonSize);
+}
+
+QString menuBarButtonActive() {
+    return QString(R"(
+        QPushButton {
+            background: #FFFFFF;
+            color: #666666;
+            border: 2px solid #AAAAAA;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %1px;
+            font-weight: 600;
+        }
+    )")
+        .arg(Dimensions::PopupButtonSize);
+}
+
+QString menuBarButtonSmall() {
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: #FFFFFF;
+            border: 2px solid #606060;
+            border-radius: 6px;
+            font-size: %1px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+            border: 2px solid #808080;
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #2a2a2a,
+                stop:0.4 #353535,
+                stop:0.6 #3a3a3a,
+                stop:1 #4a4a4a);
+            border: 2px solid #909090;
+        }
+    )")
+        .arg(Dimensions::PopupValueSize);
+}
+
+QString menuBarButtonPttPressed() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            color: #FFFFFF;
+            border: 2px solid %1;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %2px;
+            font-weight: 600;
+        }
+    )")
+        .arg(Colors::TxRed)
+        .arg(Dimensions::PopupButtonSize);
+}
+
+void drawDropShadow(QPainter &painter, const QRect &contentRect, int cornerRadius) {
+    painter.setPen(Qt::NoPen);
+    for (int i = Dimensions::ShadowLayers; i > 0; --i) {
+        int blur = i * 2;
+        int alpha = 12 + (Dimensions::ShadowLayers - i) * 3;
+        QRect shadowRect = contentRect.adjusted(-blur, -blur, blur, blur);
+        shadowRect.translate(Dimensions::ShadowOffsetX, Dimensions::ShadowOffsetY);
+        painter.setBrush(QColor(0, 0, 0, alpha));
+        painter.drawRoundedRect(shadowRect, cornerRadius + blur / 2, cornerRadius + blur / 2);
+    }
+}
+
+QLinearGradient buttonGradient(int top, int bottom, bool hovered) {
+    QLinearGradient grad(0, top, 0, bottom);
+    if (hovered) {
+        grad.setColorAt(0, QColor(Colors::HoverTop));
+        grad.setColorAt(0.4, QColor(Colors::HoverMid1));
+        grad.setColorAt(0.6, QColor(Colors::HoverMid2));
+        grad.setColorAt(1, QColor(Colors::HoverBottom));
+    } else {
+        grad.setColorAt(0, QColor(Colors::GradientTop));
+        grad.setColorAt(0.4, QColor(Colors::GradientMid1));
+        grad.setColorAt(0.6, QColor(Colors::GradientMid2));
+        grad.setColorAt(1, QColor(Colors::GradientBottom));
+    }
+    return grad;
+}
+
+QLinearGradient selectedGradient(int top, int bottom) {
+    QLinearGradient grad(0, top, 0, bottom);
+    grad.setColorAt(0, QColor(Colors::SelectedTop));
+    grad.setColorAt(0.4, QColor(Colors::SelectedMid1));
+    grad.setColorAt(0.6, QColor(Colors::SelectedMid2));
+    grad.setColorAt(1, QColor(Colors::SelectedBottom));
+    return grad;
+}
+
+QColor borderColor() {
+    return QColor(Colors::BorderNormal);
+}
+
+QColor borderColorSelected() {
+    return QColor(Colors::BorderSelected);
+}
+
+QLinearGradient meterGradient(qreal x1, qreal y1, qreal x2, qreal y2) {
+    QLinearGradient gradient(x1, y1, x2, y2);
+    gradient.setColorAt(0.00, QColor(Colors::MeterGreenDark));
+    gradient.setColorAt(0.15, QColor(Colors::MeterGreen));
+    gradient.setColorAt(0.30, QColor(Colors::MeterYellowGreen));
+    gradient.setColorAt(0.45, QColor(Colors::MeterYellow));
+    gradient.setColorAt(0.60, QColor(Colors::MeterOrange));
+    gradient.setColorAt(0.80, QColor(Colors::MeterOrangeRed));
+    gradient.setColorAt(1.00, QColor(Colors::MeterRed));
+    return gradient;
+}
+
+QString sliderHorizontal(const QString &grooveColor, const QString &handleColor) {
+    return QString("QSlider::groove:horizontal { background: %1; height: %2px; border-radius: %3px; }"
+                   "QSlider::handle:horizontal { background: %4; width: %5px; margin: %6px 0; border-radius: %7px; }"
+                   "QSlider::sub-page:horizontal { background: %4; border-radius: %3px; }")
+        .arg(grooveColor)
+        .arg(Dimensions::SliderGrooveHeight)
+        .arg(Dimensions::SliderBorderRadius)
+        .arg(handleColor)
+        .arg(Dimensions::SliderHandleWidth)
+        .arg(Dimensions::SliderHandleMargin)
+        .arg(Dimensions::SliderHandleRadius);
+}
+
+QString checkboxButton(int size) {
+    // Checkbox shows ✓ when checked, empty when unchecked
+    // Uses dark gradient unchecked, same dark gradient + white checkmark when checked
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: transparent;
+            border: 1px solid #606060;
+            border-radius: 3px;
+            min-width: %1px;
+            max-width: %1px;
+            min-height: %1px;
+            max-height: %1px;
+            font-size: %2px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+            border: 1px solid #808080;
+        }
+        QPushButton:checked {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: #FFFFFF;
+            border: 1px solid #808080;
+        }
+        QPushButton:checked:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+        }
+        QPushButton:disabled {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #3a3a3a,
+                stop:0.4 #2a2a2a,
+                stop:0.6 #252525,
+                stop:1 #1a1a1a);
+            border: 1px solid #404040;
+            color: transparent;
+        }
+        QPushButton:disabled:checked {
+            color: #666666;
+        }
+    )")
+        .arg(size)
+        .arg(size - 4); // Font size slightly smaller than box
+}
+
+QString radioButton() {
+    return R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4a4a4a,
+                stop:0.4 #3a3a3a,
+                stop:0.6 #353535,
+                stop:1 #2a2a2a);
+            color: #FFFFFF;
+            border: 2px solid #606060;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-align: left;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5a5a5a,
+                stop:0.4 #4a4a4a,
+                stop:0.6 #454545,
+                stop:1 #3a3a3a);
+            border: 2px solid #808080;
+        }
+        QPushButton:checked {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #E0E0E0,
+                stop:0.4 #D0D0D0,
+                stop:0.6 #C8C8C8,
+                stop:1 #B8B8B8);
+            color: #333333;
+            border: 2px solid #AAAAAA;
+        }
+    )";
+}
+
+QString compactButton() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            border: 1px solid %2;
+            border-radius: 4px;
+            color: %3;
+            font-size: %4px;
+            font-weight: bold;
+            padding: 4px 2px;
+        }
+        QPushButton:hover {
+            background: %5;
+        }
+        QPushButton:pressed {
+            background: %6;
+        }
+        QPushButton:checked {
+            background: %7;
+            color: %8;
+            border: 1px solid %9;
+        }
+    )")
+        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+        .arg(Colors::BorderNormal)
+        .arg(Colors::TextWhite)
+        .arg(Dimensions::FontSizeNormal)
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                 Colors::GradientBottom))
+        .arg(gradientCss(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2, Colors::SelectedBottom))
+        .arg(Colors::TextDark)
+        .arg(Colors::BorderSelected);
+}
+
+QString sidePanelButton() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            color: %2;
+            border: %3px solid %4;
+            border-radius: %5px;
+            font-size: %6px;
+            font-weight: bold;
+            padding: 2px 4px;
+        }
+        QPushButton:hover {
+            background: %7;
+            border: %3px solid %8;
+        }
+        QPushButton:pressed {
+            background: %9;
+            border: %3px solid %10;
+        }
+    )")
+        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+        .arg(Colors::TextWhite)
+        .arg(Dimensions::BorderWidth)
+        .arg(Colors::BorderNormal)
+        .arg(Dimensions::BorderRadius)
+        .arg(Dimensions::FontSizeNormal)
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+        .arg(Colors::BorderHover)
+        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                 Colors::GradientBottom))
+        .arg(Colors::BorderPressed);
+}
+
+QString sidePanelButtonLight() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            color: %2;
+            border: %3px solid %4;
+            border-radius: %5px;
+            font-size: %6px;
+            font-weight: bold;
+            padding: 2px 4px;
+        }
+        QPushButton:hover {
+            border: %3px solid %7;
+        }
+        QPushButton:pressed {
+            background: %8;
+        }
+    )")
+        .arg(gradientCss(Colors::LightGradientTop, Colors::LightGradientMid1, Colors::LightGradientMid2,
+                         Colors::LightGradientBottom))
+        .arg(Colors::TextWhite)
+        .arg(Dimensions::BorderWidth)
+        .arg(Colors::BorderPressed)
+        .arg(Dimensions::BorderRadius)
+        .arg(Dimensions::FontSizeNormal)
+        .arg(Colors::BorderSelected)
+        .arg(gradientCssReversed(Colors::LightGradientTop, Colors::LightGradientMid1, Colors::LightGradientMid2,
+                                 Colors::LightGradientBottom));
+}
+
+QString panelButtonWithDisabled() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            color: %2;
+            border: %3px solid %4;
+            border-radius: %5px;
+            font-size: %6px;
+            font-weight: bold;
+            padding: 2px 4px;
+        }
+        QPushButton:hover {
+            background: %7;
+            border-color: %8;
+        }
+        QPushButton:pressed {
+            background: %9;
+        }
+        QPushButton:disabled {
+            color: %10;
+        }
+    )")
+        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+        .arg(Colors::TextWhite)
+        .arg(Dimensions::BorderWidth)
+        .arg(Colors::BorderNormal)
+        .arg(Dimensions::BorderRadius)
+        .arg(Dimensions::FontSizeNormal)
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+        .arg(Colors::AccentAmber)
+        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                 Colors::GradientBottom))
+        .arg(Colors::InactiveGray);
+}
+
+QString dialogButton() {
+    return QString(R"(
+        QPushButton {
+            background: %1;
+            color: %2;
+            border: 2px solid %3;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: %4px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background: %5;
+            border: 2px solid %6;
+        }
+        QPushButton:pressed {
+            background: %7;
+            border: 2px solid %8;
+        }
+        QPushButton:disabled {
+            background: %9;
+            color: %10;
+            border: 2px solid %11;
+        }
+    )")
+        .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+        .arg(Colors::TextWhite)
+        .arg(Colors::BorderNormal)
+        .arg(Dimensions::PopupButtonSize)
+        .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+        .arg(Colors::BorderHover)
+        .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                 Colors::GradientBottom))
+        .arg(Colors::BorderPressed)
+        .arg(gradientCss(Colors::GradientMid1, Colors::GradientMid1, Colors::GradientBottom, Colors::GradientBottom))
+        .arg(Colors::TextGray)
+        .arg(Colors::DialogBorder);
+}
+
+QString controlButton(bool selected) {
+    if (selected) {
+        return QString(R"(
+            QPushButton {
+                background: %1;
+                color: %2;
+                border: 1px solid %3;
+                border-radius: 4px;
+                font-size: %4px;
+                font-weight: bold;
+                padding: 2px 4px;
+            }
+            QPushButton:hover {
+                border: 1px solid %5;
+            }
+            QPushButton:pressed {
+                background: %6;
+            }
+        )")
+            .arg(gradientCss(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2, Colors::SelectedBottom))
+            .arg(Colors::TextDark)
+            .arg(Colors::BorderSelected)
+            .arg(Dimensions::FontSizeNormal)
+            .arg(Colors::BorderHover)
+            .arg(gradientCssReversed(Colors::SelectedTop, Colors::SelectedMid1, Colors::SelectedMid2,
+                                     Colors::SelectedBottom));
+    } else {
+        return QString(R"(
+            QPushButton {
+                background: %1;
+                color: %2;
+                border: 1px solid %3;
+                border-radius: 4px;
+                font-size: %4px;
+                font-weight: bold;
+                padding: 2px 4px;
+            }
+            QPushButton:hover {
+                background: %5;
+                border: 1px solid %6;
+            }
+            QPushButton:pressed {
+                background: %7;
+            }
+            QPushButton:disabled {
+                background: %8;
+                color: %9;
+                border: 1px solid %3;
+            }
+        )")
+            .arg(gradientCss(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2, Colors::GradientBottom))
+            .arg(Colors::TextWhite)
+            .arg(Colors::BorderNormal)
+            .arg(Dimensions::FontSizeNormal)
+            .arg(gradientCss(Colors::HoverTop, Colors::HoverMid1, Colors::HoverMid2, Colors::HoverBottom))
+            .arg(Colors::BorderHover)
+            .arg(gradientCssReversed(Colors::GradientTop, Colors::GradientMid1, Colors::GradientMid2,
+                                     Colors::GradientBottom))
+            .arg(Colors::DisabledBackground)
+            .arg(Colors::InactiveGray);
+    }
+}
+
+namespace Fonts {
+
+QFont paintFont(int pixelSize, QFont::Weight weight) {
+    QFont font(Primary);
+    font.setPixelSize(pixelSize);
+    font.setWeight(weight);
+    font.setStyleHint(QFont::SansSerif);
+    font.setHintingPreference(QFont::PreferFullHinting);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    return font;
+}
+
+QFont dataFont(int pixelSize, QFont::Weight weight) {
+    QFont font(Data);
+    font.setPixelSize(pixelSize);
+    font.setWeight(weight);
+    font.setStyleHint(QFont::SansSerif);
+    font.setHintingPreference(QFont::PreferFullHinting);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    // Enable tabular figures for consistent digit widths
+    // This is handled via stylesheet for CSS-based styling
+    return font;
+}
+
+QString dataFontStylesheet() {
+    return QString("font-family: '%1'; font-feature-settings: 'tnum';").arg(Data);
+}
+
+} // namespace Fonts
+
+} // namespace K4Styles

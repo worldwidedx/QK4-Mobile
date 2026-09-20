@@ -1,0 +1,383 @@
+{
+  "_comments": [
+    "This is a user-editable QK4 CTR2 mapping. Action keywords are case-sensitive.",
+    "Top-level names beginning with an underscore are documentation only. QK4 ignores those sections when loading the mapping; actual assignments are in buttons and knobs.",
+    "For a predefined button function, copy a keyword from _buttonActions into the button's action field and remove its macro field.",
+    "For a custom K4 programmer command, use action \"macro\", set the button's macro field to an id, and define that id in macros. Commands must end with a semicolon.",
+    "The _buttonActions reference includes immediate button functions and adjust_* selection functions. An adjust_* button selects what a knob mapped to selected_adjustment will control; the button does not perform the continuous adjustment by itself. See _buttonActionGuide.",
+    "Set buttonMode to \"normal\" or \"extended\" to match the Extended BTN setting in CTR2-MIDI. QK4 cannot detect that device setting automatically.",
+    "Each buttons entry identifies its physical button, MIDI note, press type, knob mode, and mapped action or macro. buttonLabel, pressType, and knobMode are explanatory fields; QK4 derives the control from note when loading.",
+    "A knob's output describes the MIDI messages emitted by that CTR2 knob mode; it does not select the radio action. The output keyword must match the output configured on the CTR2. See _knobOutputs.",
+    "Loading replaces the complete CTR2 mapping; mappings are never merged."
+  ],
+  "_buttonModeGuide": [
+    "normal: the same 12 functions are used in every knob mode. Short presses are MIDI notes 1-6; long presses are notes 11-16.",
+    "extended: each device knob mode has its own 12 functions. Home uses short notes 1-6 and long notes 25-30; Knob mode 1 uses 7-12 and 31-36; Knob mode 2 uses 13-18 and 37-42; Knob mode 3 uses 19-24 and 43-48.",
+    "When extended mode is first enabled in QK4, the 12 normal assignments become the Home assignments. The 36 newly exposed Knob mode 1-3 assignments start disabled; they are not copies of Home.",
+    "When a knob control uses MIDI Button output, normal mode uses directional notes 40-55. Extended mode relocates CC100-107 to notes 60-75 within the manufacturer-defined 60-95 range so notes 40-48 remain available to physical buttons.",
+    "Every listed button can use a predefined action keyword or action \"macro\" with a supported K4 Programmer's Reference command."
+  ],
+  "_buttonActionGuide": [
+    "_buttonActions is a reference list, divided into immediateActions and adjustmentSelectors. Copy a keyword into an entry in the actual buttons array; the reference list does not assign any controls.",
+    "Immediate button actions, such as band_up, nr_toggle, and tx_rx_toggle, perform their function as soon as the mapped button is released.",
+    "Actions beginning with adjust_, such as adjust_nr_level, are adjustment selectors. Pressing that button selects a function, opens the related QK4 control or feedback where available, and waits for knob movement.",
+    "To use an adjust_* button, assign selected_adjustment to one entry in the actual knobs array. That knob then controls whichever adjust_* button was pressed most recently.",
+    "Example: assign adjust_nr_level to a button and selected_adjustment to CC100. Press the button to select NR and open its control, then turn CC100 to change the NR level.",
+    "The button and knob entries are independent entries in separate arrays. They do not need to be adjacent or appear in any particular order; QK4 links them by the adjust_* and selected_adjustment action types at runtime.",
+    "For a knob that should always control one function without a selection button, copy a direct keyword such as nr_level from _knobActions into that knob's action field instead."
+  ],
+  "_selectedAdjustmentExample": {
+    "purpose": "Button 3 selects NR; the Home knob then adjusts the selected function.",
+    "pairingRule": "No note-to-CC pairing exists. Any button using an adjust_* action selects the function for any knob using selected_adjustment.",
+    "ordering": "The entries belong in separate buttons and knobs arrays. Their order and physical proximity in this file do not matter.",
+    "buttonArrayEntry": {
+      "note": 3,
+      "action": "adjust_nr_level"
+    },
+    "knobArrayEntry": {
+      "cc": 100,
+      "action": "selected_adjustment",
+      "output": "wheelA"
+    },
+    "operatorSequence": [
+      "Press Button 3 to select NR and open its QK4 control.",
+      "Turn the Home knob (CC100) to adjust NR.",
+      "Press another adjust_* button to make that same knob control a different function."
+    ]
+  },
+  "_knobOutputGuide": [
+    "Stock K4-Control Map 1: leave CC100 set to wheelA and CC101 through CC107 set to sliderA. No output selection is required unless you reprogram those modes in CTR2-MIDI.",
+    "To choose an output, inspect that knob mode in the CTR2-MIDI map/setup and copy its output type here: Wheel A = wheelA, Wheel B = wheelB, Slider A = sliderA, Slider B = sliderB, or MIDI Button = button.",
+    "Use wheelA when the CTR2 mode emits relative values centered on 64. It is the best choice for VFO tuning or another action where faster turns should produce larger changes, but only when the CTR2 mode itself is configured as Wheel A.",
+    "Use wheelB when the CTR2 mode emits relative direction values 1 and 126. It produces one fine step per report. Use wheelB-r instead only when Wheel B moves the selected QK4 action in the wrong direction.",
+    "Use sliderA or sliderB when the CTR2 mode emits absolute values from 0 through 127. QK4 converts changes in those values into fine directional steps; it does not jump the radio control to an absolute position.",
+    "Do not choose slider merely because the QK4 control is drawn as a slider, and do not choose wheel merely because the CTR2 has a physical knob. The MIDI message format configured in CTR2-MIDI is what determines this field."
+  ],
+  "_buttonActions": {
+    "immediateActions": {
+      "attenuator_toggle": "Attenuator toggle",
+      "band_down": "Band down",
+      "band_up": "Band up",
+      "disabled": "Disabled",
+      "khz": "KHZ",
+      "main_mute": "Main mute",
+      "manual_notch_toggle": "Manual notch toggle",
+      "mode_next": "Mode next",
+      "mode_previous": "Mode previous",
+      "noise_blanker_toggle": "Noise blanker toggle",
+      "nr_toggle": "NR toggle",
+      "pan_zoom_in": "Pan zoom in",
+      "pan_zoom_out": "Pan zoom out",
+      "rit_toggle": "RIT toggle",
+      "split_toggle": "Split toggle",
+      "tune": "TUNE",
+      "tune_step": "Rate",
+      "tx_rx_toggle": "TX/RX toggle",
+      "set_ft8_frequency": "FT8/FT4: Set tone frequency"
+    },
+    "adjustmentSelectors": {
+      "adjust_active_vfo_frequency": "Adjust: Active VFO frequency",
+      "adjust_attenuator_level": "Adjust: Attenuator",
+      "adjust_cw_speed": "Adjust: CW speed",
+      "adjust_filter_bandwidth": "Adjust: Filter bandwidth",
+      "adjust_filter_shift": "Adjust: Filter shift",
+      "adjust_main_rf_gain": "Adjust: Main RF gain",
+      "adjust_main_squelch": "Adjust: Main squelch",
+      "adjust_main_volume": "Adjust: Main volume",
+      "adjust_manual_notch_pitch": "Adjust: Manual notch",
+      "adjust_noise_blanker_level": "Adjust: Noise blanker",
+      "adjust_nr_level": "Adjust: Noise reduction",
+      "adjust_other_vfo_frequency": "Adjust: Other VFO frequency",
+      "adjust_pan_reference_level": "Adjust: Panadapter reference",
+      "adjust_pan_zoom": "Adjust: Panadapter zoom",
+      "adjust_rf_power": "Adjust: RF power",
+      "adjust_rit_xit_frequency": "Adjust: RIT/XIT frequency",
+      "adjust_sub_rf_gain": "Adjust: Sub RF gain",
+      "adjust_sub_squelch": "Adjust: Sub squelch",
+      "adjust_sub_volume": "Adjust: Sub volume",
+      "adjust_waterfall_brightness": "Adjust: Waterfall brightness",
+      "adjust_ft8_rx_tx": "FT8/FT4: Switch RX/TX tone"
+    }
+  },
+  "_knobActions": {
+    "active_vfo_frequency": "Active VFO frequency",
+    "attenuator_level": "Attenuator level",
+    "cw_speed": "CW speed",
+    "disabled": "Disabled",
+    "filter_bandwidth": "Filter bandwidth",
+    "filter_shift": "Filter shift",
+    "main_rf_gain": "Main RF gain",
+    "main_squelch": "Main squelch",
+    "main_volume": "Main volume",
+    "manual_notch_pitch": "Manual notch pitch",
+    "noise_blanker_level": "Noise blanker level",
+    "nr_level": "Noise reduction level",
+    "other_vfo_frequency": "Other VFO frequency",
+    "pan_reference_level": "Panadapter reference",
+    "pan_zoom": "Panadapter zoom",
+    "rf_power": "RF power",
+    "rit_xit_frequency": "RIT/XIT frequency",
+    "selected_adjustment": "Selected adjustment (button)",
+    "sub_rf_gain": "Sub RF gain",
+    "sub_squelch": "Sub squelch",
+    "sub_volume": "Sub volume",
+    "waterfall_brightness": "Waterfall brightness"
+  },
+  "_knobOutputs": {
+    "button": "Directional NoteOn pair from a CTR2 MIDI Button output, not a CC value. In normal mode CC100 uses notes 40/41 through CC107 at 54/55. Extended Button Mode relocates those eight pairs to 60/61 through 74/75 within the manufacturer-defined 60-95 knob Button range. The first note is counter-clockwise and the second is clockwise.",
+    "sliderA": "Absolute CC values 0 through 127 from a CTR2 Slider A output. The first report establishes position; later movement produces fine signed steps, including across 0/127 wrap. Map 1 uses this for CC101 through CC107.",
+    "sliderB": "Absolute CC values 0 through 127 from a CTR2 Slider B output. It is decoded like sliderA; use it when that CTR2 knob mode is configured as Slider B.",
+    "wheelA": "Relative CC centered on 64: values above 64 are positive, values below 64 are negative, and the distance from 64 preserves acceleration. Use when that CTR2 knob mode is configured as Wheel A. Map 1 uses this for CC100.",
+    "wheelB": "Relative CC direction: value 1 is a positive step and value 126 is a negative step. Use when that CTR2 knob mode is configured as Wheel B.",
+    "wheelB-r": "Reversed Wheel B direction: value 1 is a negative step and value 126 is a positive step."
+  },
+  "format": "qk4-ctr2-midi-mapping",
+  "version": 2,
+  "defaultsRevision": 3,
+  "name": "QK4 FT8 Adjust Set - Button 6",
+  "profile": 3,
+  "keyingMode": 0,
+  "straightKeyInput": 0,
+  "buttonMode": "normal",
+  "tipRingSwapped": false,
+  "cwInputEnabled": true,
+  "knobs": [
+    {
+      "controlLabel": "Home turn",
+      "knobMode": "Home",
+      "gesture": "turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 40,
+          "clockwise": 41
+        },
+        "extended": {
+          "counterClockwise": 60,
+          "clockwise": 61
+        }
+      },
+      "cc": 100,
+      "action": "selected_adjustment",
+      "output": "wheelA"
+    },
+    {
+      "controlLabel": "Home push and turn",
+      "knobMode": "Home",
+      "gesture": "push and turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 42,
+          "clockwise": 43
+        },
+        "extended": {
+          "counterClockwise": 62,
+          "clockwise": 63
+        }
+      },
+      "cc": 101,
+      "action": "main_volume",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 1 turn",
+      "knobMode": "Knob mode 1",
+      "gesture": "turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 44,
+          "clockwise": 45
+        },
+        "extended": {
+          "counterClockwise": 64,
+          "clockwise": 65
+        }
+      },
+      "cc": 102,
+      "action": "other_vfo_frequency",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 1 push and turn",
+      "knobMode": "Knob mode 1",
+      "gesture": "push and turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 46,
+          "clockwise": 47
+        },
+        "extended": {
+          "counterClockwise": 66,
+          "clockwise": 67
+        }
+      },
+      "cc": 103,
+      "action": "filter_bandwidth",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 2 turn",
+      "knobMode": "Knob mode 2",
+      "gesture": "turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 48,
+          "clockwise": 49
+        },
+        "extended": {
+          "counterClockwise": 68,
+          "clockwise": 69
+        }
+      },
+      "cc": 104,
+      "action": "rit_xit_frequency",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 2 push and turn",
+      "knobMode": "Knob mode 2",
+      "gesture": "push and turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 50,
+          "clockwise": 51
+        },
+        "extended": {
+          "counterClockwise": 70,
+          "clockwise": 71
+        }
+      },
+      "cc": 105,
+      "action": "nr_level",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 3 turn",
+      "knobMode": "Knob mode 3",
+      "gesture": "turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 52,
+          "clockwise": 53
+        },
+        "extended": {
+          "counterClockwise": 72,
+          "clockwise": 73
+        }
+      },
+      "cc": 106,
+      "action": "rf_power",
+      "output": "sliderA"
+    },
+    {
+      "controlLabel": "Knob mode 3 push and turn",
+      "knobMode": "Knob mode 3",
+      "gesture": "push and turn",
+      "buttonOutputNotes": {
+        "normal": {
+          "counterClockwise": 54,
+          "clockwise": 55
+        },
+        "extended": {
+          "counterClockwise": 74,
+          "clockwise": 75
+        }
+      },
+      "cc": 107,
+      "action": "cw_speed",
+      "output": "sliderA"
+    }
+  ],
+  "buttons": [
+    {
+      "buttonLabel": "Button 1",
+      "knobMode": "All knob modes",
+      "note": 1,
+      "pressType": "short",
+      "action": "mode_next"
+    },
+    {
+      "buttonLabel": "Button 2",
+      "knobMode": "All knob modes",
+      "note": 2,
+      "pressType": "short",
+      "action": "band_up"
+    },
+    {
+      "buttonLabel": "Button 3",
+      "knobMode": "All knob modes",
+      "note": 3,
+      "pressType": "short",
+      "action": "main_mute"
+    },
+    {
+      "buttonLabel": "Button 4",
+      "knobMode": "All knob modes",
+      "note": 4,
+      "pressType": "short",
+      "action": "rit_toggle"
+    },
+    {
+      "buttonLabel": "Button 5",
+      "knobMode": "All knob modes",
+      "note": 5,
+      "pressType": "short",
+      "action": "pan_zoom_in"
+    },
+    {
+      "buttonLabel": "Button 6",
+      "knobMode": "All knob modes",
+      "note": 6,
+      "pressType": "short",
+      "action": "adjust_ft8_rx_tx"
+    },
+    {
+      "buttonLabel": "Button 1",
+      "knobMode": "All knob modes",
+      "note": 11,
+      "pressType": "long",
+      "action": "mode_previous"
+    },
+    {
+      "buttonLabel": "Button 2",
+      "knobMode": "All knob modes",
+      "note": 12,
+      "pressType": "long",
+      "action": "band_down"
+    },
+    {
+      "buttonLabel": "Button 3",
+      "knobMode": "All knob modes",
+      "note": 13,
+      "pressType": "long",
+      "action": "nr_toggle"
+    },
+    {
+      "buttonLabel": "Button 4",
+      "knobMode": "All knob modes",
+      "note": 14,
+      "pressType": "long",
+      "action": "split_toggle"
+    },
+    {
+      "buttonLabel": "Button 5",
+      "knobMode": "All knob modes",
+      "note": 15,
+      "pressType": "long",
+      "action": "pan_zoom_out"
+    },
+    {
+      "buttonLabel": "Button 6",
+      "knobMode": "All knob modes",
+      "note": 16,
+      "pressType": "long",
+      "action": "set_ft8_frequency"
+    }
+  ],
+  "macros": [],
+  "_ft8": [
+    "Assign any button: short press adjust_ft8_rx_tx toggles RX/TX preview; long press set_ft8_frequency commits the selected frequency. This sample uses Button 6 in Normal mode.",
+    "Home CC100 uses selected_adjustment with Wheel A output. Dial movement positions a dashed preview until Set is pressed.",
+    "TX commit enables Hold TX. RX commit opens My QSO at that audio frequency. All continues showing the full band.",
+    "Only Switch RX/TX tone and Set tone frequency are offered. Older RX/TX assignments migrate to Switch on short press and Set on long press. Import replaces the entire map; edit individual assignments to preserve a customized map."
+  ]
+}

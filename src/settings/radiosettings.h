@@ -3,6 +3,7 @@
 
 #include <QMap>
 #include <QObject>
+#include <QPoint>
 #include <QSettings>
 #include <QString>
 #include <QVector>
@@ -19,6 +20,9 @@ struct MacroEntry {
             return "Unused";
         return label.isEmpty() ? "Mapped" : label;
     }
+    bool operator==(const MacroEntry &other) const {
+        return functionId == other.functionId && label == other.label && command == other.command;
+    }
 };
 
 // RX EQ preset entry (8-band graphic equalizer)
@@ -30,13 +34,6 @@ struct EqPreset {
     QString displayName() const { return isEmpty() ? "---" : name; }
 };
 
-struct DxClusterEntry {
-    QString host;
-    quint16 port = 7000;
-    QString callsign;
-    bool autoConnect = false;
-};
-
 struct RadioEntry {
     QString name;
     QString host;
@@ -46,7 +43,7 @@ struct RadioEntry {
     QString identity;         // TLS-PSK identity (optional, empty = default)
     int encodeMode = 3;       // Audio encode mode: 0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float (default)
     int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
-    int displayFps = 15;      // Display FPS: 12-30 (default 15, good balance for large monitors)
+    int displayFps = 30;      // Display FPS: 12-30 (default 30)
 
     bool operator==(const RadioEntry &other) const {
         return name == other.name && host == other.host && port == other.port;
@@ -79,6 +76,8 @@ public:
     void setKpa1500Enabled(bool enabled);
     int kpa1500PollInterval() const;
     void setKpa1500PollInterval(int intervalMs);
+    QPoint kpa1500WindowPosition() const;
+    void setKpa1500WindowPosition(const QPoint &pos);
 
     // Audio output settings
     int volume() const;
@@ -96,6 +95,11 @@ public:
     QString speakerDevice() const;
     void setSpeakerDevice(const QString &deviceId);
 
+    // Mobile GEN/SWL band-bank local frequency memory. This is intentionally
+    // independent of the K4's amateur-band stack and CAT state.
+    quint64 swlBandFrequency(const QString &bandName, quint64 fallbackHz) const;
+    void setSwlBandFrequency(const QString &bandName, quint64 frequencyHz);
+
     // CAT Server settings (local TCP server for external apps)
     bool catServerEnabled() const;
     void setCatServerEnabled(bool enabled);
@@ -106,6 +110,8 @@ public:
     QMap<QString, MacroEntry> macros() const;
     MacroEntry macro(const QString &functionId) const;
     void setMacro(const QString &functionId, const QString &label, const QString &command);
+    void clearMacro(const QString &functionId);
+    void replaceMacros(const QMap<QString, MacroEntry> &macros);
 
     // HaliKey CW Keyer settings
     QString halikeyPortName() const;
@@ -116,18 +122,28 @@ public:
     void setHalikeyDeviceType(int type); // 0=V14, 1=MiDi
     int sidetoneVolume() const;
     void setSidetoneVolume(int value); // 0-100, default 30
+    int cwKeyerSpeed() const;
+    void setCwKeyerSpeed(int wpm); // 8-40 WPM, default 20
+    bool cwPaddlesReversed() const;
+    void setCwPaddlesReversed(bool reversed);
+    int midiMappingProfile() const;
+    void setMidiMappingProfile(int profile); // 0=TinyMIDI, 1=HaliKey MIDI, 2=Custom
+    int midiDitStatus() const;
+    int midiDitData1() const;
+    int midiDahStatus() const;
+    int midiDahData1() const;
+    void setMidiCustomMapping(int ditStatus, int ditData1, int dahStatus, int dahData1);
+    int cwMidiKeyingMode() const; // 0=paddles, 1=straight key/external keyer
+    void setCwMidiKeyingMode(int mode);
+    int cwMidiStraightKeyInput() const; // 0=left/tip, 1=right/ring
+    void setCwMidiStraightKeyInput(int input);
 
-    // DX Cluster settings
-    QVector<DxClusterEntry> dxClusters() const;
-    void addDxCluster(const DxClusterEntry &entry);
-    void removeDxCluster(int index);
-    void updateDxCluster(int index, const DxClusterEntry &entry);
-    int dxClusterSpotAge() const;
-    void setDxClusterSpotAge(int seconds);
-    QString dxClusterCallsign() const;
-    void setDxClusterCallsign(const QString &callsign);
-    int dxClusterSpotFontSize() const;
-    void setDxClusterSpotFontSize(int sizePx);
+    // Dedicated CTR2-MIDI role. These settings are intentionally separate
+    // from the established CW Keyer connection and profile settings.
+    QString ctr2MidiPortName() const;
+    void setCtr2MidiPortName(const QString &portName);
+    QByteArray ctr2MidiMappingJson() const;
+    void setCtr2MidiMappingJson(const QByteArray &json);
 
     // RX EQ Presets (4 slots)
     EqPreset rxEqPreset(int index) const;                  // Get preset 0-3
@@ -139,28 +155,10 @@ public:
     void setTxEqPreset(int index, const EqPreset &preset); // Set preset 0-3
     void clearTxEqPreset(int index);                       // Clear preset 0-3
 
-    // KPOD+ encode mode (KZ/KX). Keyer speed, CW pitch, iambic mode and paddle
-    // orientation are no longer stored — the KPOD+ mirrors the connected K4.
-    int kpodPlusEncodeMode() const;
-    void setKpodPlusEncodeMode(int mode); // 0=KZ, 1=KX
-
-    // CW/data text-decode popup font size (per receiver, pixel value)
-    int textDecodeFontSize(bool subRx) const;
-    void setTextDecodeFontSize(bool subRx, int sizePx);
-
-    // Station / operator info
-    int iaruRegion() const; // 1, 2, or 3 — drives the panadapter band-plan overlay
-    void setIaruRegion(int region);
-    QString callSign() const;
-    void setCallSign(const QString &callSign);
-    QString gridSquare() const;
-    void setGridSquare(const QString &grid);
-    QString operatorName() const;
-    void setOperatorName(const QString &name);
-    QString qth() const;
-    void setQth(const QString &qth);
-    bool bandPlanOverlayEnabled() const;
-    void setBandPlanOverlayEnabled(bool enabled);
+    // Local copies of the six K4-style DTMF command memories. The documented
+    // CAT protocol transmits digits but does not expose the radio's CMD store.
+    QString dtmfCommand(int index) const;
+    void setDtmfCommand(int index, const QString &sequence);
 
 signals:
     void radiosChanged();
@@ -178,18 +176,18 @@ signals:
     void halikeyPortNameChanged(const QString &portName);
     void halikeyDeviceTypeChanged(int type);
     void sidetoneVolumeChanged(int value);
+    void cwPaddlesReversedChanged(bool reversed);
+    void cwMidiKeyingModeChanged(int mode);
+    void cwMidiStraightKeyInputChanged(int input);
+    void ctr2MidiPortNameChanged(const QString &portName);
+    void ctr2MidiMappingChanged();
     void rxEqPresetsChanged();
     void txEqPresetsChanged();
-    void dxClusterSettingsChanged();
-    void kpodPlusSettingsChanged();
-    void iaruRegionChanged(int region);
-    void bandPlanOverlayEnabledChanged(bool enabled);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
     void load();
     void save();
-    void sortRadios();
 
     QVector<RadioEntry> m_radios;
     int m_lastSelectedIndex;
@@ -210,6 +208,18 @@ private:
     bool m_halikeyEnabled = false;
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%
+    int m_cwKeyerSpeed = 20;     // Default 20 WPM
+    bool m_cwPaddlesReversed = false; // Normal: left=dit, right=dah
+    int m_midiMappingProfile = 0;
+    int m_midiDitStatus = 0x90;
+    int m_midiDitData1 = 20;
+    int m_midiDahStatus = 0x90;
+    int m_midiDahData1 = 21;
+    int m_cwMidiKeyingMode = 0;
+    int m_cwMidiStraightKeyInput = 0;
+
+    QString m_ctr2MidiPortName;
+    QByteArray m_ctr2MidiMappingJson;
 
     // Macro settings
     QMap<QString, MacroEntry> m_macros;
@@ -219,16 +229,7 @@ private:
 
     // TX EQ Presets (4 slots)
     EqPreset m_txEqPresets[4];
-
-    // DX Cluster settings
-    QVector<DxClusterEntry> m_dxClusters;
-    int m_dxClusterSpotAge = 600; // Default 10 minutes
-    QString m_dxClusterCallsign;
-    int m_dxClusterSpotFontSize = 11; // K4Styles::Dimensions::FontSizeSpot default; clamped to [8, 16]
-
-    // KPOD+ encode mode (0=KZ, 1=KX). Keyer speed / CW pitch / iambic mode /
-    // paddle orientation are not stored — the KPOD+ mirrors the K4.
-    int m_kpodPlusEncodeMode = 0;
+    QString m_dtmfCommands[6];
 
     QSettings m_settings;
 };

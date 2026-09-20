@@ -8,7 +8,6 @@
 #include <QTimer>
 #include <QVector>
 #include <memory>
-#include "ui/styling/k4constants.h"
 
 // Compact Mini-Pan widget for VFO area using Qt RHI
 // GPU-accelerated via Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -25,22 +24,20 @@ public:
     void updateSpectrum(const QByteArray &bins);
     void clear();
 
+    // Spectrum line color (default amber for VFO A)
+    void setSpectrumColor(const QColor &color);
+
     // Passband color (default blue)
     void setPassbandColor(const QColor &color);
-
-    // Waterfall height (percent waterfall, matching WTRFALL control)
-    void setWaterfallHeight(int percent);
 
     // Notch filter visualization
     void setNotchFilter(bool enabled, int pitchHz);
     void setMode(const QString &mode);
-    void setDataSubMode(int subMode);
 
     // Filter passband visualization
     void setFilterBandwidth(int bwHz);
     void setIfShift(int shift);
     void setCwPitch(int pitchHz);
-    void setAveraging(int level); // 1-20: K4 #AVG display averaging
 
 signals:
     void clicked(); // Emitted when user clicks to toggle back to normal view
@@ -105,10 +102,14 @@ private:
     std::unique_ptr<QRhiBuffer> m_notchUniformBuffer;
     std::unique_ptr<QRhiShaderResourceBindings> m_notchSrb;
 
-    // Dedicated RTTY space tone dashed line buffers
-    std::unique_ptr<QRhiBuffer> m_rttySpaceVbo;
-    std::unique_ptr<QRhiBuffer> m_rttySpaceUniformBuffer;
-    std::unique_ptr<QRhiShaderResourceBindings> m_rttySpaceSrb;
+    // Separator and border lines each need dedicated buffers so both line
+    // draws can be recorded into the single pre-pass batch without colliding.
+    std::unique_ptr<QRhiBuffer> m_separatorVbo;
+    std::unique_ptr<QRhiBuffer> m_separatorUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_separatorSrb;
+    std::unique_ptr<QRhiBuffer> m_borderVbo;
+    std::unique_ptr<QRhiBuffer> m_borderUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_borderSrb;
 
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
 
@@ -142,11 +143,11 @@ private:
     float m_minDb = -1.0f;
     float m_maxDb = 4.0f;
     float m_smoothedBaseline = 0.0f;
-    float m_heightBoost = 1.0f;
+    float m_heightBoost = 1.5f;
     float m_spectrumRatio = 0.40f; // 40% spectrum, 60% waterfall
 
-    // Spectrum line color — default to the VFO A cyan theme; caller may override.
-    QColor m_spectrumColor{QColor(K4Styles::Colors::VfoACyan)};
+    // Spectrum line color
+    QColor m_spectrumColor{255, 176, 0}; // Amber #FFB000
 
     // Passband color
     QColor m_passbandColor{0, 128, 255, 64}; // Blue with 25% alpha
@@ -155,13 +156,7 @@ private:
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;
     QString m_mode = "USB";
-    int m_dataSubMode = 0;
     int m_bandwidthHz = 10000; // Mode-dependent span: CW=3kHz, Voice/Data=10kHz
-
-    // Display averaging (K4 #AVG control, 1-20)
-    int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
 
     // Filter passband visualization
     int m_filterBw = 2400;

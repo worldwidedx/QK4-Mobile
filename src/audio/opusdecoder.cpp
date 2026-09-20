@@ -1,5 +1,4 @@
 #include "opusdecoder.h"
-#include "audio/audiologging.h"
 #include <QDebug>
 
 OpusDecoder::OpusDecoder(QObject *parent) : QObject(parent), m_decoder(nullptr), m_sampleRate(12000), m_channels(2) {}
@@ -18,7 +17,7 @@ bool OpusDecoder::initialize(int sampleRate, int channels) {
     m_decoder = opus_decoder_create(sampleRate, channels, &error);
 
     if (error != OPUS_OK) {
-        qCWarning(qk4Audio) << "OpusDecoder: Failed to create decoder:" << opus_strerror(error);
+        qWarning() << "OpusDecoder: Failed to create decoder:" << opus_strerror(error);
         return false;
     }
 
@@ -58,18 +57,13 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     // Decode based on encode mode — output raw normalized stereo [main, sub, main, sub, ...]
     // Volume/routing/balance is applied later at playback time in AudioEngine::feedAudioDevice()
     switch (encodeMode) {
-    case 0x00: // EM0 - 32-bit container, S16-range payload (see WHY below)
+    case 0x00: // EM0 - 32-bit container with the K4's empirically observed signal range
     {
         const qint32 *stereoSamples = reinterpret_cast<const qint32 *>(audioData.constData());
         int totalSamples = audioData.size() / sizeof(qint32);
 
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
-        // WHY: EM0 is documented as "RAW 32-bit float" but the K4 actually sends S32LE
-        // integers whose values stay in the S16 range with ~4× headroom (~±32k typical,
-        // bursts to ~131k on loud transients). Dividing by 2^31 made the audio inaudible;
-        // dividing by 2^15 (S16) clipped transients to a square wave. Empirical peak
-        // probe → 2^17 nominal range, so NORMALIZE_K4_RAW keeps headroom for transients.
         for (int i = 0; i < totalSamples; i++) {
             dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_K4_RAW;
         }
@@ -83,9 +77,6 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
 
         QByteArray out(totalSamples * sizeof(float), Qt::Uninitialized);
         float *dst = reinterpret_cast<float *>(out.data());
-        // WHY: K4 ships EM1 at ~-35 dBFS (peaks 480-600 in qint16 across many seconds of
-        // audio), which is ~18× quieter than EM0 in normalized terms. Apply 16× boost so
-        // EM1 perceived loudness matches EM0 (~0.26 typical float vs EM0's ~0.29).
         for (int i = 0; i < totalSamples; i++) {
             dst[i] = static_cast<float>(stereoSamples[i]) * NORMALIZE_16BIT * K4_EM1_GAIN_BOOST;
         }
@@ -129,7 +120,7 @@ QByteArray OpusDecoder::decodeK4Packet(const QByteArray &packet) {
     }
 
     default:
-        qCWarning(qk4Audio) << "OpusDecoder: Unknown encode mode:" << encodeMode;
+        qWarning() << "OpusDecoder: Unknown encode mode:" << encodeMode;
         return QByteArray();
     }
 }
@@ -142,7 +133,7 @@ QByteArray OpusDecoder::decode(const QByteArray &opusData) {
                               m_pcmIntScratch.data(), MAX_FRAME_SAMPLES_PER_CHANNEL, 0);
 
     if (samples < 0) {
-        qCWarning(qk4Audio) << "OpusDecoder: decode failed:" << opus_strerror(samples);
+        qWarning() << "OpusDecoder: decode failed:" << opus_strerror(samples);
         return QByteArray();
     }
 
@@ -158,7 +149,7 @@ QByteArray OpusDecoder::decodeFloat(const QByteArray &opusData) {
                                     opusData.size(), m_pcmFloatScratch.data(), MAX_FRAME_SAMPLES_PER_CHANNEL, 0);
 
     if (samples < 0) {
-        qCWarning(qk4Audio) << "OpusDecoder: decodeFloat failed:" << opus_strerror(samples);
+        qWarning() << "OpusDecoder: decodeFloat failed:" << opus_strerror(samples);
         return QByteArray();
     }
 

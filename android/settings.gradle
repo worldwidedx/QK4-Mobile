@@ -1,0 +1,4 @@
+// Keep the generated Qt Android package independent of this workspace's
+// top-level Gradle project. Qt copies this file into android-build before
+// invoking Gradle.
+rootProject.name = "QK4"

@@ -18,15 +18,11 @@ body = """
 {% for commit in commits %}
 - {% if commit.scope %}**{{ commit.scope }}**: {% endif -%}
 {{ commit.message | upper_first }}
-{#- Render only the commit body's first paragraph, reflowed onto one line.
-    Splitting the body per-line turned every wrapped line into its own bullet,
-    which made a five-commit release read as sixty lines of dashes. The first
-    paragraph is the what-and-why; the rest is implementation detail that
-    belongs in the commit, not the release notes. -#}
-{%- set summary = commit.body | default(value="") | split(pat="\n\n") | first | default(value="") | replace(from="\n", to=" ") | trim %}
-{%- if summary != "" %}
-  {{ summary }}
+{%- for line in commit.body | default(value="") | split(pat="\n") %}
+{%- if line | trim != "" %}
+  - {{ line | trim | trim_start_matches(pat="- ") }}
 {%- endif %}
+{%- endfor %}
 {%- endfor %}
 {% endfor %}
 {%- if version %}

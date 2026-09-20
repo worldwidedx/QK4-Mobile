@@ -2,9 +2,9 @@
 #include <QDebug>
 #include <QSysInfo>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QFontDatabase>
-#include <QSettings>
-#include <QSslSocket>
+#include <cmath>
 #include <rhi/qrhi.h>
 #ifdef Q_OS_MACOS
 #include <QtGui/private/qguiapplication_p.h>
@@ -14,7 +14,7 @@
 #include <QFileInfo>
 #endif
 #include "mainwindow.h"
-#include "ui/styling/k4styles.h"
+#include "ui/k4styles.h"
 
 // Filter out known benign Qt warnings on macOS
 // QSocketNotifier::Exception is not supported by kqueue (macOS's event system)
@@ -54,26 +54,22 @@ void setupFonts() {
     QApplication::setFont(defaultFont);
 }
 
-// WHY: Windows ships both the Schannel and OpenSSL TLS backends, and Qt may activate
-// Schannel — which has no TLS-PSK support at all, so the K4's port-9204 PSK handshake can
-// never complete under it. Must run before the first QSslSocket is constructed (TcpClient
-// creates one in its constructor). No-op on macOS and Linux, where OpenSSL is already active.
-void selectTlsBackend() {
-    if (QSslSocket::activeBackend() == QLatin1String("openssl"))
-        return;
-
-    if (QSslSocket::availableBackends().contains(QLatin1String("openssl"))) {
-        if (!QSslSocket::setActiveBackend(QStringLiteral("openssl")))
-            qWarning() << "Failed to activate the OpenSSL TLS backend - TLS/PSK unavailable";
-    } else {
-        qWarning() << "OpenSSL TLS backend unavailable (active:" << QSslSocket::activeBackend()
-                   << ") - TLS/PSK connections will fail";
-    }
-}
-
 int main(int argc, char *argv[]) {
     // Install message filter to suppress known benign Qt warnings
     originalHandler = qInstallMessageHandler(messageFilter);
+
+#ifdef Q_OS_ANDROID
+    // Keep the connection form visible above the landscape keyboard. Samsung's
+    // full-screen extracted editor hides the app-owned CASE control and also
+    // has unreliable Shift behavior with QWidget line edits. Supported by the
+    // Qt 6.11.1 Android platform plugin used by this build.
+    qputenv("QT_ANDROID_NO_FULLSCREEN_KEYBOARD", "1");
+
+    // Qt's Android TLS plugin dynamically loads the OpenSSL libraries bundled
+    // with the APK.  Android also exposes unrelated system libraries under the
+    // unsuffixed names, so use the names packaged by this application.
+    qputenv("ANDROID_OPENSSL_SUFFIX", "_3");
+#endif
 
 #ifdef Q_OS_MACOS
     // Enable OpenSSL for TLS/PSK support
@@ -117,31 +113,25 @@ int main(int argc, char *argv[]) {
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     QApplication app(argc, argv);
-    app.setApplicationName("QK4");
+    app.setApplicationName("QK4 Mobile");
     app.setApplicationVersion(QK4_VERSION);
-
-    // WHY: call sign changed AI5QK->KF5O. Migrate existing QSettings forward once so saved
-    // window geometry, station profiles, and radio config survive the identity rename.
-    // Default-constructing QSettings under each identity reproduces Qt's per-platform path
-    // logic (macOS keys on the domain, Windows/Linux on the org name). The empty-check keeps
-    // it idempotent — no re-copy after the first launch.
     app.setOrganizationName("AI5QK");
     app.setOrganizationDomain("ai5qk.com");
-    QSettings oldSettings;
-    app.setOrganizationName("KF5O");
-    app.setOrganizationDomain("kf5o.com");
-    QSettings newSettings;
-    if (newSettings.allKeys().isEmpty() && !oldSettings.allKeys().isEmpty()) {
-        for (const QString &key : oldSettings.allKeys())
-            newSettings.setValue(key, oldSettings.value(key));
-        newSettings.sync();
+
+    if (QScreen *screen = app.primaryScreen()) {
+        qreal diagonalInches = 0.0;
+        const QSizeF physicalSizeMm = screen->physicalSize();
+        if (physicalSizeMm.width() > 0.0 && physicalSizeMm.height() > 0.0) {
+            const qreal diagonalMm = std::hypot(physicalSizeMm.width(), physicalSizeMm.height());
+            diagonalInches = diagonalMm / 25.4;
+        }
+        K4Styles::configureForScreen(screen->availableGeometry().size(), screen->devicePixelRatio(), diagonalInches);
+    } else {
+        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0);
     }
 
     // Load embedded Inter font family
     setupFonts();
-
-    // Must precede MainWindow — its controllers construct the first QSslSocket
-    selectTlsBackend();
 
     MainWindow window;
     window.show();

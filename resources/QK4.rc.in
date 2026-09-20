@@ -23,11 +23,11 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "KF5O"
+            VALUE "CompanyName", "AI5QK"
             VALUE "FileDescription", "K4 Remote Controller"
             VALUE "FileVersion", "@QK4_VERSION_FULL@"
             VALUE "InternalName", "QK4"
-            VALUE "LegalCopyright", "Copyright (C) 2024-2025 KF5O"
+            VALUE "LegalCopyright", "Copyright (C) 2024-2025 AI5QK"
             VALUE "OriginalFilename", "QK4.exe"
             VALUE "ProductName", "QK4"
             VALUE "ProductVersion", "@QK4_VERSION_FULL@"

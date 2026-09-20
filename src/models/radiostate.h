@@ -4,45 +4,9 @@
 #include <QMap>
 #include <QObject>
 #include <QString>
-#include <QStringList>
 #include <QVector>
 #include <functional>
 
-#include "radiostate/antennastate.h"
-#include "radiostate/audioeffectsstate.h"
-#include "radiostate/datacontrolstate.h"
-#include "radiostate/frequencyvfostate.h"
-#include "radiostate/levelsstate.h"
-#include "radiostate/modefilterstate.h"
-#include "radiostate/powerstate.h"
-#include "radiostate/processingstate.h"
-#include "radiostate/qskcontrolstate.h"
-#include "radiostate/rxtxmeterstate.h"
-#include "radiostate/spectrumdisplaystate.h"
-#include "radiostate/textdecodestate.h"
-#include "radiostate/xvtrbandstate.h"
-
-/**
- * @brief Central K4 state hub. Parses inbound CAT responses, stores every visible radio property,
- *        and emits fine-grained `*Changed` signals for the UI.
- *
- * Threading contract:
- * - `parseCATCommand()` is main-thread-only; this is enforced by `Q_ASSERT` in the implementation.
- *   Callers on other threads must marshal via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`.
- *
- * `$` suffix convention (K4 protocol):
- * - Commands ending in `$` apply to VFO B / sub-receiver (e.g., `MD$`, `BW$`, `RO$`, `RT$`).
- * - Parsed-prefix order in the handler registry puts `$` variants before the base prefix so that
- *   `RO$` is not mis-matched as `RO`. See the handler-registration site in radiostate.cpp.
- *
- * `RO` vs `RO$` routing (see `memory/MEMORY.md` → "K4 RIT/XIT Offset Registers"):
- * - No split, RIT or XIT: offset lives in `RO` (VFO A).
- * - Split + XIT: offset lives in `RO$` (VFO B — the TX VFO when split).
- * - BSET + RIT: offset lives in `RO$`.
- *
- * New state fields: add a member + signal here, parse in `parseCATCommand()`, then add a test in
- * `tests/test_radiostate.cpp` (CONVENTIONS.md rule 6).
- */
 class RadioState : public QObject {
     Q_OBJECT
 
@@ -58,54 +22,44 @@ public:
     // Reset all state to initial values (used on disconnect for clean reconnect)
     void reset();
 
-    /**
-     * @brief Parse a single CAT response from the K4 and emit `*Changed` signals for any fields
-     *        whose value actually transitioned.
-     *
-     * Must be called on the main (GUI) thread — enforced by `Q_ASSERT(QThread::currentThread() ==
-     * thread())`. Dispatches through the handler registry; the first prefix match wins. Idempotent
-     * for unchanged values (no signal emitted if the new value equals the current one).
-     */
+    // Parse a CAT command response and update state
     void parseCATCommand(const QString &command);
 
-    // Frequency and VFO — backed by m_frequencyVfoState.
-    quint64 frequency() const { return m_frequencyVfoState.frequency; }
-    quint64 vfoA() const { return m_frequencyVfoState.vfoA; }
-    quint64 vfoB() const { return m_frequencyVfoState.vfoB; }
-    int tuningStep() const { return m_dataControlState.tuningStep; }
-    int tuningStepB() const { return m_dataControlState.tuningStepB; }
+    // Frequency and VFO
+    quint64 frequency() const { return m_frequency; }
+    quint64 vfoA() const { return m_vfoA; }
+    quint64 vfoB() const { return m_vfoB; }
+    int tuningStep() const { return m_tuningStep; }
+    int tuningStepB() const { return m_tuningStepB; }
 
-    // Mode and filter — backed by m_modeFilterState.
-    Mode mode() const { return static_cast<Mode>(m_modeFilterState.mode); }
-    Mode modeB() const { return static_cast<Mode>(m_modeFilterState.modeB); }
+    // Mode and filter
+    Mode mode() const { return m_mode; }
+    Mode modeB() const { return m_modeB; }
     QString modeString() const;
-    int filterBandwidth() const { return m_modeFilterState.filterBandwidth; }
-    int filterBandwidthB() const { return m_modeFilterState.filterBandwidthB; }
-    int filterPosition() const { return m_modeFilterState.filterPosition; }
-    int filterPositionB() const { return m_modeFilterState.filterPositionB; }
-    int ifShift() const { return m_modeFilterState.ifShift; }
-    int shiftHz() const { return m_modeFilterState.ifShift * 10; }
-    int ifShiftB() const { return m_modeFilterState.ifShiftB; }
-    int shiftBHz() const { return m_modeFilterState.ifShiftB * 10; }
-    int cwPitch() const { return m_modeFilterState.cwPitch; }
-    int keyerSpeed() const { return m_modeFilterState.keyerSpeed; }
-
-    // Keyer paddle (KP) — backed by m_modeFilterState.
-    QChar iambicMode() const { return m_modeFilterState.iambicMode; }
-    QChar paddleOrientation() const { return m_modeFilterState.paddleOrientation; }
-    int keyingWeight() const { return m_modeFilterState.keyingWeight; }
+    int filterBandwidth() const { return m_filterBandwidth; }
+    int filterBandwidthB() const { return m_filterBandwidthB; }
+    int filterPosition() const { return m_filterPosition; }
+    int filterPositionB() const { return m_filterPositionB; }
+    int ifShift() const { return m_ifShift; }
+    int shiftHz() const { return m_ifShift * 10; } // Convert raw IS value to Hz (IS0050 = 500 Hz)
+    int ifShiftB() const { return m_ifShiftB; }
+    int shiftBHz() const { return m_ifShiftB * 10; } // Sub RX IF shift in Hz
+    int cwPitch() const { return m_cwPitch; }
+    int keyerSpeed() const { return m_keyerSpeed; }
+    QChar paddleOrientation() const { return m_paddleOrientation; }
+    QChar iambicMode() const { return m_iambicMode; }
+    int keyingWeight() const { return m_keyingWeight; }
 
     // Power and levels
-    double rfPower() const { return m_levelsState.rfPower; }
-    LevelsState::PowerRange powerRange() const { return m_levelsState.powerRange; }
-    bool isQrpMode() const { return m_levelsState.powerRange == LevelsState::PowerRange::Qrp; }
-    bool isXvtrPowerMode() const { return m_levelsState.powerRange == LevelsState::PowerRange::Xvtr; }
-    int micGain() const { return m_levelsState.micGain; }
-    int compression() const { return m_levelsState.compression; }
-    int rfGain() const { return m_levelsState.rfGain; }
-    int squelchLevel() const { return m_levelsState.squelchLevel; }
-    int rfGainB() const { return m_levelsState.rfGainB; }
-    int squelchLevelB() const { return m_levelsState.squelchLevelB; }
+    double rfPower() const { return m_rfPower; }
+    bool isQrpMode() const { return m_isQrpMode; }
+    QString rfPowerString() const;
+    int micGain() const { return m_micGain; }
+    int compression() const { return m_compression; }
+    int rfGain() const { return m_rfGain; }
+    int squelchLevel() const { return m_squelchLevel; }
+    int rfGainB() const { return m_rfGainB; }
+    int squelchLevelB() const { return m_squelchLevelB; }
 
     // Optimistic setters for scroll wheel updates (radio doesn't echo these commands)
     void setKeyerSpeed(int wpm);
@@ -122,12 +76,9 @@ public:
     void setMicGain(int gain);
     void setCompression(int level);
 
-    // Optimistic setters for keyer paddle (KP command)
-    void setIambicMode(QChar mode);
-    void setPaddleOrientation(QChar orientation);
-    void setKeyingWeight(int weight);
-
-    // Optimistic setters for NB/NR (radio doesn't echo these commands)
+    // Optimistic setters for receiver processing adjustments.
+    void setAttenuatorLevel(int level);
+    void setAttenuatorLevelB(int level);
     void setNoiseBlankerLevel(int level);
     void setNoiseBlankerLevelB(int level);
     void setNoiseBlankerFilter(int filter);
@@ -137,164 +88,180 @@ public:
     void setSsnrLevel(int level);
     void setSsnrLevelB(int level);
 
-    // Meters — backed by m_rxTxMeterState.
-    double sMeter() const { return m_rxTxMeterState.sMeter; }
-    double sMeterB() const { return m_rxTxMeterState.sMeterB; }
-
-    double swrMeter() const { return m_rxTxMeterState.swrMeter; }
+    // Meters
+    double sMeter() const { return m_sMeter; }
+    double sMeterB() const { return m_sMeterB; }
+    QString sMeterString() const;
+    QString sMeterStringB() const;
+    int powerMeter() const { return m_powerMeter; }
+    double swrMeter() const { return m_swrMeter; }
 
     // TX Meter data (TM command)
-    int alcMeter() const { return m_rxTxMeterState.alcMeter; }
-    int compressionDb() const { return m_rxTxMeterState.compressionDb; }
-    double forwardPower() const { return m_rxTxMeterState.forwardPower; }
+    int alcMeter() const { return m_alcMeter; }
+    int compressionDb() const { return m_compressionDb; }
+    double forwardPower() const { return m_forwardPower; }
 
     // Power supply info (SIFP command)
-    double supplyVoltage() const { return m_rxTxMeterState.supplyVoltage; }
-    double supplyCurrent() const { return m_rxTxMeterState.supplyCurrent; }
-
-    // PA drain current (SIRF LM field, parsed from centi-amps to amps)
-    double paDrainCurrent() const { return m_rxTxMeterState.paDrainCurrent; }
+    double supplyVoltage() const { return m_supplyVoltage; }
+    double supplyCurrent() const { return m_supplyCurrent; }
+    int paTemperatureC() const { return m_paTemperatureC; }
+    int lpaTemperatureC() const { return m_lpaTemperatureC; }
 
     // Control states
-    bool isTransmitting() const { return m_rxTxMeterState.isTransmitting; }
-    bool subReceiverEnabled() const { return m_rxTxMeterState.subReceiverEnabled == 1; }
-    bool diversityEnabled() const { return m_rxTxMeterState.diversityEnabled == 1; }
-    bool splitEnabled() const { return m_frequencyVfoState.splitEnabled; }
+    bool isTransmitting() const { return m_isTransmitting; }
+    bool subReceiverEnabled() const { return m_subReceiverEnabled; }
+    bool diversityEnabled() const { return m_diversityEnabled; }
+    bool splitEnabled() const { return m_splitEnabled; }
+    int streamingLatency() const { return m_streamingLatency; }
 
-    // Processing (NB/NR/PA/RA/GT + NA/NM) — backed by m_processingState.
-    int noiseBlankerLevel() const { return m_processingState.noiseBlankerLevel; }
-    bool noiseBlankerEnabled() const { return m_processingState.noiseBlankerEnabled; }
-    int noiseBlankerFilterWidth() const { return m_processingState.noiseBlankerFilterWidth; }
-    int noiseReductionLevel() const { return m_processingState.noiseReductionLevel; }
-    bool noiseReductionEnabled() const { return m_processingState.noiseReductionEnabled; }
-    int ssnrLevel() const { return m_processingState.ssnrLevel; }
-    bool ssnrEnabled() const { return m_processingState.ssnrEnabled; }
+    // Processing - Main RX
+    int noiseBlankerLevel() const { return m_noiseBlankerLevel; }
+    bool noiseBlankerEnabled() const { return m_noiseBlankerEnabled; }
+    int noiseBlankerFilterWidth() const { return m_noiseBlankerFilterWidth; } // 0=NONE, 1=NARROW, 2=WIDE
+    int noiseReductionLevel() const { return m_noiseReductionLevel; }
+    bool noiseReductionEnabled() const { return m_noiseReductionEnabled; }
+    int ssnrLevel() const { return m_ssnrLevel; }
+    bool ssnrEnabled() const { return m_ssnrEnabled; }
 
-    bool autoNotchEnabled() const { return m_processingState.autoNotchEnabled; }
-    bool manualNotchEnabled() const { return m_processingState.manualNotchEnabled; }
-    int manualNotchPitch() const { return m_processingState.manualNotchPitch; }
+    // Notch filter - Main RX
+    bool autoNotchEnabled() const { return m_autoNotchEnabled; }
+    bool manualNotchEnabled() const { return m_manualNotchEnabled; }
+    int manualNotchPitch() const { return m_manualNotchPitch; }
 
-    bool autoNotchEnabledB() const { return m_processingState.autoNotchEnabledB; }
-    bool manualNotchEnabledB() const { return m_processingState.manualNotchEnabledB; }
-    int manualNotchPitchB() const { return m_processingState.manualNotchPitchB; }
+    // Notch filter - Sub RX
+    bool autoNotchEnabledB() const { return m_autoNotchEnabledB; }
+    bool manualNotchEnabledB() const { return m_manualNotchEnabledB; }
+    int manualNotchPitchB() const { return m_manualNotchPitchB; }
 
     // Optimistic setters for notch pitch (radio doesn't echo these commands)
     void setManualNotchPitch(int pitch);
     void setManualNotchPitchB(int pitch);
 
-    int preamp() const { return m_processingState.preamp; }
-    bool preampEnabled() const { return m_processingState.preampEnabled; }
-    int attenuatorLevel() const { return m_processingState.attenuatorLevel; }
-    bool attenuatorEnabled() const { return m_processingState.attenuatorEnabled; }
-    AGCSpeed agcSpeed() const { return static_cast<AGCSpeed>(m_processingState.agcSpeed); }
+    int preamp() const { return m_preamp; }
+    bool preampEnabled() const { return m_preampEnabled; }
+    int attenuatorLevel() const { return m_attenuatorLevel; }
+    bool attenuatorEnabled() const { return m_attenuatorEnabled; }
+    AGCSpeed agcSpeed() const { return m_agcSpeed; }
 
-    int noiseBlankerLevelB() const { return m_processingState.noiseBlankerLevelB; }
-    bool noiseBlankerEnabledB() const { return m_processingState.noiseBlankerEnabledB; }
-    int noiseBlankerFilterWidthB() const { return m_processingState.noiseBlankerFilterWidthB; }
-    int noiseReductionLevelB() const { return m_processingState.noiseReductionLevelB; }
-    bool noiseReductionEnabledB() const { return m_processingState.noiseReductionEnabledB; }
-    int ssnrLevelB() const { return m_processingState.ssnrLevelB; }
-    bool ssnrEnabledB() const { return m_processingState.ssnrEnabledB; }
-    int preampB() const { return m_processingState.preampB; }
-    bool preampEnabledB() const { return m_processingState.preampEnabledB; }
-    int attenuatorLevelB() const { return m_processingState.attenuatorLevelB; }
-    bool attenuatorEnabledB() const { return m_processingState.attenuatorEnabledB; }
-    AGCSpeed agcSpeedB() const { return static_cast<AGCSpeed>(m_processingState.agcSpeedB); }
+    // Processing - Sub RX
+    int noiseBlankerLevelB() const { return m_noiseBlankerLevelB; }
+    bool noiseBlankerEnabledB() const { return m_noiseBlankerEnabledB; }
+    int noiseBlankerFilterWidthB() const { return m_noiseBlankerFilterWidthB; } // 0=NONE, 1=NARROW, 2=WIDE
+    int noiseReductionLevelB() const { return m_noiseReductionLevelB; }
+    bool noiseReductionEnabledB() const { return m_noiseReductionEnabledB; }
+    int ssnrLevelB() const { return m_ssnrLevelB; }
+    bool ssnrEnabledB() const { return m_ssnrEnabledB; }
+    int preampB() const { return m_preampB; }
+    bool preampEnabledB() const { return m_preampEnabledB; }
+    int attenuatorLevelB() const { return m_attenuatorLevelB; }
+    bool attenuatorEnabledB() const { return m_attenuatorEnabledB; }
+    AGCSpeed agcSpeedB() const { return m_agcSpeedB; }
 
     // Radio info
-    QString radioID() const { return m_rxTxMeterState.radioID; }
-    QString radioModel() const { return m_rxTxMeterState.radioModel; }
-    QString optionModules() const { return m_rxTxMeterState.optionModules; }
-    QMap<QString, QString> firmwareVersions() const { return m_rxTxMeterState.firmwareVersions; }
+    QString radioID() const { return m_radioID; }
+    QString radioModel() const { return m_radioModel; }
+    QString optionModules() const { return m_optionModules; }
+    QMap<QString, QString> firmwareVersions() const { return m_firmwareVersions; }
 
-    // Antenna — backed by m_antennaState (see src/models/radiostate/antennastate.h).
-    int txAntenna() const { return m_antennaState.selectedAntenna; }
-    int rxAntennaMain() const { return m_antennaState.receiveAntenna; }
-    int rxAntennaSub() const { return m_antennaState.receiveAntennaSub; }
-    QString antennaName(int index) const {
-        return m_antennaState.antennaNames.value(index, QString("ANT%1").arg(index));
-    }
-    QString txAntennaName() const { return antennaName(m_antennaState.selectedAntenna); }
-    QString rxAntennaMainName() const { return antennaName(m_antennaState.receiveAntenna); }
-    QString rxAntennaSubName() const { return antennaName(m_antennaState.receiveAntennaSub); }
+    // Antenna
+    int txAntenna() const { return m_selectedAntenna; }
+    int rxAntennaMain() const { return m_receiveAntenna; }
+    int rxAntennaSub() const { return m_receiveAntennaSub; }
+    QString antennaName(int index) const { return m_antennaNames.value(index, QString("ANT%1").arg(index)); }
+    QString txAntennaName() const { return antennaName(m_selectedAntenna); }
+    QString rxAntennaMainName() const { return antennaName(m_receiveAntenna); }
+    QString rxAntennaSubName() const { return antennaName(m_receiveAntennaSub); }
 
-    // RIT/XIT — backed by m_frequencyVfoState.
-    bool ritEnabled() const { return m_frequencyVfoState.ritEnabled; }
-    bool xitEnabled() const { return m_frequencyVfoState.xitEnabled; }
-    int ritXitOffset() const { return m_frequencyVfoState.ritXitOffset; }
-    bool ritEnabledB() const { return m_frequencyVfoState.ritEnabledB; }
-    int ritXitOffsetB() const { return m_frequencyVfoState.ritXitOffsetB; }
+    // RIT/XIT
+    bool ritEnabled() const { return m_ritEnabled; }
+    bool xitEnabled() const { return m_xitEnabled; }
+    int ritXitOffset() const { return m_ritXitOffset; }
+    bool ritEnabledB() const { return m_ritEnabledB; }
+    int ritXitOffsetB() const { return m_ritXitOffsetB; }
 
-    // Message bank (MN)
-    int messageBank() const { return m_rxTxMeterState.messageBank; }
+    // Message bank
+    int messageBank() const { return m_messageBank; }
 
     // VOX
-    bool voxCW() const { return m_audioEffectsState.voxCW; }
-    bool voxVoice() const { return m_audioEffectsState.voxVoice; }
-    bool voxData() const { return m_audioEffectsState.voxData; }
-    bool voxEnabled() const {
-        return m_audioEffectsState.voxCW || m_audioEffectsState.voxVoice || m_audioEffectsState.voxData;
-    }
+    bool voxCW() const { return m_voxCW; }
+    bool voxVoice() const { return m_voxVoice; }
+    bool voxData() const { return m_voxData; }
+    bool voxEnabled() const { return m_voxCW || m_voxVoice || m_voxData; }
 
     // QSK (full break-in)
-    bool qskEnabled() const { return m_qskControlState.qskEnabled; }
-
-    // K4 remote power state — std::nullopt until the first PS echo arrives,
-    // then true (PS1) / false (PS0). See radiostate/powerstate.h.
-    std::optional<bool> isPoweredOn() const { return m_powerState.isOn(); }
-
-    // PA / Lower-PA temperatures in °C from the SIRF PT / LT fields. Sentinel -1
-    // means "not yet seen" — UI should render the disconnected placeholder.
-    int paTemperatureC() const { return m_rxTxMeterState.paTemperatureC; }
-    int lpaTemperatureC() const { return m_rxTxMeterState.lpaTemperatureC; }
+    bool qskEnabled() const { return m_qskEnabled; }
 
     // TEST mode (TX test)
-    bool testMode() const { return m_rxTxMeterState.testMode; }
+    bool testMode() const { return m_testMode; }
 
     // ATU mode (0=not installed, 1=bypass, 2=auto)
-    int atuMode() const { return m_antennaState.atuMode; }
+    int atuMode() const { return m_atuMode; }
 
     // B SET (Target B) - controls whether feature menu commands target Sub RX
     // State is tracked internally (toggled when SW44 is sent)
-    bool bSetEnabled() const { return m_rxTxMeterState.bSetEnabled; }
-    void setBSetEnabled(bool enabled);
-    void toggleBSet() { setBSetEnabled(!m_rxTxMeterState.bSetEnabled); }
-
-    // Streaming Latency (SL command)
-    int streamingLatency() const { return m_dataControlState.streamingLatency; }
+    bool bSetEnabled() const { return m_bSetEnabled; }
+    void setBSetEnabled(bool enabled) {
+        if (enabled != m_bSetEnabled) {
+            m_bSetEnabled = enabled;
+            emit bSetChanged(m_bSetEnabled);
+        }
+    }
+    void toggleBSet() { setBSetEnabled(!m_bSetEnabled); }
 
     // Audio Effects (FX command)
-    int afxMode() const { return m_audioEffectsState.afxMode; } // 0=off, 1=delay, 2=pitch-map
+    int afxMode() const { return m_afxMode; } // 0=off, 1=delay, 2=pitch-map
 
     // Audio Peak Filter (AP/AP$ commands, CW mode only)
-    bool apfEnabled() const { return m_audioEffectsState.apfEnabled; }      // Main RX
-    int apfBandwidth() const { return m_audioEffectsState.apfBandwidth; }   // Main RX: 0=30Hz, 1=50Hz, 2=150Hz
-    bool apfEnabledB() const { return m_audioEffectsState.apfEnabledB; }    // Sub RX
-    int apfBandwidthB() const { return m_audioEffectsState.apfBandwidthB; } // Sub RX: 0=30Hz, 1=50Hz, 2=150Hz
+    bool apfEnabled() const { return m_apfEnabled; }      // Main RX
+    int apfBandwidth() const { return m_apfBandwidth; }   // Main RX: 0=30Hz, 1=50Hz, 2=150Hz
+    bool apfEnabledB() const { return m_apfEnabledB; }    // Sub RX
+    int apfBandwidthB() const { return m_apfBandwidthB; } // Sub RX: 0=30Hz, 1=50Hz, 2=150Hz
 
     // VFO Lock (LK/LK$ commands)
-    bool lockA() const { return m_frequencyVfoState.lockA; }
-    bool lockB() const { return m_frequencyVfoState.lockB; }
+    bool lockA() const { return m_lockA; }
+    bool lockB() const { return m_lockB; }
 
     // VFO Link (LN command)
-    bool vfoLink() const { return m_frequencyVfoState.vfoLink; }
+    bool vfoLink() const { return m_vfoLink; }
 
     // Monitor Level (ML command) - sidetone/speech monitor
     // mode: 0=CW, 1=AF data, 2=voice
-    int monitorLevelCW() const { return m_audioEffectsState.monitorLevelCW; }
-    int monitorLevelData() const { return m_audioEffectsState.monitorLevelData; }
-    int monitorLevelVoice() const { return m_audioEffectsState.monitorLevelVoice; }
-    int monitorLevelForCurrentMode() const;
+    int monitorLevelCW() const { return m_monitorLevelCW; }
+    int monitorLevelData() const { return m_monitorLevelData; }
+    int monitorLevelVoice() const { return m_monitorLevelVoice; }
+    int monitorLevelForCurrentMode() const {
+        switch (m_mode) {
+        case CW:
+        case CW_R:
+            return m_monitorLevelCW;
+        case DATA:
+        case DATA_R:
+            return m_monitorLevelData;
+        default: // LSB, USB, AM, FM = Voice modes
+            return m_monitorLevelVoice;
+        }
+    }
     // Returns the ML mode code (0/1/2) for the current operating mode
-    int monitorModeCode() const;
+    int monitorModeCode() const {
+        switch (m_mode) {
+        case CW:
+        case CW_R:
+            return 0;
+        case DATA:
+        case DATA_R:
+            return 1;
+        default: // LSB, USB, AM, FM = Voice modes
+            return 2;
+        }
+    }
 
     // Audio mix routing (MX command) - how main/sub maps to L/R when SUB is on
-    int audioMixLeft() const { return m_audioEffectsState.audioMixLeft; }   // MixSource left
-    int audioMixRight() const { return m_audioEffectsState.audioMixRight; } // MixSource right
+    int audioMixLeft() const { return m_audioMixLeft; }   // MixSource value for left output
+    int audioMixRight() const { return m_audioMixRight; } // MixSource value for right output
 
     // Audio balance (BL command) - MAIN/SUB balance
-    int balanceMode() const { return m_audioEffectsState.balanceMode; }     // 0=NOR, 1=BAL
-    int balanceOffset() const { return m_audioEffectsState.balanceOffset; } // -50 to +50
+    int balanceMode() const { return m_balanceMode; }     // 0=NOR, 1=BAL
+    int balanceOffset() const { return m_balanceOffset; } // -50 to +50
 
     // Optimistic setter for balance (radio doesn't echo BL SET commands)
     void setBalance(int mode, int offset);
@@ -303,43 +270,124 @@ public:
     void setMonitorLevel(int mode, int level);
 
     // Returns VOX state for current operating mode
-    bool voxForCurrentMode() const;
+    bool voxForCurrentMode() const {
+        switch (m_mode) {
+        case CW:
+        case CW_R:
+            return m_voxCW;
+        case DATA:
+        case DATA_R:
+            return m_voxData;
+        default: // LSB, USB, AM, FM = Voice modes
+            return m_voxVoice;
+        }
+    }
 
     // QSK/VOX Delay (in 10ms increments)
-    int qskDelayCW() const { return m_qskControlState.qskDelayCW; }
-    int qskDelayVoice() const { return m_qskControlState.qskDelayVoice; }
-    int qskDelayData() const { return m_qskControlState.qskDelayData; }
+    int qskDelayCW() const { return m_qskDelayCW; }
+    int qskDelayVoice() const { return m_qskDelayVoice; }
+    int qskDelayData() const { return m_qskDelayData; }
     // Returns delay for current operating mode (in 10ms increments)
-    int delayForCurrentMode() const;
+    int delayForCurrentMode() const {
+        switch (m_mode) {
+        case CW:
+        case CW_R:
+            return m_qskDelayCW;
+        case DATA:
+        case DATA_R:
+            return m_qskDelayData;
+        default: // LSB, USB, AM, FM = Voice modes
+            return m_qskDelayVoice;
+        }
+    }
 
-    // Optimistic setter for QSK/VOX delay (in 10ms increments, 0-255)
-    void setDelayForCurrentMode(int delay);
+    // Optimistic setters for QSK/VOX delay (in 10ms increments, 0-255)
+    void setDelayForCurrentMode(int delay) {
+        delay = qBound(0, delay, 255);
+        switch (m_mode) {
+        case CW:
+        case CW_R:
+            if (m_qskDelayCW != delay) {
+                m_qskDelayCW = delay;
+                emit qskDelayChanged(delay);
+            }
+            break;
+        case DATA:
+        case DATA_R:
+            if (m_qskDelayData != delay) {
+                m_qskDelayData = delay;
+                emit qskDelayChanged(delay);
+            }
+            break;
+        default: // LSB, USB, AM, FM = Voice modes
+            if (m_qskDelayVoice != delay) {
+                m_qskDelayVoice = delay;
+                emit qskDelayChanged(delay);
+            }
+            break;
+        }
+    }
 
     // Panadapter REF level (Main)
-    int refLevel() const { return m_spectrumDisplayState.refLevel; }
-    void setRefLevel(int level);
+    int refLevel() const { return m_refLevel; }
+
+    // Setter for optimistic ref level updates (Main RX)
+    void setRefLevel(int level) {
+        if (level != m_refLevel) {
+            m_refLevel = level;
+            emit refLevelChanged(m_refLevel);
+        }
+    }
 
     // Panadapter scale (Main, from #SCL command, 10-150)
     // Higher values = more compressed display (signals appear weaker)
     // Lower values = more expanded display (signals appear stronger)
-    int scale() const { return m_spectrumDisplayState.scale; }
-    void setScale(int scale);
+    int scale() const { return m_scale; }
+
+    // Setter for optimistic scale updates (UI updates immediately)
+    void setScale(int scale) {
+        if (scale >= 10 && scale <= 150 && scale != m_scale) {
+            m_scale = scale;
+            emit scaleChanged(m_scale);
+        }
+    }
 
     // Panadapter span (Main, from #SPN command, in Hz)
-    int spanHz() const { return m_spectrumDisplayState.spanHz; }
-    void setSpanHz(int spanHz);
+    int spanHz() const { return m_spanHz; }
+
+    // Setter for optimistic span updates (UI updates immediately, like K4Mobile)
+    void setSpanHz(int spanHz) {
+        if (spanHz > 0 && spanHz != m_spanHz) {
+            m_spanHz = spanHz;
+            emit spanChanged(m_spanHz);
+        }
+    }
 
     // Panadapter REF level (Sub)
-    int refLevelB() const { return m_spectrumDisplayState.refLevelB; }
-    void setRefLevelB(int level);
+    int refLevelB() const { return m_refLevelB; }
+
+    // Setter for optimistic ref level updates (Sub RX)
+    void setRefLevelB(int level) {
+        if (level != m_refLevelB) {
+            m_refLevelB = level;
+            emit refLevelBChanged(m_refLevelB);
+        }
+    }
 
     // Panadapter span (Sub, from #SPN$ command, in Hz)
-    int spanHzB() const { return m_spectrumDisplayState.spanHzB; }
-    void setSpanHzB(int spanHz);
+    int spanHzB() const { return m_spanHzB; }
+
+    // Setter for optimistic span updates (Sub RX)
+    void setSpanHzB(int spanHz) {
+        if (spanHz > 0 && spanHz != m_spanHzB) {
+            m_spanHzB = spanHz;
+            emit spanBChanged(m_spanHzB);
+        }
+    }
 
     // Mini-Pan enabled state (tracked via #MP / #MP$ CAT commands)
-    bool miniPanAEnabled() const { return m_spectrumDisplayState.miniPanAEnabled; }
-    bool miniPanBEnabled() const { return m_spectrumDisplayState.miniPanBEnabled; }
+    bool miniPanAEnabled() const { return m_miniPanAEnabled; }
+    bool miniPanBEnabled() const { return m_miniPanBEnabled; }
 
     // Mini-Pan state setters (called optimistically when sending CAT commands)
     void setMiniPanAEnabled(bool enabled);
@@ -354,40 +402,34 @@ public:
 
     // Display state (tracked via # prefixed display commands)
     // LCD/EXT getters - default to LCD for backwards compatibility
-    int dualPanModeLcd() const { return m_spectrumDisplayState.dualPanModeLcd; }
-    int dualPanModeExt() const { return m_spectrumDisplayState.dualPanModeExt; }
-    int displayModeLcd() const { return m_spectrumDisplayState.displayModeLcd; }
-    int displayModeExt() const { return m_spectrumDisplayState.displayModeExt; }
-    int displayFps() const { return m_spectrumDisplayState.displayFps; }
-    int waterfallColor() const { return m_spectrumDisplayState.waterfallColor; }
-    int waterfallHeight() const { return m_spectrumDisplayState.waterfallHeight; }       // #WFHxx
-    int waterfallHeightExt() const { return m_spectrumDisplayState.waterfallHeightExt; } // #HWFHxx
-    int averaging() const { return m_spectrumDisplayState.averaging; }
-    bool peakMode() const { return m_spectrumDisplayState.peakMode > 0; }
-    int fixedTune() const { return m_spectrumDisplayState.fixedTune; } // #FXT
-    int fixedTuneMode() const { return m_spectrumDisplayState.fixedTuneMode; }
-    bool freeze() const { return m_spectrumDisplayState.freeze > 0; }
-    int vfoACursor() const { return m_spectrumDisplayState.vfoACursor; }
-    int vfoBCursor() const { return m_spectrumDisplayState.vfoBCursor; }
-    bool autoRefLevel() const { return m_spectrumDisplayState.autoRefLevel > 0; }
-    int ddcNbMode() const { return m_spectrumDisplayState.ddcNbMode; }
-    int ddcNbLevel() const { return m_spectrumDisplayState.ddcNbLevel; }
+    int dualPanModeLcd() const { return m_dualPanModeLcd; }
+    int dualPanModeExt() const { return m_dualPanModeExt; }
+    int displayModeLcd() const { return m_displayModeLcd; }
+    int displayModeExt() const { return m_displayModeExt; }
+    int displayFps() const { return m_displayFps; }
+    int waterfallColor() const { return m_waterfallColor; }
+    int waterfallHeight() const { return m_waterfallHeight; }       // LCD: #WFHxx (0-100%)
+    int waterfallHeightExt() const { return m_waterfallHeightExt; } // EXT: #HWFHxx (0-100%)
+    int averaging() const { return m_averaging; }
+    bool peakMode() const { return m_peakMode > 0; }
+    int fixedTune() const { return m_fixedTune; }         // #FXT: 0=track, 1=fixed
+    int fixedTuneMode() const { return m_fixedTuneMode; } // #FXA: 0-4
+    bool freeze() const { return m_freeze > 0; }
+    int vfoACursor() const { return m_vfoACursor; }
+    int vfoBCursor() const { return m_vfoBCursor; }
+    bool autoRefLevel() const { return m_autoRefLevel > 0; }
+    int ddcNbMode() const { return m_ddcNbMode; }   // #NB$: 0=off, 1=on, 2=auto
+    int ddcNbLevel() const { return m_ddcNbLevel; } // #NBL$: 0-14
 
     // Data sub-mode (DT command): 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D
-    int dataSubMode() const { return m_dataControlState.dataSubMode; }
-    int dataSubModeB() const { return m_dataControlState.dataSubModeB; }
-
-    // Data rate (DR command): 0=slower (RTTY45/PSK31), 1=faster (RTTY75/PSK63)
-    int dataRate() const { return m_dataControlState.dataRate; }
-    int dataRateB() const { return m_dataControlState.dataRateB; }
+    int dataSubMode() const { return m_dataSubMode; }
+    int dataSubModeB() const { return m_dataSubModeB; }
 
     // RX Graphic Equalizer (RE command) - 8 bands, -16 to +16 dB
     // Bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz
     // Note: Main RX and Sub RX share the same EQ settings
-    int rxEqBand(int index) const { return (index >= 0 && index < 8) ? m_audioEffectsState.rxEqBands[index] : 0; }
-    QVector<int> rxEqBands() const {
-        return QVector<int>(m_audioEffectsState.rxEqBands, m_audioEffectsState.rxEqBands + 8);
-    }
+    int rxEqBand(int index) const { return (index >= 0 && index < 8) ? m_rxEqBands[index] : 0; }
+    QVector<int> rxEqBands() const { return QVector<int>(m_rxEqBands, m_rxEqBands + 8); }
 
     // Optimistic setter for RX EQ bands (radio doesn't echo)
     void setRxEqBand(int index, int dB);
@@ -395,35 +437,28 @@ public:
 
     // TX Graphic Equalizer (TE command) - 8 bands, -16 to +16 dB
     // Bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz
-    int txEqBand(int index) const { return (index >= 0 && index < 8) ? m_audioEffectsState.txEqBands[index] : 0; }
-    QVector<int> txEqBands() const {
-        return QVector<int>(m_audioEffectsState.txEqBands, m_audioEffectsState.txEqBands + 8);
-    }
+    int txEqBand(int index) const { return (index >= 0 && index < 8) ? m_txEqBands[index] : 0; }
+    QVector<int> txEqBands() const { return QVector<int>(m_txEqBands, m_txEqBands + 8); }
 
     // Optimistic setter for TX EQ bands (radio doesn't echo)
     void setTxEqBand(int index, int dB);
     void setTxEqBands(const QVector<int> &bands);
 
-    // Antenna Configuration Masks (ACM/ACS/ACT) — backed by m_antennaState.
-    bool mainRxDisplayAll() const { return m_antennaState.mainRxDisplayAll; }
-    bool mainRxAntEnabled(int index) const {
-        return (index >= 0 && index < 7) ? m_antennaState.mainRxAntMask[index] : false;
-    }
-    QVector<bool> mainRxAntMask() const {
-        return QVector<bool>(m_antennaState.mainRxAntMask, m_antennaState.mainRxAntMask + 7);
-    }
+    // Antenna Configuration Masks (ACM/ACS/ACT commands)
+    // ACM - Main RX antenna access mask
+    bool mainRxDisplayAll() const { return m_mainRxDisplayAll; }
+    bool mainRxAntEnabled(int index) const { return (index >= 0 && index < 7) ? m_mainRxAntMask[index] : false; }
+    QVector<bool> mainRxAntMask() const { return QVector<bool>(m_mainRxAntMask, m_mainRxAntMask + 7); }
 
-    bool subRxDisplayAll() const { return m_antennaState.subRxDisplayAll; }
-    bool subRxAntEnabled(int index) const {
-        return (index >= 0 && index < 7) ? m_antennaState.subRxAntMask[index] : false;
-    }
-    QVector<bool> subRxAntMask() const {
-        return QVector<bool>(m_antennaState.subRxAntMask, m_antennaState.subRxAntMask + 7);
-    }
+    // ACS - Sub RX antenna access mask
+    bool subRxDisplayAll() const { return m_subRxDisplayAll; }
+    bool subRxAntEnabled(int index) const { return (index >= 0 && index < 7) ? m_subRxAntMask[index] : false; }
+    QVector<bool> subRxAntMask() const { return QVector<bool>(m_subRxAntMask, m_subRxAntMask + 7); }
 
-    bool txDisplayAll() const { return m_antennaState.txDisplayAll; }
-    bool txAntEnabled(int index) const { return (index >= 0 && index < 3) ? m_antennaState.txAntMask[index] : false; }
-    QVector<bool> txAntMask() const { return QVector<bool>(m_antennaState.txAntMask, m_antennaState.txAntMask + 3); }
+    // ACT - TX antenna access mask
+    bool txDisplayAll() const { return m_txDisplayAll; }
+    bool txAntEnabled(int index) const { return (index >= 0 && index < 3) ? m_txAntMask[index] : false; }
+    QVector<bool> txAntMask() const { return QVector<bool>(m_txAntMask, m_txAntMask + 3); }
 
     // Optimistic setters for antenna config (radio doesn't echo)
     void setMainRxAntConfig(bool displayAll, const QVector<bool> &mask);
@@ -431,9 +466,9 @@ public:
     void setTxAntConfig(bool displayAll, const QVector<bool> &mask);
 
     // Line Out levels (LO command)
-    int lineOutLeft() const { return m_audioEffectsState.lineOutLeft; }
-    int lineOutRight() const { return m_audioEffectsState.lineOutRight; }
-    bool lineOutRightEqualsLeft() const { return m_audioEffectsState.lineOutRightEqualsLeft; }
+    int lineOutLeft() const { return m_lineOutLeft; }
+    int lineOutRight() const { return m_lineOutRight; }
+    bool lineOutRightEqualsLeft() const { return m_lineOutRightEqualsLeft; }
 
     // Optimistic setters for Line Out
     void setLineOutLeft(int level);
@@ -441,9 +476,9 @@ public:
     void setLineOutRightEqualsLeft(bool enabled);
 
     // Line In levels and source (LI command)
-    int lineInSoundCard() const { return m_audioEffectsState.lineInSoundCard; }
-    int lineInJack() const { return m_audioEffectsState.lineInJack; }
-    int lineInSource() const { return m_audioEffectsState.lineInSource; } // 0=SoundCard, 1=LineInJack
+    int lineInSoundCard() const { return m_lineInSoundCard; }
+    int lineInJack() const { return m_lineInJack; }
+    int lineInSource() const { return m_lineInSource; } // 0=SoundCard, 1=LineInJack
 
     // Optimistic setters for Line In
     void setLineInSoundCard(int level);
@@ -451,29 +486,33 @@ public:
     void setLineInSource(int source);
 
     // Mic Input (MI command) - 0=front, 1=rear, 2=line in, 3=front+line in, 4=rear+line in
-    int micInput() const { return m_audioEffectsState.micInput; }
+    int micInput() const { return m_micInput; }
 
     // Mic Setup (MS command) - preamp, bias, buttons configuration
-    int micFrontPreamp() const { return m_audioEffectsState.micFrontPreamp; }   // 0=0dB, 1=10dB, 2=20dB
-    int micFrontBias() const { return m_audioEffectsState.micFrontBias; }       // 0=OFF, 1=ON
-    int micFrontButtons() const { return m_audioEffectsState.micFrontButtons; } // 0=disabled, 1=UP/DN enabled
-    int micRearPreamp() const { return m_audioEffectsState.micRearPreamp; }     // 0=0dB, 1=14dB
-    int micRearBias() const { return m_audioEffectsState.micRearBias; }         // 0=OFF, 1=ON
+    int micFrontPreamp() const { return m_micFrontPreamp; }   // 0=0dB, 1=10dB, 2=20dB
+    int micFrontBias() const { return m_micFrontBias; }       // 0=OFF, 1=ON
+    int micFrontButtons() const { return m_micFrontButtons; } // 0=disabled, 1=UP/DN enabled
+    int micRearPreamp() const { return m_micRearPreamp; }     // 0=0dB, 1=14dB
+    int micRearBias() const { return m_micRearBias; }         // 0=OFF, 1=ON
 
     // VOX Gain (VG command) - per mode (0=voice, 1=data)
-    int voxGainVoice() const { return m_audioEffectsState.voxGainVoice; } // 0-60
-    int voxGainData() const { return m_audioEffectsState.voxGainData; }   // 0-60
-    int voxGainForCurrentMode() const {
-        return (mode() == DATA || mode() == DATA_R) ? m_audioEffectsState.voxGainData
-                                                    : m_audioEffectsState.voxGainVoice;
-    }
+    int voxGainVoice() const { return m_voxGainVoice; } // 0-60
+    int voxGainData() const { return m_voxGainData; }   // 0-60
+    int voxGainForCurrentMode() const { return (m_mode == DATA || m_mode == DATA_R) ? m_voxGainData : m_voxGainVoice; }
 
     // Anti-VOX (VI command) - voice modes only
-    int antiVox() const { return m_audioEffectsState.antiVox; } // 0-60
+    int antiVox() const { return m_antiVox; } // 0-60
 
     // ESSB and SSB TX Bandwidth (ES command)
-    bool essbEnabled() const { return m_audioEffectsState.essbEnabled; } // 0=SSB, 1=ESSB
-    int ssbTxBw() const { return m_audioEffectsState.ssbTxBw; }          // 30-45 (3.0-4.5 kHz in 100Hz units)
+    bool essbEnabled() const { return m_essbEnabled; } // 0=SSB, 1=ESSB
+    int ssbTxBw() const { return m_ssbTxBw; }          // 30-45 (3.0-4.5 kHz in 100Hz units)
+    int plToneIndex() const { return m_plToneIndex; }
+    bool plToneEnabled() const { return m_plToneEnabled; }
+    int plToneIndexB() const { return m_plToneIndexB; }
+    bool plToneEnabledB() const { return m_plToneEnabledB; }
+    int dataTxBandwidth() const { return m_dataTxBandwidth; }
+    QChar repeaterMode() const { return m_repeaterMode; }
+    int repeaterOffsetKhz() const { return m_repeaterOffsetKhz; }
 
     // Optimistic setters for VOX Gain/Anti-VOX/ESSB
     void setVoxGainVoice(int gain);
@@ -490,20 +529,15 @@ public:
     void setMicRearPreamp(int preamp);
     void setMicRearBias(int bias);
 
-    // Text Decode (TD$ command) - Main RX. Backed by m_textDecodeState (see
-    // models/radiostate/textdecodestate.h).
-    int textDecodeMode() const { return m_textDecodeState.textDecodeMode; }           // 0=off, 2-4=CW WPM
-    int textDecodeThreshold() const { return m_textDecodeState.textDecodeThreshold; } // 0=AUTO, 1-9
-    int textDecodeLines() const { return m_textDecodeState.textDecodeLines; }         // 1-10 lines
+    // Text Decode (TD$ command) - Main RX
+    int textDecodeMode() const { return m_textDecodeMode; }           // 0=off, 2-4=CW WPM ranges, 1=DATA/SSB on
+    int textDecodeThreshold() const { return m_textDecodeThreshold; } // 0=AUTO, 1-9 (CW only)
+    int textDecodeLines() const { return m_textDecodeLines; }         // 1-10 lines
 
     // Text Decode (TD$$ command) - Sub RX
-    int textDecodeModeB() const { return m_textDecodeState.textDecodeModeB; }
-    int textDecodeThresholdB() const { return m_textDecodeState.textDecodeThresholdB; }
-    int textDecodeLinesB() const { return m_textDecodeState.textDecodeLinesB; }
-
-    // XVTR per-band config — backed by m_xvtrBandState.
-    const QVector<XvtrBandConfig> &xvtrBands() const { return m_xvtrBandState.bands; }
-    int xvtrBandSelect() const { return m_xvtrBandState.currentSelect; }
+    int textDecodeModeB() const { return m_textDecodeModeB; }
+    int textDecodeThresholdB() const { return m_textDecodeThresholdB; }
+    int textDecodeLinesB() const { return m_textDecodeLinesB; }
 
     // Optimistic setters for Text Decode
     void setTextDecodeMode(int mode);
@@ -517,10 +551,6 @@ public:
     void setDataSubMode(int subMode);
     void setDataSubModeB(int subMode);
 
-    // Optimistic setters for data rate
-    void setDataRate(int rate);
-    void setDataRateB(int rate);
-
     // Full mode string including data sub-mode (DATA-A, AFSK, FSK, PSK)
     QString modeStringFull() const;  // Main RX mode with sub-mode
     QString modeStringFullB() const; // Sub RX mode with sub-mode
@@ -529,12 +559,6 @@ public:
     static Mode modeFromCode(int code);
     static QString modeToString(Mode mode);
     static QString dataSubModeToString(int subMode); // 0=DATA, 1=AFSK, 2=FSK, 3=PSK
-
-    // Introspection for tests. parseCATCommand() iterates m_commandHandlers in
-    // registration order and first-match-wins, so the registration order must be
-    // "shadow-safe": if prefix X is a proper prefix of prefix Y, Y must be
-    // registered before X. See tests/test_radiostate_registry.cpp.
-    QStringList registeredCommandPrefixes() const;
 
 signals:
     void frequencyChanged(quint64 freq);
@@ -552,17 +576,13 @@ signals:
     void tuningStepBChanged(int step); // VFO B tuning rate (0-5)
     void sMeterChanged(double value);
     void sMeterBChanged(double value);
-
+    void powerMeterChanged(int watts);
     void transmitStateChanged(bool transmitting);
-    // Emitted when PC echo lands. `value` is in W for Qrp/Qro and mW for Xvtr —
-    // UI consumers should check `range` before formatting (it dictates both the
-    // unit suffix and the decimal precision).
-    void rfPowerChanged(double value, LevelsState::PowerRange range);
+    void rfPowerChanged(double watts, bool isQrp);
     void supplyVoltageChanged(double volts);
     void supplyCurrentChanged(double amps);
-    void paDrainCurrentChanged(double amps);
-    void paTemperatureChanged(int celsius);  // SIRF PT field (final-PA heatsink temp)
-    void lpaTemperatureChanged(int celsius); // SIRF LT field (Lower-PA heatsink temp)
+    void paTemperatureChanged(int celsius);
+    void lpaTemperatureChanged(int celsius);
     void swrChanged(double swr);
     void txMeterChanged(int alc, int compression, double fwdPower, double swr);
     void splitChanged(bool enabled);
@@ -573,32 +593,32 @@ signals:
     void ritXitChanged(bool ritEnabled, bool xitEnabled, int offset);
     void ritXitBChanged(bool ritEnabled, int offset);
     void messageBankChanged(int bank);
-    void processingChanged();         // NB, NR, PA, RA, GT changes for Main RX
-    void processingChangedB();        // NB, NR, PA, RA, GT changes for Sub RX
-    void refLevelChanged(int level);  // Panadapter reference level (#REF command)
-    void scaleChanged(int scale);     // Panadapter scale (#SCL command, 10-150) - GLOBAL, applies to both
-    void spanChanged(int spanHz);     // Panadapter span (#SPN command)
-    void refLevelBChanged(int level); // Sub RX panadapter reference level (#REF$ command)
-    void spanBChanged(int spanHz);    // Sub RX panadapter span (#SPN$ command)
-    void keyerSpeedChanged(int wpm);  // CW keyer speed
-    void keyerPaddleChanged(QChar iambic, QChar paddle, int weight); // KP keyer paddle settings
-    void qskDelayChanged(int delay);                                 // QSK/VOX delay in 10ms increments
-    void rfGainChanged(int gain);                                    // RF gain
-    void squelchChanged(int level);                                  // Squelch level
-    void rfGainBChanged(int gain);                                   // RF gain Sub RX
-    void squelchBChanged(int level);                                 // Squelch Sub RX
-    void micGainChanged(int gain);                                   // Mic gain (0-80)
-    void compressionChanged(int level);                              // Speech compression (0-30, SSB only)
-    void voxChanged(bool enabled);                                   // VOX state (any mode)
-    void qskEnabledChanged(bool enabled);                            // QSK (full break-in) state
-    void powerStateChanged(bool on);                                 // PS0/PS1 — K4 remote power state
-    void testModeChanged(bool enabled);                              // TX test mode state
-    void atuModeChanged(int mode);                                   // ATU mode (1=bypass, 2=auto)
-    void bSetChanged(bool enabled);                                  // B SET (Target B) state
-    void notchChanged();                                             // Manual notch state/pitch changed (Main RX)
-    void notchBChanged();                                            // Manual notch state/pitch changed (Sub RX)
-    void miniPanAEnabledChanged(bool enabled);                       // Mini-Pan A state (#MP command)
-    void miniPanBEnabledChanged(bool enabled);                       // Mini-Pan B state (#MP$ command)
+    void processingChanged();                  // NB, NR, PA, RA, GT changes for Main RX
+    void processingChangedB();                 // NB, NR, PA, RA, GT changes for Sub RX
+    void refLevelChanged(int level);           // Panadapter reference level (#REF command)
+    void scaleChanged(int scale);              // Panadapter scale (#SCL command, 10-150) - GLOBAL, applies to both
+    void spanChanged(int spanHz);              // Panadapter span (#SPN command)
+    void refLevelBChanged(int level);          // Sub RX panadapter reference level (#REF$ command)
+    void spanBChanged(int spanHz);             // Sub RX panadapter span (#SPN$ command)
+    void keyerSpeedChanged(int wpm);           // CW keyer speed
+    void keyerPaddleChanged(QChar orientation); // KP paddle orientation: N=normal, R=reversed
+    void iambicModeChanged(QChar mode);          // KP iambic mode: A or B
+    void qskDelayChanged(int delay);           // QSK/VOX delay in 10ms increments
+    void rfGainChanged(int gain);              // RF gain
+    void squelchChanged(int level);            // Squelch level
+    void rfGainBChanged(int gain);             // RF gain Sub RX
+    void squelchBChanged(int level);           // Squelch Sub RX
+    void micGainChanged(int gain);             // Mic gain (0-80)
+    void compressionChanged(int level);        // Speech compression (0-30, SSB only)
+    void voxChanged(bool enabled);             // VOX state (any mode)
+    void qskEnabledChanged(bool enabled);      // QSK (full break-in) state
+    void testModeChanged(bool enabled);        // TX test mode state
+    void atuModeChanged(int mode);             // ATU mode (1=bypass, 2=auto)
+    void bSetChanged(bool enabled);            // B SET (Target B) state
+    void notchChanged();                       // Manual notch state/pitch changed (Main RX)
+    void notchBChanged();                      // Manual notch state/pitch changed (Sub RX)
+    void miniPanAEnabledChanged(bool enabled); // Mini-Pan A state (#MP command)
+    void miniPanBEnabledChanged(bool enabled); // Mini-Pan B state (#MP$ command)
 
     // Display state signals (separate LCD and EXT)
     void dualPanModeLcdChanged(int mode);        // #DPM: LCD 0=A, 1=B, 2=Dual
@@ -620,20 +640,9 @@ signals:
     void ddcNbLevelChanged(int level);           // #NBL$: 0-14
     void dataSubModeChanged(int subMode);        // DT: 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D
     void dataSubModeBChanged(int subMode);       // DT$: Sub RX data sub-mode
-    void dataRateChanged(int rate);              // DR: 0=slower (RTTY45/PSK31), 1=faster (RTTY75/PSK63)
-    void dataRateBChanged(int rate);             // DR$: Sub RX data rate
-
-    // Streaming latency
-    void streamingLatencyChanged(int tier); // SL: 0-7
 
     // Error/notification messages from K4 (ERxx: format)
     void errorNotificationReceived(int errorCode, const QString &message);
-
-    // XVTR per-band config (XvtrBandState). xvtrBandsChanged fires when any
-    // band's mode/RF/IF/offset value changes; xvtrBandSelectChanged fires when
-    // the K4's current-band pointer (XVN / ME0086) moves.
-    void xvtrBandsChanged();
-    void xvtrBandSelectChanged(int band);
 
     // Audio effects and processing
     void afxModeChanged(int mode);                 // FX: 0=off, 1=delay, 2=pitch-map
@@ -645,12 +654,15 @@ signals:
     void monitorLevelChanged(int mode, int level); // ML: Monitor level (0=CW, 1=Data, 2=Voice)
     void audioMixChanged(int left, int right);     // MX: Audio mix routing (MixSource values)
     void balanceChanged(int mode, int offset);     // BL: Balance (mode 0=NOR/1=BAL, offset -50 to +50)
+    void streamingLatencyChanged(int tier);        // SL: streaming frame-bundling tier 0-7
 
     // RX Graphic Equalizer
-    void rxEqChanged(); // Any EQ band value changed
+    void rxEqChanged();                      // Any EQ band value changed
+    void rxEqBandChanged(int index, int dB); // Specific band changed
 
     // TX Graphic Equalizer
-    void txEqChanged(); // Any EQ band value changed
+    void txEqChanged();                      // Any EQ band value changed
+    void txEqBandChanged(int index, int dB); // Specific band changed
 
     // Antenna Configuration Masks
     void mainRxAntCfgChanged(); // ACM command received/changed
@@ -671,90 +683,300 @@ signals:
     void voxGainChanged(int mode, int gain); // VG: mode 0=voice, 1=data
     void antiVoxChanged(int level);          // VI: anti-vox level
     void essbChanged(bool enabled, int bw);  // ES: ESSB state and bandwidth
+    void plToneChanged(bool subRx, int index, bool enabled); // PL/PL$: FM CTCSS state
+    void dataTxBandwidthChanged(int tenthsKhz); // DW: 20-40 = 2.0-4.0 kHz
+    void repeaterChanged(QChar mode, int offsetKhz); // RP: S/+/- and kHz
 
     // Text Decode
     void textDecodeChanged();                                   // TD$ command - Main RX settings changed
     void textDecodeBChanged();                                  // TD$$ command - Sub RX settings changed
     void textBufferReceived(const QString &text, bool isSubRx); // TB$ decoded text
 
+    void stateUpdated();
+
 private:
-    // Frequency / VFO / split / RIT/XIT state — see radiostate/frequencyvfostate.h.
-    FrequencyVfoState m_frequencyVfoState;
-    // Data-mode + tuning step + streaming latency — see radiostate/datacontrolstate.h.
-    DataControlState m_dataControlState;
+    // Frequency and VFO
+    quint64 m_frequency = 0;
+    quint64 m_vfoA = 0;
+    quint64 m_vfoB = 0;
+    int m_tuningStep = -1;
+    int m_tuningStepB = -1;
 
-    // Mode / filter / CW pitch / keyer — see radiostate/modefilterstate.h.
-    ModeFilterState m_modeFilterState;
+    // Mode and filter
+    Mode m_mode = Unknown;
+    Mode m_modeB = Unknown;
+    int m_filterBandwidth = -1;
+    int m_filterBandwidthB = -1;
+    int m_filterPosition = -1;
+    int m_filterPositionB = -1;
+    int m_ifShift = -1;  // IF shift position (0-99, 50=centered) - init to -1 to ensure first emit
+    int m_ifShiftB = -1; // Sub RX IF shift
+    int m_cwPitch = -1;  // Init to -1 to ensure first emit
 
-    // Power, mic gain, compression, RF gain, squelch — see radiostate/levelsstate.h.
-    LevelsState m_levelsState;
-    // Keyer speed / iambic / paddle / weight live on m_modeFilterState.
+    // Power and levels
+    double m_rfPower = -1.0; // Init to invalid to ensure first emit
+    bool m_isQrpMode = false;
+    int m_micGain = -1;       // Init to invalid to ensure first emit (0-80)
+    int m_compression = -1;   // Init to invalid to ensure first emit (0-30, SSB only)
+    int m_rfGain = -999;      // Init to invalid to ensure first emit
+    int m_squelchLevel = -1;  // Init to invalid to ensure first emit
+    int m_rfGainB = -999;     // Sub RX RF gain
+    int m_squelchLevelB = -1; // Sub RX squelch
+    int m_keyerSpeed = -1;    // WPM - init to -1 to ensure first emit
+    QChar m_paddleOrientation;
+    QChar m_iambicMode = 'A';
+    int m_keyingWeight = 100;
 
-    // Meters, TX/RX transition, control toggles (SB/DV/TS/BS), message bank,
-    // supply voltage/current, and radio identity (ID/OM/RV.) all live on
-    // m_rxTxMeterState. See models/radiostate/rxtxmeterstate.h.
-    RxTxMeterState m_rxTxMeterState;
-    // splitEnabled lives on m_frequencyVfoState.
+    // Meters
+    double m_sMeter = 0.0;
+    double m_sMeterB = 0.0;
+    int m_powerMeter = 0;
+    double m_swrMeter = 1.0;
+    int m_alcMeter = 0;
+    int m_compressionDb = 0;
+    double m_forwardPower = 0.0;
 
-    // Processing state (NB/NR/PA/RA/GT/NA/NM) — see models/radiostate/processingstate.h.
-    ProcessingState m_processingState;
+    // Power supply (from SIFP)
+    double m_supplyVoltage = 0.0;
+    double m_supplyCurrent = 0.0;
+    int m_paTemperatureC = -1;
+    int m_lpaTemperatureC = -1;
 
-    // Antenna state — see models/radiostate/antennastate.h.
-    AntennaState m_antennaState;
+    // Control states
+    bool m_isTransmitting = false;
+    bool m_subReceiverEnabled = false;
+    bool m_diversityEnabled = false;
+    bool m_splitEnabled = false;
+    int m_streamingLatency = -1;
 
-    // Audio pipeline state (FX/AP/VX/VG/VI/ES/RE/TE/LO/LI/MI/MS/ML/MX/BL) —
-    // see models/radiostate/audioeffectsstate.h.
-    AudioEffectsState m_audioEffectsState;
+    // Processing - Main RX
+    int m_noiseBlankerLevel = 0;
+    bool m_noiseBlankerEnabled = false;
+    int m_noiseBlankerFilterWidth = 0;
+    int m_noiseReductionLevel = 0;
+    bool m_noiseReductionEnabled = false;
+    int m_ssnrLevel = 0;
+    bool m_ssnrEnabled = false;
 
-    // RIT/XIT state lives on m_frequencyVfoState.
+    // Notch filter
+    bool m_autoNotchEnabled = false;
+    bool m_manualNotchEnabled = false;
+    int m_manualNotchPitch = 1000; // 150-5000 Hz, default 1000
 
-    // Message bank lives on m_rxTxMeterState.
+    // Notch filter - Sub RX
+    bool m_autoNotchEnabledB = false;
+    bool m_manualNotchEnabledB = false;
+    int m_manualNotchPitchB = 1000; // 150-5000 Hz, default 1000
 
-    // VOX flags / gain / anti-VOX live on m_audioEffectsState.
+    int m_preamp = 0;
+    bool m_preampEnabled = false;
+    int m_attenuatorLevel = 0;
+    bool m_attenuatorEnabled = false;
+    AGCSpeed m_agcSpeed = AGC_Slow;
+
+    // Processing - Sub RX
+    int m_noiseBlankerLevelB = 0;
+    bool m_noiseBlankerEnabledB = false;
+    int m_noiseBlankerFilterWidthB = 0; // 0=NONE, 1=NARROW, 2=WIDE
+    int m_noiseReductionLevelB = 0;
+    bool m_noiseReductionEnabledB = false;
+    int m_ssnrLevelB = 0;
+    bool m_ssnrEnabledB = false;
+    int m_preampB = 0;
+    bool m_preampEnabledB = false;
+    int m_attenuatorLevelB = 0;
+    bool m_attenuatorEnabledB = false;
+    AGCSpeed m_agcSpeedB = AGC_Slow;
+
+    // Antenna
+    int m_selectedAntenna = -1;
+    int m_receiveAntenna = -1;
+    int m_receiveAntennaSub = -1;
+    int m_atuMode = -1;
+    QMap<int, QString> m_antennaNames;
+
+    // RIT/XIT
+    bool m_ritEnabled = false;
+    bool m_xitEnabled = false;
+    int m_ritXitOffset = 0;
+    bool m_ritEnabledB = false;
+    int m_ritXitOffsetB = 0;
+
+    // Message bank
+    int m_messageBank = -1;
+
+    // VOX
+    bool m_voxCW = false;
+    bool m_voxVoice = false;
+    bool m_voxData = false;
 
     // QSK (full break-in) - extracted from SD command x flag
-    // QSK (full break-in) state and per-mode delays — see radiostate/qskcontrolstate.h.
-    QskControlState m_qskControlState;
+    bool m_qskEnabled = false;
 
-    // K4 remote power state — see radiostate/powerstate.h.
-    PowerState m_powerState;
+    // TEST mode (TX test)
+    bool m_testMode = false;
 
-    // TEST / B SET live on m_rxTxMeterState.
+    // B SET (Target B) - feature menu commands target Sub RX when enabled
+    bool m_bSetEnabled = false;
 
     // QSK/VOX Delay per mode (in 10ms increments)
+    int m_qskDelayCW = -1;
+    int m_qskDelayVoice = -1;
+    int m_qskDelayData = -1;
 
-    // Streaming Latency (SL command)
-    // m_streamingLatency lives on m_dataControlState.
+    // Audio effects (FX command)
+    int m_afxMode = 0; // 0=off, 1=delay, 2=pitch-map
 
-    // Audio effects / APF / mix routing / balance / monitor level all live on
-    // m_audioEffectsState.
+    // Audio Peak Filter (AP/AP$ commands, CW mode only)
+    bool m_apfEnabled = false;  // Main RX
+    int m_apfBandwidth = 0;     // Main RX: 0=30Hz, 1=50Hz, 2=150Hz
+    bool m_apfEnabledB = false; // Sub RX
+    int m_apfBandwidthB = 0;    // Sub RX: 0=30Hz, 1=50Hz, 2=150Hz
 
     // VFO Link (LN command)
+    bool m_vfoLink = false;
 
     // VFO Lock (LK/LK$ commands)
-    // VFO link and per-VFO lock (LN / LK / LK$) live on m_frequencyVfoState.
+    bool m_lockA = false;
+    bool m_lockB = false;
 
-    // Panadapter / display state (#REF, #SPN, #SCL, #MP, #DPM, #DSM, #FPS,
-    // #WFC, #WFH, #AVG, #PKM, #FXT, #FXA, #FRZ, #VFA, #VFB, #AR, #NB$,
-    // #NBL$, plus EXT variants) — see models/radiostate/spectrumdisplaystate.h.
-    SpectrumDisplayState m_spectrumDisplayState;
+    // Audio mix routing (MX command) - default A.B (main left, sub right)
+    // Values are MixSource enum: 0=A(main), 1=B(sub), 2=AB(main+sub), 3=-A(neg main)
+    int m_audioMixLeft = -1;
+    int m_audioMixRight = -1;
 
-    // Radio identity (ID/OM/RV.) lives on m_rxTxMeterState.
+    // Audio balance (BL command) - MAIN/SUB balance
+    int m_balanceMode = -1;
+    int m_balanceOffset = -99; // sentinel outside valid range (-50 to +50)
 
-    // Data sub-mode + rate + optimistic cooldown timestamps live on m_dataControlState.
+    // Monitor Level (ML command) - sidetone/speech monitor (0-100)
+    int m_monitorLevelCW = -1;    // CW sidetone level
+    int m_monitorLevelData = -1;  // Data monitor level
+    int m_monitorLevelVoice = -1; // Voice monitor level
 
-    // RX/TX graphic EQ, Line In/Out levels, Mic Input/Setup, VOX gain/anti-VOX,
-    // and ESSB state all live on m_audioEffectsState (declared above).
+    // Panadapter REF level (Main)
+    int m_refLevel = -110; // Default -110 dBm
 
-    // Antenna config masks live on m_antennaState (declared above).
+    // Panadapter scale (GLOBAL, from #SCL command, applies to both panadapters)
+    int m_scale = -1; // 10-150, init to -1 to ensure first emit
 
-    // Text Decode (TD / TD$ / TD$$ + TB / TB$). See
-    // models/radiostate/textdecodestate.h for the field layout and the handler
-    // functions that mutate it.
-    TextDecodeState m_textDecodeState;
+    // Panadapter span (Main, from #SPN command)
+    int m_spanHz = 0; // Init to 0 to ensure first emit
 
-    // XVTR per-band config (XVN/XVM/XVR/XVI/XVO). See xvtrbandstate.h.
-    XvtrBandState m_xvtrBandState;
+    // Panadapter REF level (Sub)
+    int m_refLevelB = -110; // Default -110 dBm
+
+    // Panadapter span (Sub, from #SPN$ command)
+    int m_spanHzB = 0; // Init to 0 to ensure first emit
+
+    // Radio info
+    QString m_radioID;
+    QString m_radioModel;
+    QString m_optionModules;
+    QMap<QString, QString> m_firmwareVersions;
+
+    // Mini-Pan enabled state (tracked via #MP / #MP$ CAT commands)
+    bool m_miniPanAEnabled = false;
+    bool m_miniPanBEnabled = false;
+
+    // Display state (from # prefixed display commands)
+    // Initial values are -1 to ensure first update triggers signal
+    // Separate LCD (#DPM, #DSM) and EXT (#HDPM, #HDSM) state
+    int m_dualPanModeLcd = -1;     // #DPM: LCD 0=A, 1=B, 2=Dual
+    int m_dualPanModeExt = -1;     // #HDPM: EXT 0=A, 1=B, 2=Dual
+    int m_displayModeLcd = -1;     // #DSM: LCD 0=spectrum, 1=spectrum+waterfall
+    int m_displayModeExt = -1;     // #HDSM: EXT 0=spectrum, 1=spectrum+waterfall
+    int m_displayFps = 30;         // #FPS: Display frame rate 12-30 (default 30)
+    int m_waterfallColor = -1;     // #WFC: 0-4
+    int m_waterfallHeight = 50;    // #WFHxx: LCD waterfall height 0-100% (default 50%)
+    int m_waterfallHeightExt = 50; // #HWFHxx: EXT waterfall height 0-100% (default 50%)
+    int m_averaging = -1;          // #AVG: 1-20
+    int m_peakMode = -1;           // #PKM: 0/1 (int for -1 init)
+    int m_fixedTune = -1;          // #FXT: 0=track, 1=fixed
+    int m_fixedTuneMode = -1;      // #FXA: 0-4
+    int m_freeze = -1;             // #FRZ: 0/1 (int for -1 init)
+    int m_vfoACursor = -1;         // #VFA: 0=OFF, 1=ON, 2=AUTO, 3=HIDE
+    int m_vfoBCursor = -1;         // #VFB: 0-3
+    int m_autoRefLevel = -1;       // #AR: A=auto, M=manual (GLOBAL - affects both VFOs)
+    int m_ddcNbMode = -1;          // #NB$: 0=off, 1=on, 2=auto
+    int m_ddcNbLevel = -1;         // #NBL$: 0-14
+
+    // Data sub-mode (DT command): 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D
+    int m_dataSubMode = -1;  // Main RX
+    int m_dataSubModeB = -1; // Sub RX
+
+    // Timestamps for optimistic update cooldown (ignore echoes briefly after sending)
+    qint64 m_dataSubModeOptimisticTime = 0;
+    qint64 m_dataSubModeBOptimisticTime = 0;
+
+    // RX Graphic Equalizer (8 bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz)
+    // Range: -16 to +16 dB, init to 0 (flat)
+    int m_rxEqBands[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+    // TX Graphic Equalizer (8 bands: 100, 200, 400, 800, 1200, 1600, 2400, 3200 Hz)
+    // Range: -16 to +16 dB, init to 0 (flat)
+    int m_txEqBands[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+    // Antenna Configuration Masks (ACM/ACS/ACT commands)
+    // ACM - Main RX: z=displayAll, a-g = ANT1, ANT2, ANT3, RX1, RX2, =TX ANT, =OPP TX ANT
+    bool m_mainRxDisplayAll = true;
+    bool m_mainRxAntMask[7] = {false, false, false, false, false, false, false};
+
+    // ACS - Sub RX: same format as ACM
+    bool m_subRxDisplayAll = true;
+    bool m_subRxAntMask[7] = {false, false, false, false, false, false, false};
+
+    // ACT - TX: z=displayAll, a-c = TX ANT1, TX ANT2, TX ANT3
+    bool m_txDisplayAll = true;
+    bool m_txAntMask[3] = {false, false, false};
+
+    // Line Out levels (LO command)
+    int m_lineOutLeft = -1;  // 0-40, init to -1 to ensure first emit
+    int m_lineOutRight = -1; // 0-40
+    bool m_lineOutRightEqualsLeft = false;
+
+    // Line In levels and source (LI command)
+    int m_lineInSoundCard = -1; // 0-250, init to -1 to ensure first emit
+    int m_lineInJack = -1;      // 0-250
+    int m_lineInSource = -1;    // 0=SoundCard, 1=LineInJack
+
+    // Mic Input (MI command)
+    int m_micInput = -1; // 0=front, 1=rear, 2=line in, 3=front+line, 4=rear+line
+
+    // Mic Setup (MS command)
+    int m_micFrontPreamp = -1;  // 0=0dB, 1=10dB, 2=20dB
+    int m_micFrontBias = -1;    // 0=OFF, 1=ON
+    int m_micFrontButtons = -1; // 0=disabled, 1=UP/DN enabled
+    int m_micRearPreamp = -1;   // 0=0dB, 1=14dB
+    int m_micRearBias = -1;     // 0=OFF, 1=ON
+
+    // VOX Gain (VG command)
+    int m_voxGainVoice = -1; // 0-60
+    int m_voxGainData = -1;  // 0-60
+
+    // Anti-VOX (VI command)
+    int m_antiVox = -1; // 0-60
+
+    // ESSB (ES command)
+    bool m_essbEnabled = false; // 0=SSB, 1=ESSB
+    int m_ssbTxBw = -1;         // 30-45 (3.0-4.5 kHz in 100Hz units)
+    int m_plToneIndex = 1;
+    bool m_plToneEnabled = false;
+    int m_plToneIndexB = 1;
+    bool m_plToneEnabledB = false;
+    int m_dataTxBandwidth = 28;
+    QChar m_repeaterMode = 'S';
+    int m_repeaterOffsetKhz = 0;
+
+    // Text Decode (TD$ command) - Main RX
+    int m_textDecodeMode = -1;      // 0=off, 2=8-45WPM, 3=8-60WPM, 4=8-90WPM, 1=DATA/SSB on
+    int m_textDecodeThreshold = -1; // 0=AUTO, 1-9 (CW only)
+    int m_textDecodeLines = -1;     // 1-10 lines
+
+    // Text Decode (TD$$ command) - Sub RX
+    int m_textDecodeModeB = -1;
+    int m_textDecodeThresholdB = -1;
+    int m_textDecodeLinesB = -1;
 
     // =========================================================================
     // Command Handler Registry
@@ -775,20 +997,6 @@ private:
     void registerCommandHandlers();
 
     // =========================================================================
-    // A/B Deduplication Helpers
-    // =========================================================================
-
-    // Parse int from cmd at prefixLen, store in member if changed & in [min,max], emit signal
-    void handleIntPair(const QString &cmd, int prefixLen, int &member, int min, int max,
-                       void (RadioState::*signal)(int));
-
-    // Parse bool from cmd character at charPos, store in member if changed, emit void signal
-    void handleBoolPair(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)());
-
-    // Parse bool from cmd character at charPos, store in member if changed, emit signal(bool)
-    void handleBoolPairVal(const QString &cmd, int charPos, bool &member, void (RadioState::*signal)(bool));
-
-    // =========================================================================
     // Individual Command Handlers (grouped by function)
     // =========================================================================
 
@@ -807,41 +1015,47 @@ private:
     void handleIS(const QString &cmd);    // IF Shift VFO A
     void handleISSub(const QString &cmd); // IF Shift VFO B (IS$)
     void handleCW(const QString &cmd);    // CW pitch
-    // FP/FP$, BW/BW$, IS/IS$ — handled inline via handleIntPair in registerCommandHandlers()
+    void handleFP(const QString &cmd);    // Filter position VFO A
+    void handleFPSub(const QString &cmd); // Filter position VFO B (FP$)
 
     // Gain/Level commands
-    // RG/RG$, SQ/SQ$ — handled inline via handleIntPair in registerCommandHandlers()
-    void handleMG(const QString &cmd); // Mic Gain
-    void handleCP(const QString &cmd); // Compression
-    void handleML(const QString &cmd); // Monitor Level
-    void handlePC(const QString &cmd); // Power Control
-    void handleKS(const QString &cmd); // Keyer Speed
-    void handleKP(const QString &cmd); // Keyer Paddle (iambic/paddle/weight)
+    void handleRG(const QString &cmd);    // RF Gain Main
+    void handleRGSub(const QString &cmd); // RF Gain Sub (RG$)
+    void handleSQ(const QString &cmd);    // Squelch Main
+    void handleSQSub(const QString &cmd); // Squelch Sub (SQ$)
+    void handleMG(const QString &cmd);    // Mic Gain
+    void handleCP(const QString &cmd);    // Compression
+    void handleML(const QString &cmd);    // Monitor Level
+    void handlePC(const QString &cmd);    // Power Control
+    void handleKS(const QString &cmd);    // Keyer Speed
+    void handleKP(const QString &cmd);    // Keyer Paddle orientation
 
     // Meter commands
-    void handleSM(const QString &cmd);    // S-Meter Main (complex conversion)
+    void handleSM(const QString &cmd);    // S-Meter Main
     void handleSMSub(const QString &cmd); // S-Meter Sub (SM$)
     void handlePO(const QString &cmd);    // Power Output
     void handleTM(const QString &cmd);    // TX Meter
 
     // TX/RX state
+    void handleTQ(const QString &cmd); // Transmit query response
     void handleTX(const QString &cmd); // Transmit
     void handleRX(const QString &cmd); // Receive
 
     // Processing commands (NB, NR, PA, RA, GT, NA, NM)
-    void handleNB(const QString &cmd);     // Noise Blanker Main
-    void handleNBSub(const QString &cmd);  // Noise Blanker Sub (NB$)
-    void handleNR(const QString &cmd);     // Noise Reduction Main
-    void handleNRSub(const QString &cmd);  // Noise Reduction Sub (NR$)
-    void handleNRS(const QString &cmd);    // Spectral-subtraction NR Main (NRS)
+    void handleNB(const QString &cmd);    // Noise Blanker Main
+    void handleNBSub(const QString &cmd); // Noise Blanker Sub (NB$)
+    void handleNR(const QString &cmd);    // Noise Reduction Main
+    void handleNRSub(const QString &cmd); // Noise Reduction Sub (NR$)
+    void handleNRS(const QString &cmd);    // Spectral-subtraction NR Main
     void handleNRSSub(const QString &cmd); // Spectral-subtraction NR Sub (NRS$)
-    void handlePA(const QString &cmd);     // Preamp Main
-    void handlePASub(const QString &cmd);  // Preamp Sub (PA$)
-    void handleRA(const QString &cmd);     // Attenuator Main
-    void handleRASub(const QString &cmd);  // Attenuator Sub (RA$)
-    void handleGT(const QString &cmd);     // AGC Speed Main
-    void handleGTSub(const QString &cmd);  // AGC Speed Sub (GT$)
-    // NA/NA$, NM/NM$ — NA handled inline via handleBoolPair; NM stays (complex)
+    void handlePA(const QString &cmd);    // Preamp Main
+    void handlePASub(const QString &cmd); // Preamp Sub (PA$)
+    void handleRA(const QString &cmd);    // Attenuator Main
+    void handleRASub(const QString &cmd); // Attenuator Sub (RA$)
+    void handleGT(const QString &cmd);    // AGC Speed Main
+    void handleGTSub(const QString &cmd); // AGC Speed Sub (GT$)
+    void handleNA(const QString &cmd);    // Auto Notch Main
+    void handleNASub(const QString &cmd); // Auto Notch Sub (NA$)
     void handleNM(const QString &cmd);    // Manual Notch Main
     void handleNMSub(const QString &cmd); // Manual Notch Sub (NM$)
 
@@ -851,13 +1065,15 @@ private:
 
     // Audio/Effects commands
     void handleFX(const QString &cmd);    // Audio Effects
-    void handleAP(const QString &cmd);    // Audio Peak Filter Main (complex — multi-field)
+    void handleAP(const QString &cmd);    // Audio Peak Filter Main
     void handleAPSub(const QString &cmd); // Audio Peak Filter Sub (AP$)
 
     // VFO control commands
-    void handleLN(const QString &cmd); // VFO Link
-    // LK/LK$ — handled inline via handleBoolPair
-    // VT/VT$ — handled inline via handleIntPair
+    void handleLN(const QString &cmd);    // VFO Link
+    void handleLK(const QString &cmd);    // VFO A Lock
+    void handleLKSub(const QString &cmd); // VFO B Lock (LK$)
+    void handleVT(const QString &cmd);    // Tuning Step Main
+    void handleVTSub(const QString &cmd); // Tuning Step Sub (VT$)
 
     // VOX commands
     void handleVX(const QString &cmd); // VOX enable
@@ -870,9 +1086,13 @@ private:
     void handleMI(const QString &cmd); // Mic Input
     void handleMS(const QString &cmd); // Mic Setup
     void handleES(const QString &cmd); // ESSB
+    void handlePL(const QString &cmd, bool subRx); // FM PL/CTCSS tone
+    void handleDW(const QString &cmd); // DATA/AFSK TX bandwidth
+    void handleRP(const QString &cmd); // FM repeater mode/offset
 
     // QSK/Delay commands
     void handleSD(const QString &cmd); // QSK/VOX Delay
+    void handleSL(const QString &cmd); // Streaming audio latency
 
     // Control state commands
     void handleSB(const QString &cmd); // Sub Receiver
@@ -881,20 +1101,21 @@ private:
     void handleBS(const QString &cmd); // B SET
 
     // Antenna commands
-    void handleAN(const QString &cmd); // TX Antenna
-    // AR/AR$ — handled inline via handleIntPair
-    void handleAT(const QString &cmd);  // ATU Mode
-    void handleACN(const QString &cmd); // Antenna Names
-    void handleACM(const QString &cmd); // Main RX Antenna Config
-    void handleACS(const QString &cmd); // Sub RX Antenna Config
-    void handleACT(const QString &cmd); // TX Antenna Config
+    void handleAN(const QString &cmd);    // TX Antenna
+    void handleAR(const QString &cmd);    // RX Antenna Main
+    void handleARSub(const QString &cmd); // RX Antenna Sub (AR$)
+    void handleAT(const QString &cmd);    // ATU Mode
+    void handleACN(const QString &cmd);   // Antenna Names
+    void handleACM(const QString &cmd);   // Main RX Antenna Config
+    void handleACS(const QString &cmd);   // Sub RX Antenna Config
+    void handleACT(const QString &cmd);   // TX Antenna Config
 
     // RIT/XIT commands
     void handleRT(const QString &cmd); // RIT
+    void handleRTSub(const QString &cmd); // RIT, VFO B (RT$)
     void handleXT(const QString &cmd); // XIT
     void handleRO(const QString &cmd); // RIT/XIT Offset
-    // RO$ — handled inline via lambda (same structure but different signal)
-    // RT$ — handled inline via handleBoolPair
+    void handleROSub(const QString &cmd); // RIT/XIT Offset, VFO B (RO$)
 
     // Text decode commands
     void handleTD(const QString &cmd);    // Text Decode Main
@@ -905,8 +1126,6 @@ private:
     // Data mode commands
     void handleDT(const QString &cmd);    // Data Sub-Mode Main
     void handleDTSub(const QString &cmd); // Data Sub-Mode Sub (DT$)
-    void handleDR(const QString &cmd);    // Data Rate Main
-    void handleDRSub(const QString &cmd); // Data Rate Sub (DR$)
 
     // Equalizer commands
     void handleRE(const QString &cmd); // RX EQ
@@ -917,15 +1136,37 @@ private:
     void handleOM(const QString &cmd);   // Option Modules
     void handleRV(const QString &cmd);   // Firmware Version (RV.)
     void handleSIFP(const QString &cmd); // Power Supply Info
-    void handleSIRF(const QString &cmd); // RF Deck Status (PA drain current)
+    void handleSIRF(const QString &cmd); // RF deck temperatures/current
+    void handleSIRC(const QString &cmd); // SIRC status
+    void handleMN(const QString &cmd);   // Message Bank
+    void handleER(const QString &cmd);   // Error notifications
 
-    void handleSL(const QString &cmd); // Streaming Latency
-    void handleMN(const QString &cmd); // Message Bank
-    void handleER(const QString &cmd); // Error notifications
-
-    // Display commands (# prefix) — all handlers live in SpectrumDisplayHandlers
-    // (see models/radiostate/spectrumdisplaystate.{h,cpp}). The registry inline
-    // lambdas in registerCommandHandlers() forward directly into the namespace.
+    // Display commands (# prefix)
+    void handleDisplayREF(const QString &cmd);    // #REF - Ref Level Main
+    void handleDisplayREFSub(const QString &cmd); // #REF$ - Ref Level Sub
+    void handleDisplaySCL(const QString &cmd);    // #SCL - Scale
+    void handleDisplaySPN(const QString &cmd);    // #SPN - Span Main
+    void handleDisplaySPNSub(const QString &cmd); // #SPN$ - Span Sub
+    void handleDisplayMP(const QString &cmd);     // #MP - Mini-Pan Main
+    void handleDisplayMPSub(const QString &cmd);  // #MP$ - Mini-Pan Sub
+    void handleDisplayDPM(const QString &cmd);    // #DPM - Dual Pan Mode LCD
+    void handleDisplayHDPM(const QString &cmd);   // #HDPM - Dual Pan Mode EXT
+    void handleDisplayDSM(const QString &cmd);    // #DSM - Display Mode LCD
+    void handleDisplayHDSM(const QString &cmd);   // #HDSM - Display Mode EXT
+    void handleDisplayFPS(const QString &cmd);    // #FPS - Frame Rate
+    void handleDisplayWFC(const QString &cmd);    // #WFC - Waterfall Color
+    void handleDisplayWFH(const QString &cmd);    // #WFH - Waterfall Height LCD
+    void handleDisplayHWFH(const QString &cmd);   // #HWFH - Waterfall Height EXT
+    void handleDisplayAVG(const QString &cmd);    // #AVG - Averaging
+    void handleDisplayPKM(const QString &cmd);    // #PKM - Peak Mode
+    void handleDisplayFXT(const QString &cmd);    // #FXT - Fixed Tune
+    void handleDisplayFXA(const QString &cmd);    // #FXA - Fixed Tune Mode
+    void handleDisplayFRZ(const QString &cmd);    // #FRZ - Freeze
+    void handleDisplayVFA(const QString &cmd);    // #VFA - VFO A Cursor
+    void handleDisplayVFB(const QString &cmd);    // #VFB - VFO B Cursor
+    void handleDisplayAR(const QString &cmd);     // #AR - Auto Ref Level
+    void handleDisplayNB(const QString &cmd);     // #NB$ - DDC NB Mode
+    void handleDisplayNBL(const QString &cmd);    // #NBL$ - DDC NB Level
 };
 
 #endif // RADIOSTATE_H

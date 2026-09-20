@@ -1,232 +1,365 @@
-# QK4
+# QK4 Android
 
-A cross-platform desktop application for remote control of Elecraft K4 radios over TCP/IP with real-time audio streaming and spectrum display.
+QK4 Android is a phone-focused Android client for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
 
-[![Release](https://img.shields.io/github/v/release/mikeg-dal/QK4?include_prereleases)](https://github.com/mikeg-dal/QK4/releases)
-[![Build](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml)
-[![CI](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml)
+The application is under active development and is intended for use with an
+Elecraft K4/K4D on the same network. Version 1.0.5 is the current ARM64
+release.
 
-## Supported Platforms
+![QK4 Mobile v0.8.0 console](./docs/images/QK4-Mobile-v0.8.0-Console.png)
 
-| Platform | Minimum Version | Architecture |
-|----------|-----------------|--------------|
-| macOS | 14 (Sonoma) | Apple Silicon (M1/M2/M3/M4) |
-| Windows | 11 | x64 |
-| Linux | Debian Trixie / Ubuntu 24.04+ | ARM64 (Raspberry Pi 4/5) |
-| Linux | Any distribution with Flatpak | x86_64 |
+## Project lineage
 
-## Features
+QK4 Android is a derivative of [QK4](https://github.com/mikeg-dal/QK4), created by Mike Garcia, KF5O. Android development and phone UX adaptation are by [worldwideDX.com](https://worldwidedx.com/).
 
-- **TLS/PSK Encrypted Connection** — Secure connection via TLS v1.2 with Pre-Shared Key on port 9204
-- **Dual VFO Display** — Frequency, mode, S-meter, and tuning rate indicator for VFO A and B
-- **GPU-Accelerated Spectrum** — Real-time panadapter with waterfall via Qt RHI (Metal/DirectX/Vulkan)
-- **Mini-Pan Widget** — Compact spectrum view in VFO area with mode-dependent bandwidth
-- **Dual-Channel Audio** — Opus-encoded stereo with independent MAIN/SUB volume controls
-- **Radio Controls** — Full control panel with mode-dependent controls, TX functions, and feature popups
-- **Band Selection** — Quick band switching via popup menu
-- **KPOD / KPOD+ Support** — USB integration with Elecraft KPOD tuning knob and KPOD+ CW keyer
-- **KPA1500 Support** — Optional integration with Elecraft KPA1500 amplifier
-- **CAT Server** — Built-in CAT server (port 9299) for integration with third-party logging and contest software
-- **Self-Contained Releases** — macOS DMG, Windows ZIP, Raspberry Pi tarball, and Linux Flatpak include all dependencies
+Android tablet and iOS development is contributed by [Fred Klassen](https://github.com/tcpreplay-dev).
 
-## Download
+This repository retains the GNU General Public License v3 used by the upstream project. See [LICENSE](LICENSE).
 
-Pre-built releases are available on the [Releases](https://github.com/mikeg-dal/QK4/releases) page.
+## Current capabilities
 
+QK4 Mobile supports every known operator-facing capability that the K4 exposes
+for remote operation through its documented command, control, display, and
+streaming interfaces. Functions that Elecraft has not implemented or exposed
+to remote clients, such as BAND/MEM, remain outside the application's control.
 
-### Windows Prerequisite
+- K4 profile management and TCP/TLS connection
+- RX audio streaming for the main and sub receivers
+- Microphone audio and PTT transmission
+- Remote CW keying from Bluetooth LE and USB MIDI interfaces, including
+  paddles, straight keys, and external keyers with TinyMIDI, HaliKey MIDI,
+  CTR2-MIDI, and learnable custom MIDI mappings
+- K4-synchronized paddle orientation, Iambic mode, keying weight, CW speed,
+  local sidetone, and key testing
+- Independent CW Keyer and CTR2-MIDI connections, allowing two USB/BLE MIDI
+  devices to remain available at the same time
+- User-configurable CTR2 knob modes and independent short/long button actions,
+  including predefined radio controls and exact K4 programmer commands
+- User-accessible save/load files for complete CTR2 mappings and F1-F8 FN-key
+  configurations
+- USB-C headset RX/TX hot-swap, plus Bluetooth/USB mixed-route support where Android provides it
+- Android hearing-aid RX routing when the operating system exposes a dedicated hearing-aid output
+- VFO A/B display, tuning, direct frequency entry, and selectable tuning steps
+- GEN shortwave-listening band bank with persistent per-band frequency recall
+- Touch tuning from the panadapter
+- Spectrum and waterfall display, including mini-pan
+- Mode-aware Main RX, Sub RX, TX, radio-control, display, function, and message controls
+- FM repeater shift/offset, PL tone, and programmable DTMF controls
+- RIT/XIT jog control
+- CW text decoding
+- F1-F8 macro editing and execution
+- Integrated SSTV transmit and receive with 22 modes, image composition,
+  templates, automatic reception, callsign identification, and RX history
+- Touch-scrollable DX prefix reference with natural alphanumeric sorting and prefix/country search
+- Android landscape layout and touch-safe scrolling
+- Local non-decaying Peak Hold and local WTR CLRS waterfall brightness control
+- Release-signed APK distribution support
 
-None — the Visual C++ runtime ships inside the package.
+See the [v1.0.5 release notes](docs/RELEASE_NOTES_v1.0.5.md) and
+[project status](docs/PROJECT_STATUS.md) for the verified state and next work.
+Contributors changing screen rotation or device-class layouts must also follow
+the [screen orientation policy](docs/ORIENTATION_POLICY.md).
 
-### Linux x86_64 (Flatpak)
+## FT8 and FT4
 
-One bundle runs on any distribution with Flatpak — no per-distro packages.
+QK4 Mobile receives and decodes FT8 and FT4 from the K4 Main RX audio stream
+and supports standard timed Call and CQ exchanges. Signal reports are measured
+automatically using the WSJT-X method. The phone interface provides a live
+spectrum and waterfall, independent RX and TX audio-frequency selection,
+received-traffic and My QSO views, common working frequencies, custom frequency
+entry, RF power control, and CTR2-MIDI tone adjustment.
 
-```bash
-# Install Flatpak (if not already installed)
-sudo apt install flatpak
+<p align="center">
+  <img src="docs/images/QK4-Mobile-v1.0.5-FT4-Confirmed-QSO.png" width="380" alt="QK4 Mobile v1.0.5 showing a confirmed FT4 QSO with DJ6OI">
+</p>
 
-# Add the Flathub repository
-flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+<p align="center"><em>QK4 Mobile v1.0.5 completing an FT4 QSO with DJ6OI at 14.080 MHz, including measured reports, RR73, live spectrum/waterfall, TX protection, and integrated logging.</em></p>
 
-# Install QK4
-flatpak install QK4-<version>-linux-x86_64.flatpak
+Opening FT8/FT4 selects DATA-A. The module keeps DATA-A active while changing
+bands and restores the operator's previous radio mode when returning to the
+main console. FT8/FT4 uses portrait orientation on phones.
 
-# Install the udev rules — required for KPOD / KPOD+ USB access
-sudo curl -o /etc/udev/rules.d/99-kpod.rules https://raw.githubusercontent.com/mikeg-dal/QK4/main/resources/99-kpod.rules
-sudo chmod 644 /etc/udev/rules.d/99-kpod.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+For CTR2-MIDI control, assign one user-selected button to **FT8/FT4: Switch
+RX/TX tone** for short press and **FT8/FT4: Set tone frequency** for long press.
+Assign the wheel to **Selected adjustment (button)**. Short press selects the RX
+or TX tone, the wheel moves its dashed preview marker, and long press sets the
+frequency. Setting RX focuses **My QSO**; setting TX enables **Hold TX**. See
+[FT8/FT4 scope](docs/FT8_FT4_SCOPE.md) and
+[CTR2 controls](docs/CTR2_UI_ACTIONS.md).
 
-# Run QK4
-flatpak run io.github.mikeg_dal.QK4
-```
+## Logbook and QRZ
 
-After installation you can also launch QK4 from your application menu.
+The shared ADIF logbook is available throughout QK4 Mobile:
 
-The Flatpak packaging was contributed by [@CSVincentS](https://github.com/CSVincentS)
-(see [#96](https://github.com/mikeg-dal/QK4/issues/96) and
-[#127](https://github.com/mikeg-dal/QK4/pull/127)), with the original packaging approach
-and PipeWire tuning from [@jmeloranta](https://github.com/jmeloranta)'s Arch AUR build.
+- Completed FT8/FT4 contacts can be reviewed and logged from the digital-mode
+  screen.
+- SSTV Receive and Transmit provide **Log QSO** with an editable callsign review.
+- Long-press **DXLIST** to open the logbook from the main radio console.
+- Add and edit contacts manually, search the log, and import or export ADIF.
+- Configure automatic QRZ Logbook uploads or manually send an unsent contact.
 
-### Raspberry Pi Prerequisites
+QRZ credentials are stored in Android Keystore-encrypted storage. Each contact
+shows whether QRZ confirmed its upload, and exported ADIF includes the standard
+QRZ upload status and date fields. See [QRZ Logbook](docs/QRZ_LOGBOOK.md).
 
-- Raspberry Pi 4 or 5 with a desktop environment (X11 or Wayland)
-- Debian Trixie or Ubuntu 24.04+
-- **First run requires `sudo`** — the launcher (`run.sh`) installs a udev rule to grant non-root access to the Elecraft KPOD and KPOD+ USB devices. Without this rule, the Linux kernel restricts access to `/dev/hidraw*` and USB device nodes. After the first run, `sudo` is no longer needed. If you don't have a KPOD or KPOD+, `sudo` is not required.
+## Digital-mode TX calibration
 
-## Building from Source
+FT8 and FT4 share one TX audio calibration for a given radio and audio-input
+setup. SSTV uses its own calibration. Calibration runs with the K4 in TEST mode,
+adjusts the program-audio drive to an appropriate ALC level, and remembers the
+result for later transmissions.
 
-### Requirements
+During digital transmission, QK4 Mobile monitors K4 metering and audio headroom.
+It can reduce drive or stop transmission when the measured conditions are not
+safe or required feedback is unavailable. See
+[digital transmit levels](docs/DIGITAL_TX_LEVEL.md).
 
-| Dependency | macOS (Homebrew) | Windows (vcpkg + Qt Installer) | Linux / Raspberry Pi (apt) |
-|------------|------------------|-------------------------------|---------------------------|
-| C++ compiler | Xcode Command Line Tools | Visual Studio 2019+ Build Tools | `apt install g++` |
-| CMake | `brew install cmake` | Included with VS Build Tools | `apt install cmake` |
-| Qt 6.7+ | `brew install qt` | [Qt Online Installer](https://www.qt.io/download-qt-installer) or [aqtinstall](https://github.com/miurahr/aqtinstall) | `apt install qt6-base-dev qt6-base-private-dev` |
-| Qt modules | Included with Homebrew Qt | Multimedia, ShaderTools, SerialPort, Svg | `apt install qt6-multimedia-dev qt6-shadertools-dev qt6-serialport-dev qt6-svg-dev` |
-| libopus | `brew install opus` | `vcpkg install opus:x64-windows` | `apt install libopus-dev` |
-| OpenSSL 3 | `brew install openssl@3` | `vcpkg install openssl:x64-windows` | `apt install libssl-dev` |
-| HIDAPI | `brew install hidapi` | `vcpkg install hidapi:x64-windows` | `apt install libhidapi-dev` |
-| libusb 1.0 | `brew install libusb` | `vcpkg install libusb:x64-windows` | `apt install libusb-1.0-0-dev` |
-| Audio | Included with macOS | N/A | `apt install libasound2-dev libpulse-dev` |
+## MIDI hardware, straight keys, and CTR2-MIDI
 
-### macOS
+QK4 Mobile provides two independent MIDI device roles. The **CW Keyer** role
+supports TinyMIDI, HaliKey MIDI, and learnable custom devices. The dedicated
+**CTR2** role connects separately, so an operator can, for example, use a
+TinyMIDI for paddles or a straight key while using CTR2-MIDI for its knob and
+buttons. Both roles discover USB MIDI and Bluetooth LE MIDI devices, remember
+their own selected endpoint, and can contribute CW input without one device
+disabling the other.
 
-```bash
-# Install dependencies
-brew install qt opus openssl@3 hidapi libusb cmake
+### CTR2 connection and key input
 
-# Clone and build
-git clone https://github.com/mikeg-dal/QK4.git
-cd QK4
-cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
-cmake --build build
+The CTR2 page contains its own connection controls and starts with the
+K4-Control-compatible default mapping. CTR2 key input can be disabled or set
+for paddles, or for a straight key/external keyer plus PTT. Normal and extended
+CTR2 button layouts are supported; the QK4 selection must match the Extended
+BTN setting on the CTR2 itself.
 
-# Run
-./build/QK4.app/Contents/MacOS/QK4
+![QK4 Mobile CTR2 connection and mapping setup](./docs/images/QK4-Mobile-v1.0.4-CTR2-Setup-Connection.png)
 
-# Create distributable app bundle (optional)
-cmake --build build --target deploy
-```
+### CTR2 knob modes
 
-### Windows
+Each of the eight CTR2 knob messages, CC100 through CC107, can be assigned to a
+predefined QK4 radio control. The supplied Map 1 defaults retain CTR2's native
+MIDI formats: CC100 uses speed-sensitive **Wheel A**, while CC101 through CC107
+use **Slider A** output. The output selection describes the MIDI format emitted
+by CTR2; it is not chosen according to whether the QK4 control is drawn as a
+knob or slider.
+
+Available actions include active and other VFO tuning, main/sub volume and RF
+gain, filter bandwidth and shift, RIT/XIT, NR and NB level, squelch, RF power,
+CW speed, panadapter zoom and reference level, and local waterfall brightness.
+A knob assigned to **Selected adjustment (button)** behaves like a radio
+multi-function control: a button assigned to an **Adjust:** action selects the
+function, opens the corresponding QK4 adjustment control when one exists, and
+the knob then changes that setting.
+
+See [CTR2-MIDI on-screen controls and feedback](docs/CTR2_UI_ACTIONS.md) for
+the complete list of adjustment surfaces, operating-display updates, and
+immediate button actions.
+
+![QK4 Mobile CTR2 knob-mode mappings](./docs/images/QK4-Mobile-v1.0.4-CTR2-Knob-Mapping.png)
+
+### CTR2 buttons and mapping files
+
+Short and long presses are separate assignments. A button can invoke a
+predefined function such as Band up/down, Rate, KHZ, TX/RX toggle, or an
+**Adjust:** action. It can instead send a supported K4 Programmer's Reference
+command or command sequence exactly as entered; QK4 does not invent or merge a
+separate macro language.
+
+In Normal Button Mode, the same 12 short/long assignments work in every knob
+mode. Enabling Extended Button Mode retains those assignments under **Home**
+and exposes 36 additional assignments for Knob modes 1–3, initially set to
+**Disabled**. QK4 does not duplicate the Home actions into the new modes. The
+checkbox must match the CTR2's own Extended BTN setting.
+
+For a knob configured to emit directional MIDI Button notes, QK4 uses notes
+40–55 in Normal Button Mode and notes 60–75 in Extended Button Mode. This keeps
+extended physical-button notes 40–48 available for their documented actions.
+
+![QK4 Mobile CTR2 short/long button mappings](./docs/images/QK4-Mobile-v1.0.4-CTR2-Button-Mapping.png)
+
+Complete CTR2 configurations can be saved to and loaded from user-accessible
+`.qk4ctr2map` files. Loading replaces the complete mapping rather than merging
+it. QK4 prompts to apply or abandon pending edits before leaving the setup
+screen, and prompts about saving only when a load would replace unsaved
+changes. Exported files document the accepted action and output keywords,
+including when to use Wheel, Slider, or directional Button formats. Every
+button entry identifies its physical label, MIDI note, press type, knob mode,
+and assigned action or macro. See the
+[sample CTR2 mapping](docs/QK4-CTR2-Rate-KHZ-Sample.qk4ctr2map).
+
+The separate **Fn Key Setup** page can likewise save or load all F1-F8 labels
+and K4 command strings in a user-editable `.qk4fnmap` file.
+
+### Iambic paddle, straight-key, and external-keyer support
+
+The CW Keyer role supports Iambic paddles with the established orientation,
+Iambic mode, weight, speed, local sidetone, and test controls. TinyMIDI,
+HaliKey MIDI, and learnable custom devices can connect over USB MIDI or
+Bluetooth LE MIDI.
+
+![QK4 Mobile CW Iambic paddle and speed setup](./docs/images/QK4-Mobile-v1.0.4-CW-Iambic-Paddle-Setup.png)
+
+TinyMIDI, HaliKey MIDI, custom MIDI devices, and CTR2-MIDI can also be
+configured for straight-key or external-keyer input. QK4 preserves each
+key-down and key-up transition and generates the local sidetone; the K4's
+delayed monitor audio is not required.
+
+![QK4 Mobile CW straight-key setup](./docs/images/QK4-Mobile-v1.0.4-CW-Straight-Key-Setup.png)
+
+## Supported target
+
+| Item | Current development target |
+|---|---|
+| Platform | Android 8.0 (API 26) or later |
+| ABI | ARM64 (`arm64-v8a`) |
+| Android package | `com.w9wdx.qk4phone` |
+| UI | Landscape touch UI; the compact phone layout is temporarily used on all display sizes, including tablets |
+| Framework | Qt 6.11.1 |
+| Android API | Minimum 26, target 34 |
+| Radio | Elecraft K4/K4D |
+
+Other platforms remain present in the inherited QK4 source, but this repository's supported product target is Android. Physical acceptance testing has been performed on a Samsung Galaxy S26 Ultra; test other phone families before treating them as validated.
+
+## Integrated SSTV
+
+QK4 Mobile receives and transmits all 22 supported SSTV modes directly through
+the K4 network-audio path. Automatic receive includes progressive decoding,
+mode detection, slant correction, callsign identification, and retained image
+history. The transmit workspace provides exact mode-sized composition,
+gallery/camera sources, crop and positioning, reusable templates, text and
+markup, preview, and optional post-image FSK and CW identification. Transmit
+uses deliberate phone PTT, program audio, and automatic return to receive.
+
+![QK4 Mobile SSTV transmit editor](./docs/images/QK4-Mobile-v1.0.4-SSTV-Transmit.png)
+
+## Recommended K4 operating settings
+
+These settings are practical starting points for remote operation and SSTV.
+Band conditions, interference, antenna performance, and individual
+installations may require different settings.
+
+### SSTV receive
+
+- Use **AGC-F** as the normal starting point. If rapid gain changes or pumping
+  appear to degrade reception, compare results with **AGC-S**.
+- Enable **K4 RX Auto Attenuation**. This allows the K4 to reduce analog
+  front-end gain automatically when exceptionally strong signals threaten
+  receiver dynamic range. It complements AGC-F; AGC and RF gain operate later
+  and cannot correct front-end overload.
+- Leave the preamp off unless it produces a genuine weak-signal improvement.
+  On noisy HF bands, extra preamp gain often raises both signal and noise
+  without improving decoding.
+- Use a receive passband wide enough to preserve the complete SSTV tone range,
+  approximately **1200-2300 Hz**, with reasonable margin on both sides.
+- Avoid filter shift settings that cut off the lower synchronization tones or
+  upper image tones.
+- Start with **NB, NR, SSNR, manual notch, and APF off**. Add processing only
+  when it improves actual image decoding.
+- Use **NB** for repetitive impulse noise and select the lowest effective
+  level. Aggressive blanking can distort SSTV tones or create artifacts when
+  strong signals are nearby.
+- Use **NR or SSNR selectively** for difficult signals. Compare reception with
+  processing on and off; a signal that sounds cleaner to the ear does not
+  necessarily decode better.
+- Rear-panel analog **LINE OUT** levels do not control the network audio stream
+  used by QK4 Mobile.
+
+### SSTV transmit
+
+- Prefer the K4's **DATA** mode for SSTV transmission. It provides a clean
+  audio-data path without speech compression.
+- **USB** may also be used when compression is set to zero and TX EQ is flat.
+- Do not use speech processing, aggressive transmit EQ, or other voice
+  enhancement on SSTV tones.
+- Use only the RF power needed for reliable communication and account for the
+  high duty cycle of SSTV transmissions.
+- Confirm transmission quality with an independent receiver, WebSDR recording,
+  or another SSTV decoder when initially configuring the station.
+
+See the
+[Elecraft K4 Operating Manual](https://ftp.elecraft.com/K4/Manuals%20Downloads/K4%20Built-In%20Operating%20Manual%20rev%20D6/K4BuiltInOperatingManualrevD6.html)
+for detailed descriptions of AGC, attenuation, preamplifiers, noise blanking,
+noise reduction, filtering, and DATA-mode operation.
+
+## Build on Windows
+
+Install:
+
+- Qt 6.11.1 with the Android ARM64 kit and a matching Windows desktop host kit
+- Android SDK, platform tools, and NDK
+- Android Studio's bundled Java runtime or another compatible JDK
+- CMake and Ninja, normally installed by the Qt Maintenance Tool
+
+The ARM64 Opus headers and static library used by the current Android build are kept under `third_party/android/opus` so the repository does not depend on the original development PC's directory layout.
+
+From PowerShell or Command Prompt:
 
 ```powershell
-# Install vcpkg dependencies
-vcpkg install opus:x64-windows hidapi:x64-windows openssl:x64-windows libusb:x64-windows
-
-# Install Qt 6.7+ via Qt Online Installer or aqtinstall
-# Required modules: Multimedia, ShaderTools, SerialPort, Svg
-
-# Clone and build
-git clone https://github.com/mikeg-dal/QK4.git
-cd QK4
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-cmake --build build --config Release
-
-# Run
-.\build\Release\QK4.exe
+build-android.cmd -Action Doctor
+build-android.cmd -Action Configure
+build-android.cmd -Action Apk
+test-windows.cmd -Action Test
 ```
 
-### Linux / Raspberry Pi
+To make a distribution APK, use the external release keystore and the
+temporary signing environment variables documented in
+[docs/BUILD_ANDROID_WINDOWS.md](docs/BUILD_ANDROID_WINDOWS.md):
 
-```bash
-# Install dependencies (Debian Trixie / Ubuntu 24.04+)
-sudo apt install cmake g++ pkg-config file patchelf \
-  qt6-base-dev qt6-base-private-dev \
-  qt6-multimedia-dev qt6-shadertools-dev qt6-serialport-dev qt6-svg-dev \
-  libopus-dev libhidapi-dev libusb-1.0-0-dev libssl-dev libudev-dev \
-  libasound2-dev libpulse-dev
-
-# Clone and build
-git clone https://github.com/mikeg-dal/QK4.git
-cd QK4
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-
-# Run
-./build/QK4
+```powershell
+build-android.cmd -Action Apk -DeploymentType Release
 ```
 
-### Linux x86_64 (Flatpak)
+To install on a connected phone with USB debugging enabled:
 
-Builds the same bundle CI produces, without needing the Qt dev packages above —
-the KDE SDK supplies them.
-
-```bash
-# Install flatpak-builder and the KDE runtime
-sudo apt install flatpak flatpak-builder
-flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install flathub org.kde.Platform//6.10 org.kde.Sdk//6.10
-
-# Clone and build
-git clone https://github.com/mikeg-dal/QK4.git
-cd QK4
-flatpak-builder --user --install build-dir flatpak/io.github.mikeg_dal.QK4.json
-
-# Run
-flatpak run io.github.mikeg_dal.QK4
+```powershell
+build-android.cmd -Action Install
 ```
 
-A local build tracks the `main` branch and reports its version as `main`; CI
-overrides both to pin the released commit and stamp the real version.
+Development phones that still contain the former `com.ai5qk.qk4phone` debug
+package can migrate its private QK4 settings and SSTV data once before the old
+package is removed. Follow the guarded procedure in
+[docs/BUILD_ANDROID_WINDOWS.md](docs/BUILD_ANDROID_WINDOWS.md); the migration
+utility verifies every copied file before it permits removal.
 
-## Testing
+The script discovers normal Qt and Android SDK locations. Any nonstandard location can be supplied through these environment variables:
 
-QK4 includes a unit test suite built with the Qt Test framework. Tests run automatically in CI on every push and PR.
+| Variable | Purpose |
+|---|---|
+| `QK4_QT_ANDROID` | Qt Android ARM64 kit directory |
+| `QK4_QT_HOST` | Matching Qt Windows host kit directory |
+| `ANDROID_SDK_ROOT` | Android SDK directory |
+| `ANDROID_NDK_ROOT` | Android NDK directory |
+| `QK4_JAVA_HOME` | Preferred JDK directory for this build |
+| `JAVA_HOME` | Fallback JDK directory |
+| `QK4_CMAKE` | Full path to `cmake.exe` |
+| `QK4_NINJA` | Full path to `ninja.exe` |
+| `QK4_OPUS_ROOT` | Alternate Android Opus installation |
 
-```bash
-# Run all tests
-ctest --test-dir build --output-on-failure
+Detailed setup and troubleshooting are in [docs/BUILD_ANDROID_WINDOWS.md](docs/BUILD_ANDROID_WINDOWS.md).
+For a transfer checklist, including what is intentionally *not* stored in Git, see [docs/PORTABILITY.md](docs/PORTABILITY.md).
 
-# Build and run only tests (no GUI dependencies needed)
-cmake --build build --target test_radiostate test_radioutils test_protocol test_catserver
-ctest --test-dir build --output-on-failure
+## Source layout
+
+```text
+android/                  Android manifest, Gradle configuration, and icons
+scripts/                  Guarded development and migration utilities
+src/audio/                Opus and Qt audio engine
+src/controllers/          UI and radio orchestration
+src/dsp/                  Spectrum, panadapter, and waterfall rendering
+src/models/               K4 state and CAT response handling
+src/network/              TCP/TLS and K4 streaming protocol
+src/settings/             Local application settings
+src/ui/                   Shared and Android-adapted widgets
+third_party/android/opus/ ARM64 Android Opus development files
+.codex/skills/            Repository-local Codex development skill
 ```
 
-| Suite | Tests | Coverage |
-|-------|-------|----------|
-| **RadioState** | 34 | CAT command parsing: frequency, mode, power, filters, notch, lock, split, edge cases |
-| **RadioUtils** | 28 | Shared utilities: tuning steps, band detection, span stepping |
-| **Protocol** | 14 | K4 binary packet framing, routing, roundtrip, overflow recovery |
-| **CatServer** | 26 | TCP CAT server: GET responses, SET forwarding, PTT, multi-command |
+## Security and local data
 
-## Usage
+Radio profiles and passwords are runtime data and are not stored in this repository. Do not commit profile exports, logs containing credentials, keystores, signing passwords, APKs, build trees, or phone screen captures.
 
-1. Launch QK4
-2. Click the **globe icon** on the left side panel to open the Radio Manager
-3. Enter your K4's IP address
-4. **For encrypted connection**: Check "Use TLS", enter your PSK, port auto-sets to 9204
-5. **For unencrypted connection**: Leave TLS unchecked, port defaults to 9205
-6. Click **Connect**
+Production distribution requires a private Android signing key. Keep signing credentials outside the repository and provide them only through the supported build environment.
 
-Once connected, the application displays real-time spectrum, audio, and radio state from your K4.
+## Development guidance
 
-## Architecture
-
-```
-Radio (TCP:9204 TLS / 9205 unencrypted) → TcpClient → Protocol → RadioState / DSP Widgets
-                                                               ↓
-                                                        OpusDecoder → AudioEngine → Speaker
-Microphone → AudioEngine → OpusEncoder → Protocol → TcpClient → Radio
-```
-
-## Project Structure
-
-```
-src/
-├── main.cpp              # Application entry point
-├── mainwindow.cpp        # Main window and UI orchestration
-├── network/              # TCP client and K4 protocol handling
-├── audio/                # Opus codec and Qt audio engine
-├── dsp/                  # Panadapter and spectrum widgets
-├── models/               # Radio state model
-├── settings/             # QSettings persistence
-├── ui/                   # UI components (VFO, S-meter, controls)
-└── hardware/             # KPOD, KPOD+, HaliKey USB device support
-```
-
-## License
-
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+Read [AGENTS.md](AGENTS.md) before making changes. The central rule is to preserve QK4's known-good connection, audio, and radio-control methods. Android work should adapt presentation and input behavior without inventing alternate radio plumbing.

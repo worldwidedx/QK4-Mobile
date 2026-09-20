@@ -3,9 +3,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
-class QThread;
-class KpodHidWorker;
+// Forward declaration for hidapi
+typedef struct hid_device_ hid_device;
 
 struct KpodDeviceInfo {
     bool detected = false;
@@ -18,51 +19,74 @@ struct KpodDeviceInfo {
     QString deviceId;
 };
 
-// Thin Qt façade over the hidapi worker. Mirrors the KpodPlusDevice/KpodPlusUsbWorker
-// split: all hid_* I/O lives on the worker thread, the façade owns the worker thread,
-// re-emits worker signals, and dispatches setters via Qt::QueuedConnection. The main
-// thread never touches hidapi.
 class KpodDevice : public QObject {
     Q_OBJECT
 
 public:
+    static const quint16 VENDOR_ID = 0x04D8;
+    static const quint16 PRODUCT_ID = 0xF12D;
+
+    // Rocker switch positions (bits 5-6 of controls byte)
     enum RockerPosition {
-        RockerCenter = 0, // 0b00 — VFO B / center
-        RockerRight = 1,  // 0b01 — RIT / XIT
-        RockerLeft = 2    // 0b10 — VFO A
+        RockerCenter = 0, // 0b00 - VFO B / Center position
+        RockerRight = 1,  // 0b01 - XIT/RIT position
+        RockerLeft = 2    // 0b10 - VFO A position
     };
     Q_ENUM(RockerPosition)
 
     explicit KpodDevice(QObject *parent = nullptr);
-    ~KpodDevice() override;
+    ~KpodDevice();
 
-    // Cached views — safe to call from the main thread.
+    // Detection
     bool isDetected() const;
     KpodDeviceInfo deviceInfo() const;
-    bool isPolling() const;
-    RockerPosition rockerPosition() const;
+    static KpodDeviceInfo detectDevice();
 
-    // Forwarded as queued invocations to the worker thread.
+    // Polling control
     bool startPolling();
     void stopPolling();
+    bool isPolling() const;
+
+    // Current state
+    RockerPosition rockerPosition() const;
 
 signals:
     void deviceConnected();
     void deviceDisconnected();
-    void deviceInfoReady();
     void encoderRotated(int ticks);
     void rockerPositionChanged(RockerPosition position);
-    void buttonTapped(int buttonNumber);
-    void buttonHeld(int buttonNumber);
+    void buttonTapped(int buttonNumber); // Button 1-8 brief press
+    void buttonHeld(int buttonNumber);   // Button 1-8 long press
     void pollError(const QString &error);
 
-private:
-    KpodDeviceInfo m_info;
-    RockerPosition m_lastRocker = RockerCenter;
-    bool m_polling = false;
+private slots:
+    void poll();
+    void onDeviceArrived();
+    void onDeviceRemoved();
 
-    KpodHidWorker *m_hidWorker = nullptr;
-    QThread *m_hidThread = nullptr;
+private:
+    bool openDevice();
+    void closeDevice();
+    void processResponse(const unsigned char *buffer);
+
+    // Hotplug monitoring
+    void setupHotplugMonitoring();
+    void teardownHotplugMonitoring();
+
+    KpodDeviceInfo m_deviceInfo;
+    hid_device *m_hidDevice = nullptr;
+    QTimer *m_pollTimer = nullptr;
+    static const int POLL_INTERVAL_MS = 20;
+    RockerPosition m_lastRockerPosition = RockerCenter;
+    quint8 m_lastButtonState = 0; // Button number (1-8) or 0 for none
+    bool m_holdEmitted = false;   // Track if hold signal was already emitted for current press
+
+    // Hotplug monitoring via periodic enumeration
+    // Note: We use hid_enumerate() instead of IOKit callbacks because hidapi
+    // internally uses IOHIDManager on macOS, and two managers conflict.
+    QTimer *m_presenceTimer = nullptr;
+    static const int PRESENCE_CHECK_INTERVAL_MS = 2000;
+    void checkDevicePresence();
 };
 
 #endif // KPODDEVICE_H

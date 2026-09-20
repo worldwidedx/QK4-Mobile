@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.w9wdx.qk4phone"
+    android:installLocation="auto"
+    android:versionCode="32"
+    android:versionName="1.0.5">
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <supports-screens android:anyDensity="true" android:largeScreens="true"
+        android:normalScreens="true" android:smallScreens="true" />
+    <application android:name="org.qtproject.qt.android.bindings.QtApplication"
+        android:hardwareAccelerated="true" android:label="QK4 Mobile"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/K4PhoneTheme"
+        android:enableOnBackInvokedCallback="false" android:allowBackup="true"
+        android:fullBackupOnly="false">
+        <activity android:name="com.w9wdx.qk4phone.Qk4Activity"
+            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density"
+            android:label="QK4 Mobile" android:launchMode="singleTop"
+            android:theme="@style/K4PhoneTheme"
+            android:screenOrientation="sensorLandscape" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.app.lib_name" android:value="QK4" />
+            <meta-data android:name="android.app.arguments" android:value="" />
+        </activity>
+        <provider android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.qtprovider" android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/qtprovider_paths" />
+        </provider>
+    </application>
+</manifest>
