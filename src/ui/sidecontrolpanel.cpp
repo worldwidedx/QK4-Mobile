@@ -661,7 +661,14 @@ void SideControlPanel::openAdjustOverlay(DualControlButton *button) {
     else if (button == m_pwrBtn && !m_pwrIsPrimary)
         fmt = [](int v) { return QString::number(v / 100.0, 'f', 2); }; // DLY seconds
     else if (button == m_pwrBtn && m_pwrIsPrimary && !K4Styles::isCompactLayout())
-        fmt = [](int v) { return QString::number(pwrSliderRawToWatts(v), 'f', 1); }; // PWR watts
+        fmt = [](int v) {
+            // Whole watts read as "10", not "10.0" - only fractional QRP
+            // values (0.1-9.9) need the decimal place.
+            const double watts = pwrSliderRawToWatts(v);
+            if (watts == qRound(watts))
+                return QString::number(qRound(watts));
+            return QString::number(watts, 'f', 1);
+        }; // PWR watts
     m_adjustOverlay->setValueFormatter(fmt);
 
     m_adjustOverlay->showOver(button);
