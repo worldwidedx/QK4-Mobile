@@ -131,6 +131,10 @@ signals:
     void micGainChanged(int delta);
     void compressionChanged(int delta);
     void powerChanged(int delta);
+    // iPad/tablet PWR adjust-popup only: an absolute target (watts), used
+    // instead of powerChanged so the continuous 0.1-110W slider can cross
+    // the QRP/QRO boundary in one drag. Phone never emits this.
+    void powerSetRequested(double watts);
     void delayChanged(int delta);
     void bandwidthChanged(int delta);
     void highCutChanged(int delta);

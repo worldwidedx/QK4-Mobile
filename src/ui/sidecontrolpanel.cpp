@@ -20,6 +20,28 @@
 #include <functional>
 #include <QCoreApplication>
 
+namespace {
+// iPad/tablet PWR adjust-popup slider: one continuous non-uniform scale so
+// dragging through 10W flows straight into the QRO range instead of the
+// slider stopping dead at 10.0W. Matches the K4's own PC command ranges
+// (PCnnnL; = 0.1-10W in 0.1W steps, PCnnnH; = 11-110W in 1W steps):
+//   raw 0-100   -> 0.0-10.0W, 0.1W per unit (raw / 10.0)
+//   raw 101-200 -> 11-110W,   1W per unit   (raw - 90)
+double pwrSliderRawToWatts(int raw) {
+    const double watts = raw <= 100 ? raw / 10.0 : static_cast<double>(raw - 90);
+    // The K4's CAT protocol documents QRP as 0.1-10W (handlePC in
+    // radiostate.cpp), not 0-10W - 0.0W isn't a valid PC command, so floor
+    // the display at the same 0.1W the handler clamps the actual command
+    // to. Otherwise the far-left slider position would show "0.0" while
+    // still sending PC001L; (0.1W), a silent mismatch.
+    return qMax(0.1, watts);
+}
+
+int pwrWattsToSliderRaw(double watts) {
+    return watts <= 10.0 ? qRound(watts * 10.0) : qRound(watts) + 90;
+}
+} // namespace
+
 SideControlPanel::SideControlPanel(QWidget *parent) : QWidget(parent) {
     m_longPressTimer = new QTimer(this);
     m_longPressTimer->setSingleShot(true);
@@ -604,7 +626,13 @@ void SideControlPanel::openAdjustOverlay(DualControlButton *button) {
             // Route through the same per-control handlers the tiles/rail use.
             if (m_adjustButton == m_wpmBtn)
                 onWpmScrolled(delta);
-            else if (m_adjustButton == m_pwrBtn)
+            else if (m_adjustButton == m_pwrBtn && m_pwrIsPrimary) {
+                // Continuous 0.1-110W slider: send the absolute target
+                // instead of a delta so crossing the QRP/QRO boundary in
+                // one drag doesn't need the delta handler to guess which
+                // side of the boundary the raw slider units were on.
+                emit powerSetRequested(pwrSliderRawToWatts(value));
+            } else if (m_adjustButton == m_pwrBtn)
                 onPwrScrolled(delta);
             else if (m_adjustButton == m_bwBtn)
                 onBwScrolled(delta);
@@ -632,6 +660,8 @@ void SideControlPanel::openAdjustOverlay(DualControlButton *button) {
         fmt = [kHzFromHz](int v) { return kHzFromHz(v * 10.0); }; // SHFT / LO (10 Hz units)
     else if (button == m_pwrBtn && !m_pwrIsPrimary)
         fmt = [](int v) { return QString::number(v / 100.0, 'f', 2); }; // DLY seconds
+    else if (button == m_pwrBtn && m_pwrIsPrimary && !K4Styles::isCompactLayout())
+        fmt = [](int v) { return QString::number(pwrSliderRawToWatts(v), 'f', 1); }; // PWR watts
     m_adjustOverlay->setValueFormatter(fmt);
 
     m_adjustOverlay->showOver(button);
@@ -667,9 +697,19 @@ void SideControlPanel::configureAdjustmentSlider(DualControlButton *button, QSli
         }
     } else if (button == m_pwrBtn) {
         if (m_pwrIsPrimary) {
-            minimum = 0;
-            maximum = 110;
-            value = qRound(m_powerValue);
+            if (!K4Styles::isCompactLayout()) {
+                // iPad/tablet adjust popup: one continuous slider across the
+                // full 0.1-110W range (see pwrSliderRawToWatts above), so
+                // dragging through 10W flows into the QRO range instead of
+                // stopping there. Phone's own rail slider is untouched below.
+                minimum = 0;
+                maximum = 200;
+                value = pwrWattsToSliderRaw(m_powerValue);
+            } else {
+                minimum = 0;
+                maximum = 110;
+                value = qRound(m_powerValue);
+            }
         } else {
             minimum = 0;
             maximum = 255;

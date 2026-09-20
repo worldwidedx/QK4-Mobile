@@ -3694,6 +3694,25 @@ void MainWindow::setupUi() {
         }
         m_radioState->setRfPower(newPower);
     });
+    connect(m_sideControlPanel, &SideControlPanel::powerSetRequested, this, [this](double watts) {
+        // iPad/tablet PWR adjust-popup only (see the signal's declaration):
+        // an absolute target from the continuous 0.1-110W slider, so it
+        // needs no delta/boundary-crossing logic of its own - just clamp
+        // into whichever of the radio's two PC ranges the target falls in,
+        // matching the same 0.1W QRP floor as the drag/wheel path above
+        // (the K4's PC command documents QRP as 0.1-10W, not 0-10W).
+        double newPower;
+        if (watts <= 10.0) {
+            newPower = qBound(0.1, watts, 10.0);
+            int powerVal = static_cast<int>(qRound(newPower * 10));
+            m_tcpClient->sendCAT(QString("PC%1L;").arg(powerVal, 3, 10, QChar('0')));
+        } else {
+            newPower = qBound(11.0, watts, 110.0);
+            int powerVal = static_cast<int>(qRound(newPower));
+            m_tcpClient->sendCAT(QString("PC%1H;").arg(powerVal, 3, 10, QChar('0')));
+        }
+        m_radioState->setRfPower(newPower);
+    });
     connect(m_sideControlPanel, &SideControlPanel::delayChanged, this, [this](int delta) {
         int currentDelay = m_radioState->delayForCurrentMode();
         if (currentDelay < 0)
