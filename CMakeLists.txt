@@ -62,7 +62,7 @@ if(ANDROID)
         unset(_qk4_missing_signing_env)
     endif()
 
-    message(STATUS "QK4 Android deployment type: ${_qk4_android_deployment_type}")
+    message(STATUS "QK4 Mobile deployment type: ${_qk4_android_deployment_type}")
     unset(_qk4_android_deployment_type)
 endif()
 

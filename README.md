@@ -1,18 +1,25 @@
-# QK4 Android
+# QK4 Mobile
 
-QK4 Android is a phone-focused Android client for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
+QK4 Mobile is the Android mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
 
 The application is under active development and is intended for use with an
 Elecraft K4/K4D on the same network. Version 1.0.5 is the current ARM64
 release.
 
+The current stable APK remains available from the [archived QK4-Android
+v1.0.5 release](https://github.com/worldwidedx/QK4-Android/releases/tag/v1.0.5).
+
 ![QK4 Mobile v0.8.0 console](./docs/images/QK4-Mobile-v0.8.0-Console.png)
 
 ## Project lineage
 
-QK4 Android is a derivative of [QK4](https://github.com/mikeg-dal/QK4), created by Mike Garcia, KF5O. Android development and phone UX adaptation are by [worldwideDX.com](https://worldwidedx.com/).
+This repository is maintained as an official fork of [QK4](https://github.com/mikeg-dal/QK4), created by Mike Garcia, KF5O. Android development and phone UX adaptation are by [worldwideDX.com](https://worldwidedx.com/).
 
 Android tablet and iOS development is contributed by [Fred Klassen](https://github.com/tcpreplay-dev).
+
+The original QK4 Mobile releases from v0.7.0 through v1.0.5, including release
+assets and detailed development history, remain available in the public
+read-only [QK4-Android archive](https://github.com/worldwidedx/QK4-Android).
 
 This repository retains the GNU General Public License v3 used by the upstream project. See [LICENSE](LICENSE).
 

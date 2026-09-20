@@ -1,6 +1,6 @@
 # Attribution
 
-QK4 Android is derived from QK4 by Mike Garcia, KF5O:
+QK4 Mobile is an official fork of QK4 by Mike Garcia, KF5O:
 
 https://github.com/mikeg-dal/QK4
 

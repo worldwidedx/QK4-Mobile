@@ -1,6 +1,6 @@
 # Android Opus dependency
 
-This directory contains the Opus public headers and the prebuilt ARM64 Android static library used by the verified QK4 Android development build.
+This directory contains the Opus public headers and the prebuilt ARM64 Android static library used by the verified QK4 Mobile development build.
 
 The prebuilt library was copied from the working Android build environment during repository packaging. Its generated package metadata did not retain a meaningful upstream version number, so it should be rebuilt from a tagged [Xiph Opus](https://github.com/xiph/opus) release before a production release.
 

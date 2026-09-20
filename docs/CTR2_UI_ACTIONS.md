@@ -342,4 +342,4 @@ receiver.
 - [Elecraft K4 Programmer's Reference](https://ftp.elecraft.com/K4/Manuals%20Downloads/K4ProgrammersReferencerev.D12.html)
 - [Sample QK4 CTR2 mapping file](QK4-CTR2-Rate-KHZ-Sample.qk4ctr2map)
 
-[Return to the QK4 Android README](../README.md)
+[Return to the QK4 Mobile README](../README.md)

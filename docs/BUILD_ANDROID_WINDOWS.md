@@ -1,4 +1,4 @@
-# Building QK4 Android on Windows
+# Building QK4 Mobile on Windows
 
 ## Required components
 
@@ -142,7 +142,7 @@ Windows environment.
 
 ## Moving to another PC
 
-1. Clone the private repository (preferred) or copy a complete working tree.
+1. Clone the public repository (preferred) or copy a complete working tree.
 2. Install the required Qt and Android components.
 3. Run `build-android.cmd -Action Doctor` and resolve any missing component it reports.
 4. Run `build-android.cmd -Action Configure`.

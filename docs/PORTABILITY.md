@@ -1,14 +1,14 @@
-# Moving QK4 Android to another PC
+# Moving QK4 Mobile to another PC
 
-This repository is the portable source-of-truth for QK4 Android. It includes the application source, Android project files, build wrappers, repository-local Codex skill, project instructions, and the ARM64 Opus development library required by the current Android build.
+This repository is the portable source-of-truth for QK4 Mobile. It includes the application source, Android project files, build wrappers, repository-local Codex skill, project instructions, and the ARM64 Opus development library required by the current Android build.
 
 ## What to transfer
 
-Preferred method: clone the private repository.
+Preferred method: clone the public repository.
 
 ```powershell
-git clone https://github.com/worldwidedx/QK4-Android.git
-cd QK4-Android
+git clone https://github.com/worldwidedx/QK4-Mobile.git
+cd QK4-Mobile
 ```
 
 Then install the build prerequisites described in [BUILD_ANDROID_WINDOWS.md](BUILD_ANDROID_WINDOWS.md), and run:

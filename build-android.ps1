@@ -147,7 +147,7 @@ $opusLibrary = Find-ExistingPath "Android ARM64 Opus library" @(
 )
 
 function Show-AndroidEnvironment {
-    Write-Host "QK4 Android build environment is ready:"
+    Write-Host "QK4 Mobile build environment is ready:"
     Write-Host "  Project: $projectDir"
     Write-Host "  Qt Android: $qtAndroid"
     Write-Host "  Qt host: $qtHost"
