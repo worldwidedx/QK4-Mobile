@@ -3696,14 +3696,17 @@ void MainWindow::setupUi() {
     });
     connect(m_sideControlPanel, &SideControlPanel::powerSetRequested, this, [this](double watts) {
         // iPad/tablet PWR adjust-popup only (see the signal's declaration):
-        // an absolute target from the continuous 0.1-110W slider, so it
-        // needs no delta/boundary-crossing logic of its own - just clamp
-        // into whichever of the radio's two PC ranges the target falls in,
-        // matching the same 0.1W QRP floor as the drag/wheel path above
-        // (the K4's PC command documents QRP as 0.1-10W, not 0-10W).
+        // an absolute target from the continuous 0-110W slider, so it needs
+        // no delta/boundary-crossing logic of its own - just clamp into
+        // whichever of the radio's two PC ranges the target falls in.
+        // Unlike the drag/wheel path above, this allows 0.0W (PC000L;)
+        // through unfloored: Elecraft's K4 Programmer's Reference documents
+        // QRP as 0.1-10W and says 000 isn't valid, but the user wants to
+        // test that against their actual radio rather than take the manual
+        // on faith. The drag/wheel path (used by phone too) is untouched.
         double newPower;
         if (watts <= 10.0) {
-            newPower = qBound(0.1, watts, 10.0);
+            newPower = qBound(0.0, watts, 10.0);
             int powerVal = static_cast<int>(qRound(newPower * 10));
             m_tcpClient->sendCAT(QString("PC%1L;").arg(powerVal, 3, 10, QChar('0')));
         } else {

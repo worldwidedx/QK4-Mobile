@@ -28,13 +28,12 @@ namespace {
 //   raw 0-100   -> 0.0-10.0W, 0.1W per unit (raw / 10.0)
 //   raw 101-200 -> 11-110W,   1W per unit   (raw - 90)
 double pwrSliderRawToWatts(int raw) {
-    const double watts = raw <= 100 ? raw / 10.0 : static_cast<double>(raw - 90);
-    // The K4's CAT protocol documents QRP as 0.1-10W (handlePC in
-    // radiostate.cpp), not 0-10W - 0.0W isn't a valid PC command, so floor
-    // the display at the same 0.1W the handler clamps the actual command
-    // to. Otherwise the far-left slider position would show "0.0" while
-    // still sending PC001L; (0.1W), a silent mismatch.
-    return qMax(0.1, watts);
+    // Elecraft's K4 Programmer's Reference documents QRP as 0.1-10W and
+    // 000 as not a valid PC value - but the user wants to test PC000L;
+    // (0.0W) against their actual radio rather than take the manual's word
+    // for it, so raw 0 is allowed through as 0.0 here. MainWindow's
+    // powerSetRequested handler sends it verbatim; nothing floors it.
+    return raw <= 100 ? raw / 10.0 : static_cast<double>(raw - 90);
 }
 
 int pwrWattsToSliderRaw(double watts) {
