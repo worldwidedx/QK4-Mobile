@@ -4168,16 +4168,21 @@ void MainWindow::setupUi() {
 
     // FREQ ENT switches the main VFO's frequency display into the blue edit
     // field, matching the radio (a dedicated key enters edit mode rather than
-    // tapping the frequency, which selects the tuning rate).
-    connect(m_rightSidePanel, &RightSidePanel::freqEntClicked, this, [this]() {
-        auto *fd = m_vfoA->frequencyDisplay();
-        // Toggle: FREQ ENT opens the blue field, and pressing it again commits
-        // (sends the entered frequency), so the whole entry is touch-only.
-        if (fd->isEditing())
-            fd->commitEdit();
-        else
-            fd->beginEdit();
-    });
+    // tapping the frequency, which selects the tuning rate). Regular-only:
+    // on v1.0.5 this button exists on every layout but its click signal was
+    // never connected, so it was a no-op on phone. Wiring it unconditionally
+    // would give phone a new capability it never had; gate it to match.
+    if (!K4Styles::isCompactLayout()) {
+        connect(m_rightSidePanel, &RightSidePanel::freqEntClicked, this, [this]() {
+            auto *fd = m_vfoA->frequencyDisplay();
+            // Toggle: FREQ ENT opens the blue field, and pressing it again commits
+            // (sends the entered frequency), so the whole entry is touch-only.
+            if (fd->isEditing())
+                fd->commitEdit();
+            else
+                fd->beginEdit();
+        });
+    }
 
     // iPad: tapping a frequency digit sets the tuning rate at that place
     // (1 Hz .. 10 kHz, the five rightmost digits), matching the radio. The
