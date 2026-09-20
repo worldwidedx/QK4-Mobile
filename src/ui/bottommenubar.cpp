@@ -74,6 +74,7 @@ void BottomMenuBar::setupUi() {
             button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         }
         m_settingsBtn = createSettingsButton();
+        m_settingsBtn->setFixedSize(34, 26);
         tuneRow->addWidget(m_settingsBtn);
         tuneRow->addWidget(m_tuneADownBtn);
         tuneRow->addWidget(m_tuneAUpBtn);
@@ -252,7 +253,10 @@ QPushButton *BottomMenuBar::createSettingsButton() {
     auto *btn = createMenuButton(QString());
     btn->setAccessibleName("QK4 Settings");
     btn->setToolTip("QK4 Settings");
-    btn->setFixedSize(34, 26);
+    // Sizing is left to the caller: compact's tight row (all 26px-high
+    // buttons) wants the small 34x26 footprint it always had; regular's
+    // row uses createMenuButton's normal button size so the gear doesn't
+    // look like a stray sliver next to CONN/MENU/etc.
     // Draw a monochrome gear so Android cannot substitute a colored emoji.
     QPixmap gearPixmap(16, 16);
     gearPixmap.fill(Qt::transparent);
