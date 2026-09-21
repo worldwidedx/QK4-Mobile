@@ -345,6 +345,22 @@ The script discovers normal Qt and Android SDK locations. Any nonstandard locati
 Detailed setup and troubleshooting are in [docs/BUILD_ANDROID_WINDOWS.md](docs/BUILD_ANDROID_WINDOWS.md).
 For a transfer checklist, including what is intentionally *not* stored in Git, see [docs/PORTABILITY.md](docs/PORTABILITY.md).
 
+### Building on macOS or Linux
+
+`build-android.sh` is the macOS/Linux counterpart to `build-android.ps1` — the
+same actions and build tree, driven from a shell instead of PowerShell:
+
+```bash
+./build-android.sh doctor
+./build-android.sh configure
+./build-android.sh apk
+./build-android.sh install            # add an adb serial for multiple devices
+```
+
+It honours the same `QK4_*` / `ANDROID_*` environment overrides. Detailed setup,
+the Qt Shader Tools and Android `qtserialport` prerequisites, and release
+signing are in [docs/BUILD_ANDROID_UNIX.md](docs/BUILD_ANDROID_UNIX.md).
+
 ## Source layout
 
 ```text

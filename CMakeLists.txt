@@ -183,6 +183,7 @@ set(SOURCES
     src/models/menumodel.cpp
     src/ui/radiomanagerdialog.cpp
     src/ui/dualcontrolbutton.cpp
+    src/ui/adjustoverlay.cpp
     src/ui/sidecontrolpanel.cpp
     src/ui/bottommenubar.cpp
     src/ui/menuoverlay.cpp
@@ -278,6 +279,7 @@ set(HEADERS
     src/models/menumodel.h
     src/ui/radiomanagerdialog.h
     src/ui/dualcontrolbutton.h
+    src/ui/adjustoverlay.h
     src/ui/sidecontrolpanel.h
     src/ui/bottommenubar.h
     src/ui/menuoverlay.h

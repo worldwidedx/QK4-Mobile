@@ -2,6 +2,7 @@
 #include "k4styles.h"
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QMouseEvent>
 #include <QFont>
 
 BalOverlay::BalOverlay(QWidget *parent)
@@ -113,6 +114,38 @@ void BalOverlay::wheelEvent(QWheelEvent *event) {
 }
 
 void BalOverlay::mousePressEvent(QMouseEvent *event) {
-    // Don't close on click - allow adjustment via wheel
-    Q_UNUSED(event)
+    m_dragActive = true;
+    m_dragMoved = false;
+    m_dragStartX = event->position().x();
+    m_dragStartY = event->position().y();
+    event->accept();
+}
+
+void BalOverlay::mouseMoveEvent(QMouseEvent *event) {
+    if (!m_dragActive)
+        return;
+    const qreal x = event->position().x();
+    const qreal y = event->position().y();
+    if (!m_dragMoved && (qAbs(y - m_dragStartY) > 4 || qAbs(x - m_dragStartX) > 4))
+        m_dragMoved = true;
+    if (m_dragMoved) {
+        // Top of the overlay is +50 (toward SUB), bottom is -50 (toward MAIN).
+        const qreal h = qMax(1, height());
+        const qreal frac = 1.0 - qBound(0.0, y, h) / h;
+        const int newOffset = qBound(-50, int(qRound((frac - 0.5) * 100.0)), 50);
+        if (newOffset != m_offset) {
+            m_offset = newOffset;
+            updateDisplay();
+            emit balanceChangeRequested(m_mode, m_offset);
+        }
+    }
+    event->accept();
+}
+
+void BalOverlay::mouseReleaseEvent(QMouseEvent *event) {
+    // A tap (press with no drag) dismisses the overlay; a drag adjusted it.
+    if (m_dragActive && !m_dragMoved)
+        hide();
+    m_dragActive = false;
+    event->accept();
 }
