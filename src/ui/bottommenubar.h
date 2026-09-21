@@ -73,6 +73,7 @@ protected:
 private:
     void setupUi();
     QPushButton *createMenuButton(const QString &text);
+    QPushButton *createSettingsButton();
 
     // Menu buttons
     QPushButton *m_menuBtn;

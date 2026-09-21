@@ -8,7 +8,14 @@ TxMeterWidget::TxMeterWidget(QWidget *parent) : QWidget(parent) {
     // phone it is a compact status meter; leaving the desktop 130px minimum
     // here forces the entire operating dock below the visible viewport.
     const bool compact = K4Styles::isCompactLayout();
+    // Tim-approved: drop the Id (PA drain current) meter row on mobile
+    // (phone and tablet/iPad) to free vertical space for the panadapter.
+    // Desktop keeps all five lanes.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    setFixedHeight(compact ? 45 : 104);
+#else
     setFixedHeight(compact ? 56 : 130);
+#endif
     setMinimumWidth(compact ? 130 : 200);
     setMaximumWidth(compact ? 150 : 380);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -288,12 +295,15 @@ void TxMeterWidget::paintEvent(QPaintEvent *event) {
         y += rowHeight + spacing;
     }
 
-    // === Id (PA Drain Current) - Red ===
+    // === Id (PA Drain Current) - Red === (desktop only; dropped on mobile
+    // to free panadapter height, Tim-approved - see the constructor comment)
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
     {
         QStringList labels = {"0", "5", "10", "15", "20", "25A"};
         drawMeterRow(painter, y, rowHeight, compact ? "ID" : "Id", m_currentDisplay, m_currentPeak, labels, scaleFont, barStartX,
                      barWidth, barHeight, MeterType::Red);
     }
+#endif
 }
 
 void TxMeterWidget::drawMeterRow(QPainter &painter, int y, int rowHeight, const QString &label, double fillRatio,

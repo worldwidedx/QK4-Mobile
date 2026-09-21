@@ -36,8 +36,7 @@ RightSidePanel::RightSidePanel(QWidget *parent)
 
 void RightSidePanel::setupUi() {
     const bool compact = K4Styles::isCompactLayout();
-    // Match left panel dimensions exactly
-    setFixedWidth(K4Styles::Dimensions::SidePanelWidth);
+    setFixedWidth(K4Styles::Dimensions::RightSidePanelWidth);
     QPalette panelPalette = palette();
     panelPalette.setColor(QPalette::Window, QColor(K4Styles::Colors::PopupBackground));
     setPalette(panelPalette);
@@ -52,7 +51,7 @@ void RightSidePanel::setupUi() {
     auto *buttonGrid = new QGridLayout();
     buttonGrid->setContentsMargins(0, 0, 0, 0);
     buttonGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-    buttonGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    buttonGrid->setVerticalSpacing(K4Styles::isCompactLayout() ? K4Styles::Dimensions::PopupButtonSpacing : 2);
 
     auto *preControl = createFunctionButton("PRE", "ATTN", m_preBtn);
     auto *nbControl = createFunctionButton("NB", "LEVEL", m_nbBtn);
@@ -118,7 +117,7 @@ void RightSidePanel::setupUi() {
     auto *pfGrid = new QGridLayout();
     pfGrid->setContentsMargins(0, 0, 0, 0);
     pfGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-    pfGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    pfGrid->setVerticalSpacing(K4Styles::isCompactLayout() ? K4Styles::Dimensions::PopupButtonSpacing : 2);
 
     auto *bsetControl = createFunctionButton("B SET", "PF 1", m_bsetBtn, true);
     auto *clrControl = createFunctionButton("CLR", "PF 2", m_clrBtn, true);
@@ -157,12 +156,20 @@ void RightSidePanel::setupUi() {
     auto *bottomGrid = new QGridLayout();
     bottomGrid->setContentsMargins(0, 0, 0, 0);
     bottomGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
-    bottomGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+    bottomGrid->setVerticalSpacing(K4Styles::isCompactLayout() ? K4Styles::Dimensions::PopupButtonSpacing : 2);
 
-    auto *freqControl = createFunctionButton("FREQ\nENT", "SCAN", m_freqEntBtn);
+    // Phone's DualLinePanelButton renders the embedded newline as two stacked
+    // lines (unchanged from v1.0.5); regular's single-line QPushButton reads
+    // better without it.
+    auto *freqControl =
+        createFunctionButton(compact ? QStringLiteral("FREQ\nENT") : QStringLiteral("FREQ ENT"), "SCAN", m_freqEntBtn);
     auto *rateControl = createFunctionButton("RATE", "KHZ", m_rateBtn);
     auto *lockControl = createFunctionButton("LOCK A", "LOCK B", m_lockABtn);
     auto *subControl = createFunctionButton("SUB", "DIVERSITY", m_subBtn);
+    // The "DIVERSITY" amber sub-label; turned green as the DIV LED (regular only,
+    // where the sub-label is a separate QLabel under the button).
+    if (!compact)
+        m_diversityLabel = subControl->findChild<QLabel *>();
     if (compact) {
         buttonGrid->addWidget(freqControl, 3, 2);
         buttonGrid->addWidget(rateControl, 3, 3);
@@ -186,29 +193,83 @@ void RightSidePanel::setupUi() {
     m_rateBtn->installEventFilter(this);
     m_lockABtn->installEventFilter(this);
     m_subBtn->installEventFilter(this);
+
+    // iPad fine-tune pad (A-/A+/B-/B+). Fine tuning is awkward by touch on the
+    // panadapter; these give the phone app's well-liked step buttons on iPad.
+    // These are not controls on the radio, so separate them from the radio
+    // button groups with the same inter-group spacing used above, and style
+    // them like the function buttons above (style guide sidePanelButton).
+    if (!compact) {
+        auto makeTuneBtn = [this](const QString &text) {
+            auto *btn = new QPushButton(text, this);
+            btn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setStyleSheet(K4Styles::sidePanelButton());
+            // Typematic: one tap = one step; press-and-hold repeats after a short
+            // delay until released (like a keyboard arrow key).
+            btn->setAutoRepeat(true);
+            btn->setAutoRepeatDelay(400);
+            btn->setAutoRepeatInterval(90);
+            return btn;
+        };
+        m_layout->addSpacing(K4Styles::Dimensions::PaddingLarge * 2 + K4Styles::Dimensions::PaddingSmall);
+        auto *tuneGrid = new QGridLayout();
+        tuneGrid->setContentsMargins(0, 0, 0, 0);
+        tuneGrid->setHorizontalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+        tuneGrid->setVerticalSpacing(K4Styles::isCompactLayout() ? K4Styles::Dimensions::PopupButtonSpacing : 2);
+        m_tuneADownBtn = makeTuneBtn(QStringLiteral("A −"));
+        m_tuneAUpBtn = makeTuneBtn(QStringLiteral("A +"));
+        m_tuneBDownBtn = makeTuneBtn(QStringLiteral("B −"));
+        m_tuneBUpBtn = makeTuneBtn(QStringLiteral("B +"));
+        tuneGrid->addWidget(m_tuneADownBtn, 0, 0);
+        tuneGrid->addWidget(m_tuneAUpBtn, 0, 1);
+        tuneGrid->addWidget(m_tuneBDownBtn, 1, 0);
+        tuneGrid->addWidget(m_tuneBUpBtn, 1, 1);
+        m_layout->addLayout(tuneGrid);
+
+        connect(m_tuneADownBtn, &QPushButton::clicked, this, [this]() { emit tuneARequested(-1); });
+        connect(m_tuneAUpBtn, &QPushButton::clicked, this, [this]() { emit tuneARequested(1); });
+        connect(m_tuneBDownBtn, &QPushButton::clicked, this, [this]() { emit tuneBRequested(-1); });
+        connect(m_tuneBUpBtn, &QPushButton::clicked, this, [this]() { emit tuneBRequested(1); });
+    }
 }
 
 QWidget *RightSidePanel::createFunctionButton(const QString &mainText, const QString &subText, QPushButton *&btnOut,
                                               bool isLighter) {
-    // The alternate action belongs inside the same touch target as its primary.
+    const bool compact = K4Styles::isCompactLayout();
     auto *container = new QWidget(this);
     auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, K4Styles::isCompactLayout() ? 0 : K4Styles::Dimensions::SeparatorHeight + 1,
-                               0, K4Styles::isCompactLayout() ? 0 : K4Styles::Dimensions::SeparatorHeight + 1);
-    layout->setSpacing(K4Styles::isCompactLayout() ? 0 : K4Styles::Dimensions::PaddingSmall);
+    layout->setContentsMargins(0, compact ? 0 : 1, 0, compact ? 0 : 3);
+    // Tight gap above the amber label so it clearly belongs to the button it
+    // sits under, with a larger gap below to the next row (matches macOS).
+    layout->setSpacing(compact ? 0 : 1);
 
-    // Button - scaled down from bottom menu bar style (matching left panel TX buttons)
-    auto *btn = new DualLinePanelButton(mainText, subText, container);
-    btn->setFixedHeight(42);
-    btn->setCursor(Qt::PointingHandCursor);
-
-    if (isLighter) {
-        btn->setStyleSheet(K4Styles::sidePanelButtonLight());
+    // Phone keeps both labels inside one touch target (DualLinePanelButton).
+    // iPad matches macOS/the radio: white primary on the button, amber
+    // alternate rendered on the case (a QLabel below), so long names like
+    // "DIVERSITY" are not clipped by the button width.
+    QPushButton *btn;
+    if (compact) {
+        btn = new DualLinePanelButton(mainText, subText, container);
+        btn->setFixedHeight(42);
     } else {
-        btn->setStyleSheet(K4Styles::sidePanelButton());
+        btn = new QPushButton(mainText, container);
+        btn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
     }
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet(isLighter ? K4Styles::sidePanelButtonLight() : K4Styles::sidePanelButton());
     btnOut = btn;
     layout->addWidget(btn);
+
+    if (!compact) {
+        auto *subLabel = new QLabel(subText, container);
+        subLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeSmall));
+        subLabel->setAlignment(Qt::AlignCenter);
+        subLabel->setFixedHeight(12);
+        layout->addWidget(subLabel);
+    }
 
     return container;
 }
@@ -234,6 +295,38 @@ void RightSidePanel::cancelPendingLongPress() {
     }
     if (m_revBtn)
         m_revBtn->setDown(false);
+}
+
+void RightSidePanel::setSubActive(bool on) {
+    // LED only on regular layout (compact packs SUB/DIV into one custom button).
+    if (K4Styles::isCompactLayout() || !m_subBtn)
+        return;
+    if (on)
+        m_subBtn->setStyleSheet(QString("QPushButton { background-color: %1; color: black;"
+                                        "font-weight: bold; border-radius: 4px; }")
+                                    .arg(K4Styles::Colors::StatusGreen));
+    else
+        m_subBtn->setStyleSheet(K4Styles::sidePanelButton());
+}
+
+void RightSidePanel::setDiversityActive(bool on) {
+    if (!m_diversityLabel)
+        return;
+    m_diversityLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: %3;")
+                                        .arg(on ? K4Styles::Colors::StatusGreen : K4Styles::Colors::AccentAmber)
+                                        .arg(K4Styles::Dimensions::FontSizeSmall)
+                                        .arg(on ? "bold" : "normal"));
+}
+
+void RightSidePanel::setBSetActive(bool on) {
+    if (K4Styles::isCompactLayout() || !m_bsetBtn)
+        return;
+    if (on)
+        m_bsetBtn->setStyleSheet(QString("QPushButton { background-color: %1; color: black;"
+                                         "font-weight: bold; border-radius: 4px; }")
+                                     .arg(K4Styles::Colors::StatusGreen));
+    else
+        m_bsetBtn->setStyleSheet(K4Styles::sidePanelButtonLight());
 }
 
 bool RightSidePanel::eventFilter(QObject *watched, QEvent *event) {
