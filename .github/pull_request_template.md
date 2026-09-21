@@ -9,6 +9,8 @@ does not implicitly approve one.
 - Affected screens and entry/exit paths:
 - Affected device classes (Android phone, Android tablet, iPhone, iPad):
 - Orientation, layout selection, or window-support changes (or none):
+- Prerequisite PRs and inherited changes (or none):
+- Source PRs/commits and attribution for extracted work (or new work):
 
 ## Validation
 
@@ -18,6 +20,10 @@ not run as pending, with the reason; do not mark an unavailable platform passed.
 
 For UI/layout/orientation changes, complete the following or explain why an
 item is not applicable. See the [orientation policy](https://github.com/worldwidedx/QK4-Mobile/blob/main/docs/ORIENTATION_POLICY.md).
+
+Follow [CONTRIBUTING.md](https://github.com/worldwidedx/QK4-Mobile/blob/main/CONTRIBUTING.md)
+and the [validation matrix](https://github.com/worldwidedx/QK4-Mobile/blob/main/docs/VALIDATION.md).
+State whether this PR adds dormant support or activates production behavior.
 
 - [ ] The change follows the policy; any proposed exception is explicitly identified and approved.
 - [ ] Android-phone and iPhone behavior is preserved; affected phone regression results or pending checks are listed.

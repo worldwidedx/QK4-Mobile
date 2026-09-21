@@ -67,6 +67,8 @@ See the [v1.0.5 release notes](docs/RELEASE_NOTES_v1.0.5.md) and
 Contributors changing screen rotation or device-class layouts must also follow
 the [screen orientation policy](docs/ORIENTATION_POLICY.md), the authoritative
 reference for Android phone/tablet and iPhone/iPad orientation requirements.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the shared-code workflow, review
+requirements, CI, and release procedures.
 Requirements and verified support are tracked separately in the
 [device-validation table](docs/PROJECT_STATUS.md#device-and-orientation-validation).
 

@@ -23,6 +23,9 @@
    [the orientation policy](docs/ORIENTATION_POLICY.md), the authoritative
    source for module orientation and layout-selection requirements. Complete
    the applicable checks in the [PR template](.github/pull_request_template.md).
+5. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for branches, review, dependencies,
+   CI, device acceptance, and release procedures. Preserve the
+   [phone interaction contract](docs/PHONE_UX_CONTRACT.md) on Android and iPhone.
 
 ## Product and UX invariants
 
@@ -32,6 +35,13 @@
   normal tap anywhere on that control invokes its primary action.
 - Distinguish scrolling from tapping. Required controls must remain reachable
   through scrolling or a touch panel—never off-canvas.
+- Child presses on scrollable pages are provisional. A vertical drag must
+  cancel pending actions, long-press timers, and release/click, including on
+  buttons, checkboxes, selectors, and editors. Reuse QScroller press delay and
+  drag cancellation; a plain QScrollArea with immediately active children is insufficient.
+- Use the established in-window touch selectors on scrollable setup/editor
+  pages. Do not add Android native QComboBox popup surfaces. Preserve the same
+  selection and cancellation behavior on iPhone.
 - Provide visible feedback when a state change is not otherwise visible on the
   main console. Feedback must appear above, not behind, an active popup.
 - Keep local-rendered panadapter functions separate from radio CAT state.
