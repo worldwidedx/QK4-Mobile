@@ -14,9 +14,9 @@ has never tested that device. This documentation update performed no device test
 |---|---|---|
 | Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
 | Other Android phones, including foldables | No complete orientation acceptance record in this document. | Phone policy, device classification, usable-space changes, and all claimed window configurations on named physical devices. |
-| Android tablet | Production Android uses the compact fallback; no complete regular-layout/tablet-orientation acceptance record here. | Physical regular/compact layout checks, enabled module orientations, and any claimed split-screen/resizing support. |
+| Android tablet | Production Android uses the compact fallback. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
 | iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
-| iPad | Tablet requirements are defined; no completed iPad layout/orientation acceptance record here. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
+| iPad | PR #4 reports an iPad simulator build/launch; no physical iPad acceptance is recorded. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
 
 For each new acceptance result, record the device model, OS version, build and
 commit, module/entry point, enabled orientations, window configuration, date,

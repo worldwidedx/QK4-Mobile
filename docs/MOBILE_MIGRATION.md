@@ -28,7 +28,8 @@ fixes may be re-extracted with authorship/provenance instead of carrying the sta
 ## Outstanding items
 
 - [ ] Land development policy and CI; require checks/review on `main`.
-- [ ] Retarget #1-#7 from the unused `1.0.6` integration target to `main`.
+- [x] Retarget #1-#7 from the unused `1.0.6` integration target to `main`.
+  Their descriptions now identify inherited prerequisites and acceptance gaps.
 - [ ] For each PR, record source SHAs, actual phone approval where needed,
   independent review, CI results, and device evidence before merging.
 - [ ] Reconcile #2's fullscreen limitation with #3's later fullscreen success
