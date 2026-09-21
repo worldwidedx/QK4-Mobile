@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, 'release/**']
   push:
-    branches: [main, 'codex/iphone-orientation-policy', 'release/**']
+    branches: [main, 'release/**']
   workflow_dispatch:
 
 permissions:
@@ -55,6 +55,8 @@ jobs:
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
         with:
           version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           host: windows
           target: desktop
           arch: win64_mingw
@@ -80,6 +82,8 @@ jobs:
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
         with:
           version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           host: all_os
           target: android
           arch: android_arm64_v8a
@@ -135,6 +139,8 @@ jobs:
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
         with:
           version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           host: mac
           target: desktop
           arch: clang_64
@@ -145,6 +151,8 @@ jobs:
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
         with:
           version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           host: mac
           target: ios
           arch: ios
