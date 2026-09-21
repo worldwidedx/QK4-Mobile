@@ -1,6 +1,31 @@
 # Project status
 
-Last updated: 2026-09-11
+Last updated: 2026-09-20 (orientation policy and validation inventory only)
+
+## Device and orientation validation
+
+The [screen orientation policy](ORIENTATION_POLICY.md) defines required behavior
+for Android phones/tablets and iPhone/iPad. This table records evidence available
+in this repository, not additional product requirements. Pending means that
+acceptance evidence is not recorded here; it does not assert that a contributor
+has never tested that device. This documentation update performed no device tests.
+
+| Device class / configuration | Recorded evidence | Validation still required |
+|---|---|---|
+| Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
+| Other Android phones, including foldables | No complete orientation acceptance record in this document. | Phone policy, device classification, usable-space changes, and all claimed window configurations on named physical devices. |
+| Android tablet | Production Android uses the compact fallback; no complete regular-layout/tablet-orientation acceptance record here. | Physical regular/compact layout checks, enabled module orientations, and any claimed split-screen/resizing support. |
+| iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
+| iPad | Tablet requirements are defined; no completed iPad layout/orientation acceptance record here. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
+
+For each new acceptance result, record the device model, OS version, build and
+commit, module/entry point, enabled orientations, window configuration, date,
+and pass/fail/pending results. Link the relevant PR or test report and list
+remaining limitations. Keep desktop/simulator checks distinct from physical
+device acceptance, and never infer one platform's results from another's.
+
+The entries below retain their historical build and testing context. They do
+not expand the supported device matrix or override the orientation policy.
 
 ## FT8/FT4 band-change DATA-A retention
 

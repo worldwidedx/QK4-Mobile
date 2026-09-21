@@ -1,9 +1,13 @@
-# QK4 Mobile Android development instructions
+# QK4 Mobile development instructions
 
 ## Current release and scope
 
 - Current release: **QK4 Mobile v1.0.5** (`com.w9wdx.qk4phone`).
-- Product target: ARM64 Android touch devices in landscape orientation, API 26+.
+- Current supported build target: ARM64 Android touch devices, API 26+.
+  The radio console uses landscape; other screens follow the
+  [screen orientation policy](docs/ORIENTATION_POLICY.md).
+- Contribution scope includes Android phones/tablets and iPhone/iPad. Policy
+  requirements do not imply that each device class is implemented or validated.
 - Physical acceptance testing: Samsung Galaxy S26 Ultra. Other Android phones
   are expected to use the compact layout but remain a validation priority.
 - Upstream lineage: QK4 by Mike Garcia, KF5O. QK4 Mobile is a WorldwideDX.com
@@ -15,6 +19,10 @@
 2. For Android builds, read `docs/BUILD_ANDROID_WINDOWS.md`.
 3. Preserve existing QK4 protocol, CAT, TCP/TLS, RX/TX audio, and state-sync
    methods unless a correction is verified against upstream QK4 and the K4.
+4. For UI, device-class, or rotation work, read
+   [the orientation policy](docs/ORIENTATION_POLICY.md), the authoritative
+   source for module orientation and layout-selection requirements. Complete
+   the applicable checks in the [PR template](.github/pull_request_template.md).
 
 ## Product and UX invariants
 
@@ -31,9 +39,9 @@
 - PTT represents deliberate transmit state; never emulate PTT using VOX.
 - Android hearing aids are an RX-only output route when Android exposes them as
   `TYPE_HEARING_AID`; do not add them to TX communication-device selection.
-- Until tablet-specific validation is available, retain the compact phone layout
-  override for all display sizes. The original tablet-selection logic is
-  intentionally commented in `src/ui/k4styles.cpp`; do not remove it or
+- Until tablet-specific validation is available, retain the production Android
+  compact phone layout override for all display sizes. The original tablet
+  selection logic is intentionally commented in `src/ui/k4styles.cpp`; do not remove it or
   re-enable it without a tested tablet UX plan.
 - The phone orientation rules apply equally to Android phones and iPhones:
   the main radio console is landscape, SSTV supports portrait and landscape,
@@ -41,8 +49,9 @@
   module's rules, including the radio-log rotation behavior documented in
   [the screen orientation policy](docs/ORIENTATION_POLICY.md).
   These are requirements for iOS contributions, not a claim of validated iOS support.
-- FT8/FT4 is portrait-only on Android phones and iPhones. Landscape FT8/FT4 support is
-  an accepted tablet-specific contribution when it is gated by the shared
+- FT8/FT4 is portrait-only on Android phones and iPhones. On Android tablets and
+  iPads, landscape FT8/FT4 support is an accepted tablet-specific contribution
+  when it is gated by the shared
   tablet classification, physically validated on a tablet, and leaves phone
   behavior portrait-only. Follow [the screen orientation policy](docs/ORIENTATION_POLICY.md).
 
