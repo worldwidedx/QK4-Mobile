@@ -12,7 +12,7 @@
 ## Start every task
 
 1. Read `README.md`, `docs/PROJECT_STATUS.md`, and the relevant source.
-2. For Android builds, read `docs/BUILD_ANDROID_WINDOWS.md`.
+2. For Android builds, read `docs/BUILD_ANDROID_WINDOWS.md` (Windows) or `docs/BUILD_ANDROID_UNIX.md` (macOS/Linux).
 3. Preserve existing QK4 protocol, CAT, TCP/TLS, RX/TX audio, and state-sync
    methods unless a correction is verified against upstream QK4 and the K4.
 
@@ -55,7 +55,7 @@ See `docs/PROJECT_STATUS.md` for boundaries and pending validation.
   requests removal; add new release material in the appropriate sections.
 - Public README and release-note text describes the finished functionality.
   Omit intermediate refinement history unless it materially affects operators.
-- Use `build-android.cmd`; do not replace it with machine-specific commands.
+- Use `build-android.cmd` (Windows) or `build-android.sh` (macOS/Linux); do not replace them with machine-specific commands.
 - Build independently from source changes. Install only when the user asks.
 - Debug: `build-android.cmd -Action Apk`.
 - Release: `build-android.cmd -Action Apk -DeploymentType Release`, with the

@@ -240,7 +240,7 @@ QRect FrequencyDisplayWidget::charRectAt(int charIndex) const {
 int FrequencyDisplayWidget::digitPositionFromX(int x) const {
     QString display = formatWithDots();
 
-    int currentX = 0;
+    int currentX = drawStartX();
     for (int i = 0; i < display.length(); ++i) {
         int charW = (display[i] == '.') ? m_dotWidth : m_charWidth;
 
@@ -284,6 +284,42 @@ void FrequencyDisplayWidget::enterEditMode(int digitPosition) {
     update();
 }
 
+void FrequencyDisplayWidget::beginEdit() {
+    if (m_cursorPosition < 0)
+        enterEditMode(displayStartIndex()); // start at the leftmost visible digit
+}
+
+void FrequencyDisplayWidget::commitEdit() {
+    if (m_cursorPosition >= 0)
+        exitEditMode(true);
+}
+
+void FrequencyDisplayWidget::cancelEdit() {
+    if (m_cursorPosition >= 0)
+        exitEditMode(false);
+}
+
+void FrequencyDisplayWidget::nudgeCursorDigit(int delta) {
+    if (m_cursorPosition < 0 || delta == 0)
+        return;
+    // Add/subtract the place value of the cursor digit so carries ripple
+    // naturally (e.g. 9->0 bumps the next digit up).
+    const int place = kMaxDigitIndex - m_cursorPosition;
+    quint64 placeValue = 1;
+    for (int i = 0; i < place; ++i)
+        placeValue *= 10;
+    qint64 value = static_cast<qint64>(m_digits.toULongLong()) + static_cast<qint64>(delta) * static_cast<qint64>(placeValue);
+    if (value < 0)
+        value = 0;
+    QString s = QString::number(static_cast<quint64>(value));
+    while (s.length() < kDigits)
+        s.prepend('0');
+    if (s.length() > kDigits)
+        s = s.right(kDigits);
+    m_digits = s;
+    update();
+}
+
 void FrequencyDisplayWidget::exitEditMode(bool send) {
     if (m_cursorPosition < 0) {
         return; // Not in edit mode
@@ -309,6 +345,39 @@ void FrequencyDisplayWidget::exitEditMode(bool send) {
     update();
 }
 
+void FrequencyDisplayWidget::setRightAligned(bool rightAligned) {
+    if (m_rightAligned != rightAligned) {
+        m_rightAligned = rightAligned;
+        update();
+    }
+}
+
+int FrequencyDisplayWidget::displayPixelWidth() const {
+    QString display = formatWithDots();
+    int w = 0;
+    for (int i = 0; i < display.length(); ++i)
+        w += (display[i] == '.') ? m_dotWidth : m_charWidth;
+    return w;
+}
+
+void FrequencyDisplayWidget::setRightAlignEdge(int edgeX) {
+    if (m_rightAlignEdge != edgeX) {
+        m_rightAlignEdge = edgeX;
+        update();
+    }
+}
+
+int FrequencyDisplayWidget::drawStartX() const {
+    if (!m_rightAligned)
+        return 0;
+    // Digits end just inside m_rightAlignEdge (or the widget's right edge if
+    // unset). The small inset keeps the last digit off the clipped boundary and
+    // matches the radio, where the frequency sits a touch inside the meter edge.
+    constexpr int kRightInset = 16;
+    const int ref = (m_rightAlignEdge >= 0) ? m_rightAlignEdge : width();
+    return qMax(0, ref - kRightInset - displayPixelWidth());
+}
+
 void FrequencyDisplayWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -317,7 +386,7 @@ void FrequencyDisplayWidget::paintEvent(QPaintEvent *) {
     QString display = formatWithDots();
 
     // Draw each character
-    int x = 0;
+    int x = drawStartX();
     int digitIdx = displayStartIndex();
 
     for (int i = 0; i < display.length(); ++i) {

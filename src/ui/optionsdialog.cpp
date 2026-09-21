@@ -102,7 +102,8 @@ OptionsDialog::~OptionsDialog() {
 void OptionsDialog::setupUi() {
     new OverlayBackHandler(this, [this] { requestReturnToOperate(); });
     setWindowTitle("Options");
-#ifdef Q_OS_ANDROID
+    // Touch platforms show this as an in-window overlay sized to the console.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     setMinimumSize(0, 0);
 #else
     setMinimumSize(700, 550);
@@ -122,7 +123,10 @@ void OptionsDialog::setupUi() {
                       .arg(K4Styles::Dimensions::FontSizePopup)
                       .arg(K4Styles::Colors::GradientBottom));
 
-#ifdef Q_OS_ANDROID
+    // Touch platforms have no native window chrome, so provide an in-dialog
+    // header with a "RETURN TO OPERATE" button; the desktop uses the window
+    // title bar's close control instead.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(6, 4, 6, 6);
     outerLayout->setSpacing(4);
@@ -130,9 +134,21 @@ void OptionsDialog::setupUi() {
     auto *title = new QLabel("QK4 SETTINGS", this);
     title->setStyleSheet(QString("color: %1; font-size: 16px; font-weight: bold;")
                              .arg(K4Styles::Colors::AccentAmber));
-    auto *close = new QPushButton("RETURN TO OPERATE", this);
-    close->setMinimumHeight(30);
-    close->setStyleSheet(K4Styles::menuBarButton());
+    // Regular/tablet: compact return/enter key on the far right, matching the
+    // "↵" button in the in-window control dialogs (e.g. NR ADJUST) rather than
+    // a wide label. Phone keeps the original labeled button from v1.0.5.
+    QPushButton *close;
+    if (K4Styles::isCompactLayout()) {
+        close = new QPushButton("RETURN TO OPERATE", this);
+        close->setMinimumHeight(30);
+        close->setStyleSheet(K4Styles::menuBarButton());
+    } else {
+        close = new QPushButton(QString::fromUtf8("↵"), this);
+        close->setFixedSize(48, 32);
+        close->setStyleSheet(K4Styles::menuBarButton() + "QPushButton { font-size: 20px; font-weight: bold; }");
+        close->setToolTip("Return to operate");
+        close->setAccessibleName("Return to operate");
+    }
     connect(close, &QPushButton::clicked, this, &OptionsDialog::requestReturnToOperate);
     header->addWidget(title);
     header->addStretch(1);
@@ -2116,7 +2132,8 @@ QWidget *OptionsDialog::createCwKeyerPage() {
     deviceTypeLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                        .arg(K4Styles::Colors::TextGray)
                                        .arg(K4Styles::Dimensions::FontSizePopup));
-    deviceTypeLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+    // Size to the text (a fixed FormLabelWidth clipped "Device Type:").
+    deviceTypeLabel->setMinimumWidth(deviceTypeLabel->sizeHint().width());
 
     m_cwKeyerDeviceTypeCombo = new QComboBox(page);
     m_cwKeyerDeviceTypeCombo->setStyleSheet(
@@ -2132,11 +2149,16 @@ QWidget *OptionsDialog::createCwKeyerPage() {
             .arg(K4Styles::Dimensions::FontSizePopup)
             .arg(K4Styles::Dimensions::PaddingSmall)
             .arg(K4Styles::Dimensions::SliderBorderRadius));
+#ifndef Q_OS_IOS
+    // The serial/HID V1.4 keyer is desktop-only; iOS supports MIDI only.
     m_cwKeyerDeviceTypeCombo->addItem("HaliKey V1.4", 0);
+#endif
     m_cwKeyerDeviceTypeCombo->addItem("HaliKey MIDI", 1);
 
+    // Select by stored device-type value (index differs once V1.4 is absent).
     int savedDeviceType = RadioSettings::instance()->halikeyDeviceType();
-    m_cwKeyerDeviceTypeCombo->setCurrentIndex(savedDeviceType);
+    int savedIndex = m_cwKeyerDeviceTypeCombo->findData(savedDeviceType);
+    m_cwKeyerDeviceTypeCombo->setCurrentIndex(savedIndex >= 0 ? savedIndex : 0);
     updateCwKeyerDescription();
 
     connect(m_cwKeyerDeviceTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {

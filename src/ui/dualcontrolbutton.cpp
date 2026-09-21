@@ -14,13 +14,28 @@ DualControlButton::DualControlButton(QWidget *parent) : QWidget(parent) {
     m_longPressTimer->setSingleShot(true);
     m_longPressTimer->setInterval(550);
     connect(m_longPressTimer, &QTimer::timeout, this, [this]() {
-        if (!K4Styles::isCompactLayout() || m_dragging)
+        if (m_dragging)
             return;
-        if (!m_showIndicator)
-            emit becameActive();
-        swapFunctions();
-        emit swapped();
         m_longPressHandled = true;
+        if (K4Styles::isCompactLayout()) {
+            // Phone: long-press swaps to the amber alternate function.
+            if (!m_showIndicator)
+                emit becameActive();
+            swapFunctions();
+            emit swapped();
+        } else if (m_showIndicator) {
+            // iPad/tablet, already-active tile: long-press swaps the
+            // primary/alternate function, mirroring compact's gesture
+            // (short-press on an active tile opens the adjust popup
+            // instead - see mouseReleaseEvent).
+            swapFunctions();
+            emit swapped();
+        } else {
+            // iPad/tablet, not-yet-active tile: long-press opens the touch
+            // adjust popup for that control without changing which tile is
+            // active, the touch equivalent of the macOS wheel/right-click.
+            emit adjustRequested();
+        }
     });
 }
 
@@ -174,11 +189,23 @@ void DualControlButton::paintEvent(QPaintEvent *event) {
     painter.setFont(altFont);
     painter.setPen(QColor(K4Styles::Colors::AccentAmber));
 
-    QString altText = m_alternateLabel;
-    if (!m_alternateValue.isEmpty()) {
-        altText += " " + m_alternateValue;
+    if (K4Styles::isCompactLayout()) {
+        // Phone: unchanged single left-aligned string.
+        QString altText = m_alternateLabel;
+        if (!m_alternateValue.isEmpty()) {
+            altText += " " + m_alternateValue;
+        }
+        painter.drawText(textLeft, altBaseline, altText);
+    } else {
+        // iPad/tablet: label left-aligned, value right-aligned - matches the
+        // primary row above instead of a single left-aligned "LABEL value"
+        // string that reads inconsistently next to the right-aligned primary.
+        painter.drawText(textLeft, altBaseline, m_alternateLabel);
+        if (!m_alternateValue.isEmpty()) {
+            int altValueWidth = fmAlt.horizontalAdvance(m_alternateValue);
+            painter.drawText(textRight - altValueWidth, altBaseline, m_alternateValue);
+        }
     }
-    painter.drawText(textLeft, altBaseline, altText);
 }
 
 void DualControlButton::mousePressEvent(QMouseEvent *event) {
@@ -187,8 +214,9 @@ void DualControlButton::mousePressEvent(QMouseEvent *event) {
         m_lastDragY = event->pos().y();
         m_dragging = false;
         m_longPressHandled = false;
-        if (K4Styles::isCompactLayout())
-            m_longPressTimer->start();
+        // Compact: long-press swaps to alternate. Regular (iPad): long-press
+        // opens the adjust popup. Either way the timer is armed on press.
+        m_longPressTimer->start();
         event->accept();
     } else {
         QWidget::mousePressEvent(event);
@@ -232,11 +260,17 @@ void DualControlButton::mouseReleaseEvent(QMouseEvent *event) {
         if (!m_dragging) {
             if (!m_showIndicator) {
                 emit becameActive();
-            } else if (!K4Styles::isCompactLayout()) {
-                swapFunctions();
-                emit swapped();
+                emit clicked();
+            } else if (K4Styles::isCompactLayout()) {
+                // Phone: a tap selects the primary function (handled by the
+                // panel's clicked handler); no swap here.
+                emit clicked();
+            } else {
+                // iPad/tablet, already-active tile: a short tap opens the
+                // touch adjust popup instead of swapping (long-press swaps
+                // now - see the long-press timer above).
+                emit adjustRequested();
             }
-            emit clicked();
         }
         event->accept();
         return;
