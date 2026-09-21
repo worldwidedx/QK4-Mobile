@@ -63,6 +63,12 @@ result. Jobs run on hosted runners with read-only repository access and no
 release signing or operator credentials. Fork PRs may need GitHub workflow
 approval; never bypass required checks to compensate for a pending approval.
 
+Temporary `codex/ci-validation/<concern>` branches may combine proposed code
+solely to rehearse CI before its prerequisite PRs land. Pushes there run the
+same checks without signing or publishing. They are not merge candidates or
+release branches; record results against their exact SHA and retire them after
+inspection. A successful rehearsal is not approval of the included features.
+
 `main` requires PR review, code-owner review, current-base checks, resolved
 conversations, and rejection of stale approvals. Force pushes and deletion are
 disabled, including for administrators. Apply equivalent protection to any

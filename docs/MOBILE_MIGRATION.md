@@ -28,6 +28,9 @@ fixes may be re-extracted with authorship/provenance instead of carrying the sta
 ## Outstanding items
 
 - [ ] Land development policy and CI; require checks/review on `main`.
+- [x] Enable `main` protection: current-base `Required checks`, one independent
+  approving reviewer, code-owner review, stale-approval dismissal, conversation
+  resolution, no force pushes/deletion, and administrator enforcement.
 - [x] Retarget #1-#7 from the unused `1.0.6` integration target to `main`.
   Their descriptions now identify inherited prerequisites and acceptance gaps.
 - [ ] For each PR, record source SHAs, actual phone approval where needed,
