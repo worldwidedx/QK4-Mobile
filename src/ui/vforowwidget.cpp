@@ -1,4 +1,5 @@
 #include "vforowwidget.h"
+#include "filterindicatorwidget.h"
 #include "k4styles.h"
 #include <QHBoxLayout>
 #include <QResizeEvent>
@@ -61,7 +62,27 @@ void VfoSquareWidget::paintEvent(QPaintEvent *) {
 
 VfoRowWidget::VfoRowWidget(QWidget *parent) : QWidget(parent) {
     setupWidgets();
-    setFixedHeight(K4Styles::Dimensions::VfoRowHeight);
+    recomputeHeight();
+}
+
+void VfoRowWidget::recomputeHeight() {
+    // Tall enough for the tallest of the three columns: the A/B square + mode +
+    // filter stacks, and the centre column (TX glyph + any SPLIT/MSG/RIT stack).
+    m_vfoAContainer->adjustSize();
+    m_vfoBContainer->adjustSize();
+    m_txContainer->adjustSize();
+    const int stacked = qMax(m_txContainer->sizeHint().height(),
+                             qMax(m_vfoAContainer->sizeHint().height(),
+                                  m_vfoBContainer->sizeHint().height()));
+    setFixedHeight(qMax(K4Styles::Dimensions::VfoRowHeight, stacked));
+}
+
+void VfoRowWidget::addToCenterColumn(QWidget *w) {
+    if (!m_txColumn)
+        return;
+    m_txColumn->addWidget(w, 0, Qt::AlignHCenter);
+    recomputeHeight();
+    positionWidgets();
 }
 
 void VfoRowWidget::setLockA(bool locked) {
@@ -76,17 +97,24 @@ void VfoRowWidget::setupWidgets() {
     // No layout manager - we use absolute positioning
     // All containers are children of this widget
     // === VFO A Container (square + mode label) ===
+    // Regular/tablet: the VFO column is as wide as the filter indicator that
+    // sits under it (filter indicators moved here from beside RIT/XIT). Phone
+    // is unchanged from v1.0.5 -- no filter indicator in this container, and
+    // the column is only as wide as the square itself.
+    const bool compact = K4Styles::isCompactLayout();
+    const int filterW = 62;
+    const int vfoColWidth = compact ? K4Styles::Dimensions::VfoSquareSize : filterW;
     m_vfoAContainer = new QWidget(this);
-    m_vfoAContainer->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
+    m_vfoAContainer->setFixedWidth(vfoColWidth);
     auto *vfoAColumn = new QVBoxLayout(m_vfoAContainer);
     vfoAColumn->setContentsMargins(0, 0, 0, 0);
-    vfoAColumn->setSpacing(2);
+    vfoAColumn->setSpacing(compact ? 2 : 1);
 
     m_vfoASquare = new VfoSquareWidget("A", QColor(K4Styles::Colors::VfoACyan), m_vfoAContainer);
     vfoAColumn->addWidget(m_vfoASquare, 0, Qt::AlignHCenter);
 
     m_modeALabel = new QLabel("USB", m_vfoAContainer);
-    m_modeALabel->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
+    m_modeALabel->setFixedWidth(vfoColWidth);
     m_modeALabel->setAlignment(Qt::AlignCenter);
     m_modeALabel->setCursor(Qt::PointingHandCursor);
     m_modeALabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
@@ -94,11 +122,20 @@ void VfoRowWidget::setupWidgets() {
                                     .arg(K4Styles::Dimensions::FontSizeLarge));
     vfoAColumn->addWidget(m_modeALabel, 0, Qt::AlignHCenter);
 
+    if (!compact) {
+        // VFO A filter indicator, directly under the square+mode (like the
+        // radio). On the phone the filter indicator stays in MainWindow,
+        // flanking the RIT/XIT box, exactly as in v1.0.5.
+        m_filterAWidget = new FilterIndicatorWidget(m_vfoAContainer);
+        vfoAColumn->addWidget(m_filterAWidget, 0, Qt::AlignHCenter);
+    }
+
     // === TX Container (TEST label + triangles + TX) ===
     m_txContainer = new QWidget(this);
     auto *txVLayout = new QVBoxLayout(m_txContainer);
     txVLayout->setContentsMargins(0, 0, 0, 0);
     txVLayout->setSpacing(0);
+    m_txColumn = txVLayout; // widgets stacked here sit under the TX glyph
 
     // TEST indicator - hidden by default
     // TEST is positioned independently from the TX container below. Keeping it
@@ -111,10 +148,13 @@ void VfoRowWidget::setupWidgets() {
     m_testLabel->setVisible(false);
 
     // TX row (triangles + TX label)
+    // Stretches keep the TX glyph centred when the column widens to hold the
+    // SPLIT/MSG/RIT stack beneath it.
     auto *txIndicatorRow = new QHBoxLayout();
     txIndicatorRow->setSpacing(0);
+    txIndicatorRow->addStretch();
 
-    m_txTriangle = new QLabel(QString::fromUtf8("\u25C0"), m_txContainer); // ◀
+    m_txTriangle = new QLabel(QString::fromUtf8("\u25C0"), m_txContainer); //◀
     m_txTriangle->setFixedSize(K4Styles::Dimensions::ButtonHeightMini, K4Styles::Dimensions::ButtonHeightMini);
     m_txTriangle->setAlignment(Qt::AlignCenter);
     m_txTriangle->setStyleSheet(QString("color: %1; font-size: 18px;").arg(K4Styles::Colors::AccentAmber));
@@ -130,6 +170,7 @@ void VfoRowWidget::setupWidgets() {
     m_txTriangleB->setAlignment(Qt::AlignCenter);
     m_txTriangleB->setStyleSheet(QString("color: %1; font-size: 18px;").arg(K4Styles::Colors::AccentAmber));
     txIndicatorRow->addWidget(m_txTriangleB);
+    txIndicatorRow->addStretch();
 
     txVLayout->addLayout(txIndicatorRow);
 
@@ -138,22 +179,28 @@ void VfoRowWidget::setupWidgets() {
 
     // === VFO B Container (square + mode label) ===
     m_vfoBContainer = new QWidget(this);
-    m_vfoBContainer->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
+    m_vfoBContainer->setFixedWidth(vfoColWidth);
     auto *vfoBColumn = new QVBoxLayout(m_vfoBContainer);
     vfoBColumn->setContentsMargins(0, 0, 0, 0);
-    vfoBColumn->setSpacing(2);
+    vfoBColumn->setSpacing(compact ? 2 : 1);
 
     m_vfoBSquare = new VfoSquareWidget("B", QColor(K4Styles::Colors::VfoBGreen), m_vfoBContainer);
     vfoBColumn->addWidget(m_vfoBSquare, 0, Qt::AlignHCenter);
 
     m_modeBLabel = new QLabel("USB", m_vfoBContainer);
-    m_modeBLabel->setFixedWidth(K4Styles::Dimensions::VfoSquareSize);
+    m_modeBLabel->setFixedWidth(vfoColWidth);
     m_modeBLabel->setAlignment(Qt::AlignCenter);
     m_modeBLabel->setCursor(Qt::PointingHandCursor);
     m_modeBLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                     .arg(K4Styles::Colors::TextWhite)
                                     .arg(K4Styles::Dimensions::FontSizeLarge));
     vfoBColumn->addWidget(m_modeBLabel, 0, Qt::AlignHCenter);
+
+    if (!compact) {
+        // VFO B filter indicator, directly under the square+mode.
+        m_filterBWidget = new FilterIndicatorWidget(m_vfoBContainer);
+        vfoBColumn->addWidget(m_filterBWidget, 0, Qt::AlignHCenter);
+    }
 
     // === SUB/DIV Container ===
     m_subDivContainer = new QWidget(this);
@@ -188,6 +235,12 @@ void VfoRowWidget::setupWidgets() {
     subDivStack->addWidget(m_divLabel);
 
     m_subDivContainer->adjustSize();
+    if (!compact) {
+        // Regular/tablet: not shown in the centre VFO area (the radio shows
+        // them as LEDs on the right panel instead, reflecting the same
+        // state). Phone keeps its original at-a-glance SUB/DIV indicators.
+        m_subDivContainer->hide();
+    }
 }
 
 void VfoRowWidget::resizeEvent(QResizeEvent *event) {

@@ -45,6 +45,14 @@ public:
     // Cancel an alternate-action hold when the phone drawer begins scrolling.
     void cancelPendingLongPress();
 
+    // Green "LED" state on the SUB / DIVERSITY button (the radio shows these as
+    // LEDs; they were removed from the centre VFO area). Regular layout only.
+    void setSubActive(bool on);
+    void setDiversityActive(bool on);
+    // Green highlight on the B SET button while B SET (target Sub RX) is active,
+    // so the mode is easy to see. Regular layout only.
+    void setBSetActive(bool on);
+
 signals:
     // Button click signals (main function - left click)
     void preClicked();
@@ -94,6 +102,10 @@ signals:
     void lockBClicked();     // LOCK A right-click (LOCK B)
     void diversityClicked(); // SUB right-click
 
+    // iPad fine-tune buttons (A-/A+/B-/B+). steps = +/-1 tuning increment.
+    void tuneARequested(int steps);
+    void tuneBRequested(int steps);
+
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -128,6 +140,13 @@ private:
     QPushButton *m_rateBtn;
     QPushButton *m_lockABtn;
     QPushButton *m_subBtn;
+    QLabel *m_diversityLabel = nullptr; // amber "DIVERSITY" sub-label; green when active
+
+    // iPad fine-tune buttons (regular layout only; null on phone)
+    QPushButton *m_tuneADownBtn = nullptr;
+    QPushButton *m_tuneAUpBtn = nullptr;
+    QPushButton *m_tuneBDownBtn = nullptr;
+    QPushButton *m_tuneBUpBtn = nullptr;
 
     // Qt maps a desktop secondary action to a right click. Android has no
     // such gesture, so a held touch triggers the same alternate action.

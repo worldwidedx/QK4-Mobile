@@ -333,6 +333,8 @@ private:
     // Spectrum/Waterfall displays (QRhiWidget - Metal/DirectX/Vulkan)
     PanadapterRhiWidget *m_panadapterA; // VFO A (Main RX)
     PanadapterRhiWidget *m_panadapterB; // VFO B (Sub RX) - for future use
+    QWidget *m_panAFrame = nullptr;     // thin bordered wrapper around panadapter A
+    QWidget *m_panBFrame = nullptr;     // thin bordered wrapper around panadapter B
     QWidget *m_spectrumContainer;
 
     // Span control buttons (overlay on panadapter A)

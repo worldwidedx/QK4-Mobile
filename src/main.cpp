@@ -134,7 +134,25 @@ int main(int argc, char *argv[]) {
     setupFonts();
 
     MainWindow window;
+#if defined(Q_OS_IOS)
+    window.showFullScreen();
+#elif defined(Q_OS_ANDROID)
+    if (K4Styles::isCompactLayout()) {
+        // Phones already size the compact console around Android's usable
+        // landscape viewport. QMainWindow::showFullScreen() hides the system
+        // bars but does not remove their stable/cutout insets on every device;
+        // on Samsung phones that shifts a full-width Qt surface past the right
+        // edge and clips required controls. Keep the proven phone path.
+        window.show();
+    } else {
+        // The regular/tablet layout is sized for a fullscreen landscape
+        // surface (like the iPad). Leaving Android's status + navigation bars
+        // visible steals height and clips the bottom controls.
+        window.showFullScreen();
+    }
+#else
     window.show();
+#endif
 
     return app.exec();
 }
