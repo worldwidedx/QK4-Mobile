@@ -35,7 +35,13 @@
   override for all display sizes. The original tablet-selection logic is
   intentionally commented in `src/ui/k4styles.cpp`; do not remove it or
   re-enable it without a tested tablet UX plan.
-- FT8/FT4 is portrait-only on phone-class devices. Landscape FT8/FT4 support is
+- The phone orientation rules apply equally to Android phones and iPhones:
+  the main radio console is landscape, SSTV supports portrait and landscape,
+  and FT8/FT4 is portrait-only. The shared logbook follows the invoking
+  module's rules, including the radio-log rotation behavior documented in
+  [the screen orientation policy](docs/ORIENTATION_POLICY.md).
+  These are requirements for iOS contributions, not a claim of validated iOS support.
+- FT8/FT4 is portrait-only on Android phones and iPhones. Landscape FT8/FT4 support is
   an accepted tablet-specific contribution when it is gated by the shared
   tablet classification, physically validated on a tablet, and leaves phone
   behavior portrait-only. Follow [the screen orientation policy](docs/ORIENTATION_POLICY.md).
