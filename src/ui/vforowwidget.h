@@ -6,6 +6,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+class FilterIndicatorWidget;
+
 /**
  * VfoSquareWidget - Custom painted VFO A/B indicator with lock arc
  *
@@ -58,6 +60,14 @@ public:
     QLabel *testLabel() const { return m_testLabel; }
     QLabel *subLabel() const { return m_subLabel; }
     QLabel *divLabel() const { return m_divLabel; }
+    // Filter indicators live under each VFO square+mode (like the radio).
+    FilterIndicatorWidget *filterAWidget() const { return m_filterAWidget; }
+    FilterIndicatorWidget *filterBWidget() const { return m_filterBWidget; }
+
+    // Stack a widget in the centre (TX) column, beneath the TX glyph. Used to
+    // pull SPLIT / MSG / RIT-XIT up between the two VFO filters, as on the
+    // radio. Reparents w and regrows the row to fit.
+    void addToCenterColumn(QWidget *w);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -65,6 +75,10 @@ protected:
 private:
     void setupWidgets();
     void positionWidgets();
+    void recomputeHeight();
+
+    // TX (centre) column layout, so extra widgets can be stacked under TX.
+    QVBoxLayout *m_txColumn = nullptr;
 
     // Containers (absolute positioned within this widget)
     QWidget *m_vfoAContainer;
@@ -84,6 +98,8 @@ private:
     QLabel *m_testLabel;
     QLabel *m_subLabel;
     QLabel *m_divLabel;
+    FilterIndicatorWidget *m_filterAWidget = nullptr;
+    FilterIndicatorWidget *m_filterBWidget = nullptr;
 };
 
 #endif // VFOROWWIDGET_H

@@ -83,16 +83,18 @@ void FnMenuButton::paintEvent(QPaintEvent *event) {
 
 void FnMenuButton::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
-        // Android has no right-click. A long press invokes the amber lower
-        // function (F2/F4/F6/F8), matching the mobile convention used by the
-        // rest of the phone UI.
-        if (K4Styles::isCompactLayout()) {
-            m_pressPosition = event->pos();
-            m_longPressTriggered = false;
-            m_longPressTimer->start();
-        } else {
-            emit clicked();
-        }
+        // Touch devices have no right-click, so a long press invokes the amber
+        // lower function (F2/F4/F6/F8). This applies to both the compact phone
+        // layout and the regular tablet/iPad layout - the earlier isCompact
+        // gate left the iPad firing the primary on press with no way to reach
+        // the amber action. Desktop keeps click-to-primary + right-click amber.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
+        m_pressPosition = event->pos();
+        m_longPressTriggered = false;
+        m_longPressTimer->start();
+#else
+        emit clicked();
+#endif
     } else if (event->button() == Qt::RightButton) {
         m_longPressTimer->stop();
         emit rightClicked();

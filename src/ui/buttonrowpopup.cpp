@@ -101,15 +101,20 @@ void RxMenuButton::paintEvent(QPaintEvent *event) {
 
 void RxMenuButton::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
-        if (K4Styles::isCompactLayout()) {
-            m_pressPosition = event->pos();
-            m_leftPressed = true;
-            m_longPressHandled = false;
-            m_pressCancelled = false;
-            m_longPressTimer.start();
-        } else {
-            emit clicked();
-        }
+        // Touch devices have no right-click, so a long press invokes the amber
+        // lower function. This applies to both the compact phone layout and the
+        // regular tablet/iPad layout - the earlier isCompact gate left the iPad
+        // firing the primary on press with no way to reach the amber action.
+        // Desktop keeps click-to-primary plus right-click for the amber action.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
+        m_pressPosition = event->pos();
+        m_leftPressed = true;
+        m_longPressHandled = false;
+        m_pressCancelled = false;
+        m_longPressTimer.start();
+#else
+        emit clicked();
+#endif
     } else if (event->button() == Qt::RightButton) {
         m_longPressTimer.stop();
         emit rightClicked();
@@ -118,7 +123,8 @@ void RxMenuButton::mousePressEvent(QMouseEvent *event) {
 }
 
 void RxMenuButton::mouseReleaseEvent(QMouseEvent *event) {
-    if (event->button() == Qt::LeftButton && K4Styles::isCompactLayout()) {
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
+    if (event->button() == Qt::LeftButton) {
         m_longPressTimer.stop();
         const bool triggerPrimary = m_leftPressed && !m_longPressHandled &&
                                     !m_pressCancelled && rect().contains(event->pos());
@@ -127,6 +133,7 @@ void RxMenuButton::mouseReleaseEvent(QMouseEvent *event) {
             emit clicked();
         }
     }
+#endif
     event->accept();
 }
 
