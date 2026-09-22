@@ -208,6 +208,7 @@ private:
     QString requestText(const QString &title, const QString &label, const QString &initial, bool *accepted);
     void setPhoneTxInputShieldActive(bool active);
     void updatePhoneTxInputShieldGeometry();
+    void positionCompactBSetIndicator();
     void openSstvScreen();
     void openLogbook(bool fromSstv = false);
     void openFt8Screen();

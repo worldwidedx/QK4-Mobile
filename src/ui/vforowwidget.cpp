@@ -91,7 +91,7 @@ void VfoRowWidget::setupWidgets() {
     m_modeALabel->setCursor(Qt::PointingHandCursor);
     m_modeALabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                     .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizeLarge));
+                                    .arg(K4Styles::Dimensions::VfoModeFontSize));
     vfoAColumn->addWidget(m_modeALabel, 0, Qt::AlignHCenter);
 
     // === TX Container (TEST label + triangles + TX) ===
@@ -152,7 +152,7 @@ void VfoRowWidget::setupWidgets() {
     m_modeBLabel->setCursor(Qt::PointingHandCursor);
     m_modeBLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                     .arg(K4Styles::Colors::TextWhite)
-                                    .arg(K4Styles::Dimensions::FontSizeLarge));
+                                    .arg(K4Styles::Dimensions::VfoModeFontSize));
     vfoBColumn->addWidget(m_modeBLabel, 0, Qt::AlignHCenter);
 
     // === SUB/DIV Container ===

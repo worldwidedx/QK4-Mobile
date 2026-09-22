@@ -66,6 +66,7 @@ void applyDefaultDimensions() {
     VfoRowHeight = 65;
     VfoSubDivLabelWidth = 36;
     VfoSubDivLabelHeight = 14;
+    VfoModeFontSize = 11;
 
     FontSizeTiny = 7;
     FontSizeSmall = 8;
@@ -154,6 +155,7 @@ void applyCompactDimensions() {
     VfoRowHeight = 38;
     VfoSubDivLabelWidth = 24;
     VfoSubDivLabelHeight = 10;
+    VfoModeFontSize = 11;
 
     FontSizeTiny = 6;
     FontSizeSmall = 7;
