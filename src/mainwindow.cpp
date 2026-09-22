@@ -4654,7 +4654,15 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         filterRitXitRow->setSpacing(0);
         filterRitXitRow->addWidget(m_filterAWidget);
         filterRitXitRow->addStretch();
-        filterRitXitRow->addWidget(m_ritXitBox);
+        // Keep the compact RIT/XIT row in place while clearing the overlaid
+        // B SET badge. The host fixes the row height; only its child moves.
+        constexpr int compactRitXitDown = 3;
+        auto *ritXitHost = new QWidget(centerWidget);
+        ritXitHost->setFixedSize(m_ritXitBox->maximumWidth(), m_filterAWidget->height());
+        m_ritXitBox->setParent(ritXitHost);
+        m_ritXitBox->setFixedSize(m_ritXitBox->maximumWidth(), m_ritXitBox->maximumHeight());
+        m_ritXitBox->move(0, (ritXitHost->height() - m_ritXitBox->height()) / 2 + compactRitXitDown);
+        filterRitXitRow->addWidget(ritXitHost);
         filterRitXitRow->addStretch();
         filterRitXitRow->addWidget(m_filterBWidget);
         centerLayout->addLayout(filterRitXitRow);
@@ -4669,7 +4677,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         m_filterAWidget->setShapeColor(QColor(0x00, 0xBF, 0xFF), QColor(0x00, 0xBF, 0xFF)); // Cyan solid
         m_filterAWidget->setCursor(Qt::PointingHandCursor);
         m_filterAWidget->installEventFilter(this);
-
         m_filterBWidget = m_vfoRow->filterBWidget();
         m_filterBWidget->setShapeColor(QColor(0x00, 0xFF, 0x00), QColor(0x00, 0xFF, 0x00)); // Green solid
         m_filterBWidget->setCursor(Qt::PointingHandCursor);
