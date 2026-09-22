@@ -106,7 +106,7 @@ void RxMenuButton::mousePressEvent(QMouseEvent *event) {
         // regular tablet/iPad layout - the earlier isCompact gate left the iPad
         // firing the primary on press with no way to reach the amber action.
         // Desktop keeps click-to-primary plus right-click for the amber action.
-#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
         m_pressPosition = event->pos();
         m_leftPressed = true;
         m_longPressHandled = false;
@@ -123,7 +123,7 @@ void RxMenuButton::mousePressEvent(QMouseEvent *event) {
 }
 
 void RxMenuButton::mouseReleaseEvent(QMouseEvent *event) {
-#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
     if (event->button() == Qt::LeftButton) {
         m_longPressTimer.stop();
         const bool triggerPrimary = m_leftPressed && !m_longPressHandled &&

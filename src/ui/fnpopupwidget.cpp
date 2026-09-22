@@ -88,7 +88,7 @@ void FnMenuButton::mousePressEvent(QMouseEvent *event) {
         // layout and the regular tablet/iPad layout - the earlier isCompact
         // gate left the iPad firing the primary on press with no way to reach
         // the amber action. Desktop keeps click-to-primary + right-click amber.
-#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS) || defined(QK4_TEST_TOUCH_GESTURES)
         m_pressPosition = event->pos();
         m_longPressTriggered = false;
         m_longPressTimer->start();
