@@ -1755,7 +1755,9 @@ MainWindow::MainWindow(QWidget *parent)
             // Restore VFO B frequency and mode to normal white
             m_vfoB->frequencyDisplay()->setNormalColor(QColor(K4Styles::Colors::TextWhite));
             m_modeBLabel->setStyleSheet(
-                QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::TextWhite));
+                QString("color: %1; font-size: %2px; font-weight: bold;")
+                    .arg(K4Styles::Colors::TextWhite)
+                    .arg(K4Styles::Dimensions::VfoModeFontSize));
         } else {
             m_subLabel->setStyleSheet(
                 QString("background-color: %1;"
@@ -1775,7 +1777,9 @@ MainWindow::MainWindow(QWidget *parent)
             // Dim VFO B frequency and mode to indicate SUB RX is off
             m_vfoB->frequencyDisplay()->setNormalColor(QColor(K4Styles::Colors::InactiveGray));
             m_modeBLabel->setStyleSheet(
-                QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::InactiveGray));
+                QString("color: %1; font-size: %2px; font-weight: bold;")
+                    .arg(K4Styles::Colors::InactiveGray)
+                    .arg(K4Styles::Dimensions::VfoModeFontSize));
 
             // Auto-hide mini pan B if VFOs are on different bands (can't have mini pan B without SUB RX)
             checkAndHideMiniPanB();
@@ -3424,6 +3428,8 @@ void MainWindow::setupUi() {
         qDebug() << "B SET changed:" << enabled;
         // Show/hide B SET indicator (hide SPLIT when B SET active)
         m_bSetLabel->setVisible(enabled);
+        if (enabled)
+            positionCompactBSetIndicator();
         m_splitLabel->setVisible(!enabled);
 
         // Change side panel BW/SHFT indicator color (cyan=MainRx, green=SubRx)
@@ -4312,7 +4318,14 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_bSetLabel->setCursor(Qt::PointingHandCursor);
     m_bSetLabel->installEventFilter(this);
     m_bSetLabel->setVisible(false);
-    centerLayout->addWidget(m_bSetLabel, 0, Qt::AlignHCenter);
+    if (K4Styles::isCompactLayout()) {
+        // Keep the phone badge out of the vertical layout. It overlays the
+        // unused space immediately below TX, so toggling B SET cannot push the
+        // filter row, panadapter, or bottom controls down.
+        QTimer::singleShot(0, this, &MainWindow::positionCompactBSetIndicator);
+    } else {
+        centerLayout->addWidget(m_bSetLabel, 0, Qt::AlignHCenter);
+    }
 
     // Message Bank indicator
     m_msgBankLabel = new QLabel("MSG: I", centerWidget);
@@ -4393,8 +4406,20 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     filterRitXitRow->addWidget(m_filterAWidget);
     filterRitXitRow->addStretch();
 
-    // RIT/XIT box (centered)
-    filterRitXitRow->addWidget(m_ritXitBox);
+    // RIT/XIT box (centered). On phones, leave a small visible gap below the
+    // overlaid B SET badge without changing this row's height or moving the
+    // filter indicators and controls below it.
+    if (K4Styles::isCompactLayout()) {
+        constexpr int compactRitXitDown = 3;
+        auto *ritXitHost = new QWidget(centerWidget);
+        ritXitHost->setFixedSize(m_ritXitBox->maximumWidth(), m_filterAWidget->height());
+        m_ritXitBox->setParent(ritXitHost);
+        m_ritXitBox->setFixedSize(m_ritXitBox->maximumWidth(), m_ritXitBox->maximumHeight());
+        m_ritXitBox->move(0, (ritXitHost->height() - m_ritXitBox->height()) / 2 + compactRitXitDown);
+        filterRitXitRow->addWidget(ritXitHost);
+    } else {
+        filterRitXitRow->addWidget(m_ritXitBox);
+    }
 
     filterRitXitRow->addStretch();
 
@@ -5682,7 +5707,9 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         // Dim VFO B (SUB off state)
         m_vfoB->frequencyDisplay()->setNormalColor(QColor(K4Styles::Colors::InactiveGray));
         m_modeBLabel->setStyleSheet(
-            QString("color: %1; font-size: 11px; font-weight: bold;").arg(K4Styles::Colors::InactiveGray));
+            QString("color: %1; font-size: %2px; font-weight: bold;")
+                .arg(K4Styles::Colors::InactiveGray)
+                .arg(K4Styles::Dimensions::VfoModeFontSize));
 
         // Message bank
         m_msgBankLabel->setText("MSG: I");
@@ -6960,6 +6987,8 @@ void MainWindow::showEvent(QShowEvent *event) {
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
+    if (K4Styles::isCompactLayout())
+        QTimer::singleShot(0, this, &MainWindow::positionCompactBSetIndicator);
     if (m_radioManager && centralWidget()) {
         m_radioManager->setGeometry(centralWidget()->rect());
     }
@@ -6968,6 +6997,20 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     }
     if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(rect());
     updatePhoneTxInputShieldGeometry();
+}
+
+void MainWindow::positionCompactBSetIndicator() {
+    if (!K4Styles::isCompactLayout() || !m_bSetLabel || !m_txIndicator)
+        return;
+    QWidget *host = m_bSetLabel->parentWidget();
+    if (!host)
+        return;
+
+    m_bSetLabel->resize(m_bSetLabel->sizeHint());
+    const QPoint belowTx =
+        m_txIndicator->mapTo(host, QPoint(m_txIndicator->width() / 2, m_txIndicator->height()));
+    m_bSetLabel->move(belowTx.x() - m_bSetLabel->width() / 2, belowTx.y() + 1);
+    m_bSetLabel->raise();
 }
 
 void MainWindow::setPhoneTxInputShieldActive(bool active) {

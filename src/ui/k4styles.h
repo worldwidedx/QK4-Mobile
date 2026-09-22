@@ -305,6 +305,7 @@ inline int VfoSquareWidgetTotalHeight = 40;
 inline int VfoRowHeight = 65;
 inline int VfoSubDivLabelWidth = 36;
 inline int VfoSubDivLabelHeight = 14;
+inline int VfoModeFontSize = 11;
 
 // =============================================================================
 // Font Sizes (in pixels) - use with QFont::setPixelSize() or paintFont()
