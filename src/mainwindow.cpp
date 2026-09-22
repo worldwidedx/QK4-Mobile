@@ -4406,8 +4406,20 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     filterRitXitRow->addWidget(m_filterAWidget);
     filterRitXitRow->addStretch();
 
-    // RIT/XIT box (centered)
-    filterRitXitRow->addWidget(m_ritXitBox);
+    // RIT/XIT box (centered). On phones, leave a small visible gap below the
+    // overlaid B SET badge without changing this row's height or moving the
+    // filter indicators and controls below it.
+    if (K4Styles::isCompactLayout()) {
+        constexpr int compactRitXitDown = 3;
+        auto *ritXitHost = new QWidget(centerWidget);
+        ritXitHost->setFixedSize(m_ritXitBox->maximumWidth(), m_filterAWidget->height());
+        m_ritXitBox->setParent(ritXitHost);
+        m_ritXitBox->setFixedSize(m_ritXitBox->maximumWidth(), m_ritXitBox->maximumHeight());
+        m_ritXitBox->move(0, (ritXitHost->height() - m_ritXitBox->height()) / 2 + compactRitXitDown);
+        filterRitXitRow->addWidget(ritXitHost);
+    } else {
+        filterRitXitRow->addWidget(m_ritXitBox);
+    }
 
     filterRitXitRow->addStretch();
 
