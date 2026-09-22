@@ -372,6 +372,8 @@ third_party/android/opus/ ARM64 Android Opus development files
 
 ## Security and local data
 
+Report vulnerabilities privately using the channels in [SECURITY.md](SECURITY.md).
+
 Radio profiles and passwords are runtime data and are not stored in this repository. Do not commit profile exports, logs containing credentials, keystores, signing passwords, APKs, build trees, or phone screen captures.
 
 Production distribution requires a private Android signing key. Keep signing credentials outside the repository and provide them only through the supported build environment.

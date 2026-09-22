@@ -3,7 +3,7 @@ $projectDirectory = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $projectDirectory
 try {
     $documents = @(
-        'AGENTS.md', 'CONTRIBUTING.md', 'README.md',
+        'AGENTS.md', 'CONTRIBUTING.md', 'README.md', 'SECURITY.md',
         'docs/ORIENTATION_POLICY.md', 'docs/PHONE_UX_CONTRACT.md',
         'docs/CODE_BOUNDARIES.md', 'docs/VALIDATION.md',
         'docs/RELEASE_PROCESS.md', 'docs/MOBILE_MIGRATION.md',
