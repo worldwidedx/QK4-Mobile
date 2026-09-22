@@ -32,6 +32,7 @@ __pycache__/
 /build-android-arm64/
 /build-android-arm64-release/
 /build-android-*/
+/build-ios-ci/
 *.apk
 *.idsig
 *.aab
