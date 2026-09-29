@@ -72,7 +72,8 @@ endif()
 qt_add_executable(test_digitaltx test_digitaltx.cpp
     ../src/audio/digitaltxguard.cpp ../src/audio/digitaltxguard.h
     ../src/network/tcpclient.cpp ../src/network/tcpclient.h
-    ../src/network/protocol.cpp ../src/network/protocol.h)
+    ../src/network/protocol.cpp ../src/network/protocol.h
+    ../src/network/psktlssocket.h ../src/network/psktlssocket_qssl.cpp)
 target_include_directories(test_digitaltx PRIVATE ../src)
 target_link_libraries(test_digitaltx PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME digitaltx COMMAND test_digitaltx -o digitaltx-results.txt,txt -o -,txt)
@@ -100,6 +101,7 @@ add_test(NAME radiostate COMMAND test_radiostate)
 qt_add_executable(test_macros test_macros.cpp
     ../src/network/tcpclient.cpp ../src/network/tcpclient.h
     ../src/network/protocol.cpp ../src/network/protocol.h
+    ../src/network/psktlssocket.h ../src/network/psktlssocket_qssl.cpp
     ../src/audio/digitaltxguard.cpp ../src/audio/digitaltxguard.h
     ../src/models/radiostate.cpp ../src/models/radiostate.h
     ../src/models/menumodel.cpp ../src/models/menumodel.h)
