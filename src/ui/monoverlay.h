@@ -50,6 +50,8 @@ signals:
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     void setupUi();
@@ -61,6 +63,13 @@ private:
 
     int m_value = 0;
     int m_mode = 0; // 0=CW, 1=Data, 2=Voice
+
+    // Touch drag-to-adjust: a drag maps the finger's vertical position to the
+    // level; a tap (no drag) dismisses the overlay.
+    bool m_dragActive = false;
+    bool m_dragMoved = false;
+    qreal m_dragStartX = 0;
+    qreal m_dragStartY = 0;
 };
 
 #endif // MONOVERLAY_H

@@ -2,6 +2,7 @@
 #include "k4styles.h"
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QMouseEvent>
 #include <QFont>
 
 MonOverlay::MonOverlay(QWidget *parent) : SideControlOverlay(Global, parent) {
@@ -71,7 +72,38 @@ void MonOverlay::wheelEvent(QWheelEvent *event) {
 }
 
 void MonOverlay::mousePressEvent(QMouseEvent *event) {
-    // Don't close on click - allow adjustment via wheel
-    // Click does nothing, user must click the MON button again to close
-    Q_UNUSED(event)
+    m_dragActive = true;
+    m_dragMoved = false;
+    m_dragStartX = event->position().x();
+    m_dragStartY = event->position().y();
+    event->accept();
+}
+
+void MonOverlay::mouseMoveEvent(QMouseEvent *event) {
+    if (!m_dragActive)
+        return;
+    const qreal x = event->position().x();
+    const qreal y = event->position().y();
+    if (!m_dragMoved && (qAbs(y - m_dragStartY) > 4 || qAbs(x - m_dragStartX) > 4))
+        m_dragMoved = true;
+    if (m_dragMoved) {
+        // Top of the overlay is 100, bottom is 0 (vertical slider feel).
+        const qreal h = qMax(1, height());
+        const qreal frac = 1.0 - qBound(0.0, y, h) / h;
+        const int newValue = qBound(0, int(qRound(frac * 100.0)), 100);
+        if (newValue != m_value) {
+            m_value = newValue;
+            updateValueDisplay();
+            emit levelChangeRequested(m_mode, m_value);
+        }
+    }
+    event->accept();
+}
+
+void MonOverlay::mouseReleaseEvent(QMouseEvent *event) {
+    // A tap (press with no drag) dismisses the overlay; a drag adjusted it.
+    if (m_dragActive && !m_dragMoved)
+        hide();
+    m_dragActive = false;
+    event->accept();
 }

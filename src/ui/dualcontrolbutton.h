@@ -73,6 +73,7 @@ signals:
     void clicked();                // Button was clicked
     void swapped();                // Primary/alternate were swapped (only when already active)
     void becameActive();           // User clicked to activate this button
+    void adjustRequested();        // Long-press on iPad: open touch adjust popup
 
 protected:
     void paintEvent(QPaintEvent *event) override;

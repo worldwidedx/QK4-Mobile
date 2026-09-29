@@ -48,6 +48,14 @@ void VFOWidget::setupUi() {
     freqContainerLayout->addWidget(m_frequencyDisplay);
     freqContainerLayout->addStretch();
 
+    // Match the radio: the A frequency is right-aligned so its right edge lines
+    // up with the right edge of the A meter block, not the left. Right-align the
+    // digits within the display (whose right edge already coincides with the
+    // meter's, both filling the column). Regular layout only; the phone console
+    // keeps its own left-aligned placement.
+    if (m_type == VFO_A && !K4Styles::isCompactLayout())
+        m_frequencyDisplay->setRightAligned(true);
+
     if (m_type == VFO_A) {
         freqRow->addWidget(freqContainer);
         freqRow->addStretch();
@@ -78,6 +86,10 @@ void VFOWidget::setupUi() {
     // Meter fills full width of normal content (both are 200px)
     m_txMeter = new TxMeterWidget(m_normalContent);
     m_txMeter->setFixedWidth(K4Styles::Dimensions::VfoMeterWidth);
+    // Solid-color per-VFO S-meter (cyan/green instead of the default) was
+    // considered here and deferred: it's a visual change to the existing
+    // meter appearance on every layout including phone, pending a design
+    // review. Left for a later, explicitly Tim-approved pass.
     normalLayout->addWidget(m_txMeter);
 
     // Row 3: AGC, PRE, ATT, NB, NR labels (aligned with meter)

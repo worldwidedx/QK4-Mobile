@@ -56,12 +56,29 @@ public:
     // e.g., rate 2 (100Hz) grays out digits 0,1,2 (1s, 10s, 100s places)
     void setTuningRateDigit(int digitFromRight);
 
+    // Right-align the digits within the widget (VFO A, to line the frequency up
+    // with the right edge of the meters like the radio). Default is left.
+    void setRightAligned(bool rightAligned);
+    // X (in widget coords) the right edge of the digits aligns to when
+    // right-aligned. Defaults to the widget's own width when unset (<0).
+    void setRightAlignEdge(int edgeX);
+
     // Check if currently in edit mode
     bool isEditing() const;
     // Opt-in fitting and phone gestures for embedded frequency displays.
     void setAutoFit(bool enabled);
     void setTouchTuningEnabled(bool enabled);
     void setSelectedTuningDigit(int digitFromRight);
+
+    // Enter the blue frequency edit field (FREQ ENT button / radio-style),
+    // as opposed to tapping a digit which selects the tuning rate.
+    void beginEdit();
+    // Commit the edit field (send) / cancel it (restore).
+    void commitEdit();
+    void cancelEdit();
+    // Adjust the digit under the cursor by delta (+/-1), carrying across
+    // digits, for touch entry via +/- controls while the field is open.
+    void nudgeCursorDigit(int delta);
 
 signals:
     // Emitted when user presses Enter to confirm frequency entry
@@ -130,6 +147,14 @@ private:
 
     // Tuning rate indicator: digits from this position to 0 show in gray
     int m_tuningRateDigit = -1; // -1 = no indicator, 0-4 = position from right
+
+    bool m_rightAligned = false; // draw digits against the widget's right edge
+    int m_rightAlignEdge = -1;   // right-align target x; <0 = use width()
+
+    // Pixel width of the current display string, and the left x the paint/hit
+    // logic starts from (nonzero when right-aligned).
+    int displayPixelWidth() const;
+    int drawStartX() const;
 
     WheelAccumulator m_wheelAccumulator;
 

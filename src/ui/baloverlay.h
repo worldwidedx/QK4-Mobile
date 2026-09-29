@@ -35,6 +35,8 @@ signals:
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     void setupUi();
@@ -46,6 +48,13 @@ private:
 
     int m_mode = 0;   // 0=NOR, 1=BAL
     int m_offset = 0; // -50 to +50
+
+    // Touch drag-to-adjust: a drag maps the finger's vertical position to the
+    // balance offset; a tap (no drag) dismisses the overlay.
+    bool m_dragActive = false;
+    bool m_dragMoved = false;
+    qreal m_dragStartX = 0;
+    qreal m_dragStartY = 0;
 };
 
 #endif // BALOVERLAY_H
