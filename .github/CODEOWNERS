@@ -1,0 +1,4 @@
+# Independent approval is required by branch protection. Either existing
+# maintainer/contributor can review the other's work. Product approval for
+# intentional phone changes remains a separate requirement in CONTRIBUTING.md.
+* @worldwidedx @tcpreplay-dev

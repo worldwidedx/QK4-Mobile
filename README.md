@@ -1,6 +1,6 @@
 # QK4 Mobile
 
-QK4 Mobile is the Mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a landscape touch interface.
+QK4 Mobile is the Mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a touch interface. The radio console uses landscape; other screens follow the [screen orientation policy](docs/ORIENTATION_POLICY.md).
 
 The application is under active development and is intended for use with an
 Elecraft K4/K4D attached to the internet. Version 1.0.5 is the current ARM64
@@ -58,14 +58,19 @@ to remote clients, such as BAND/MEM, remain outside the application's control.
 - Integrated SSTV transmit and receive with 22 modes, image composition,
   templates, automatic reception, callsign identification, and RX history
 - Touch-scrollable DX prefix reference with natural alphanumeric sorting and prefix/country search
-- Android landscape layout and touch-safe scrolling
+- Android landscape radio console and touch-safe scrolling; other screens follow the [screen orientation policy](docs/ORIENTATION_POLICY.md)
 - Local non-decaying Peak Hold and local WTR CLRS waterfall brightness control
 - Release-signed APK distribution support
 
 See the [v1.0.5 release notes](docs/RELEASE_NOTES_v1.0.5.md) and
 [project status](docs/PROJECT_STATUS.md) for the verified state and next work.
 Contributors changing screen rotation or device-class layouts must also follow
-the [screen orientation policy](docs/ORIENTATION_POLICY.md).
+the [screen orientation policy](docs/ORIENTATION_POLICY.md), the authoritative
+reference for Android phone/tablet and iPhone/iPad orientation requirements.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the shared-code workflow, review
+requirements, CI, and release procedures.
+Requirements and verified support are tracked separately in the
+[device-validation table](docs/PROJECT_STATUS.md#device-and-orientation-validation).
 
 ## FT8 and FT4
 
@@ -220,12 +225,16 @@ delayed monitor audio is not required.
 | Platform | Android 8.0 (API 26) or later |
 | ABI | ARM64 (`arm64-v8a`) |
 | Android package | `com.w9wdx.qk4phone` |
-| UI | Landscape touch UI; the compact phone layout is temporarily used on all display sizes, including tablets |
+| UI | Landscape radio console; other screens follow the [orientation policy](docs/ORIENTATION_POLICY.md). Production Android temporarily uses the compact layout on all display sizes, including tablets. |
 | Framework | Qt 6.11.1 |
 | Android API | Minimum 26, target 34 |
 | Radio | Elecraft K4/K4D |
 
 Other platforms remain present in the inherited QK4 source, but this repository's supported product target is Android. Physical acceptance testing has been performed on a Samsung Galaxy S26 Ultra; test other phone families before treating them as validated.
+
+Android tablet, iPhone, and iPad contributions follow the shared orientation
+policy. Inclusion in that policy is not a claim of released or validated
+support; see the [device-validation table](docs/PROJECT_STATUS.md#device-and-orientation-validation).
 
 ## Integrated SSTV
 
@@ -362,6 +371,8 @@ third_party/android/opus/ ARM64 Android Opus development files
 ```
 
 ## Security and local data
+
+Report vulnerabilities privately using the channels in [SECURITY.md](SECURITY.md).
 
 Radio profiles and passwords are runtime data and are not stored in this repository. Do not commit profile exports, logs containing credentials, keystores, signing passwords, APKs, build trees, or phone screen captures.
 
