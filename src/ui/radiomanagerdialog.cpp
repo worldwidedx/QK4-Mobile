@@ -20,6 +20,15 @@
 
 namespace {
 
+QSize radioManagerSelectorPanelSize(QWidget *parent, int preferredHeight) {
+    const QSize available = parent ? parent->size() - QSize(24, 20) : QSize(560, 300);
+    const bool portrait = available.height() > available.width();
+    const int widthLimit = portrait ? qRound(available.width() * 0.94)
+                                    : qRound(available.width() * 0.74);
+    return QSize(qMin(available.width(), qMin(560, qMax(300, widthLimit))),
+                 qMin(available.height(), preferredHeight));
+}
+
 // Android's native QComboBox popup creates a second EGL surface. Keep the
 // selection inside the Radio Manager window so opening, choosing, cancelling,
 // or switching audio settings never races Qt's Android surface teardown.
@@ -83,9 +92,8 @@ protected:
 
         auto *title = new QLabel(m_title, panel);
         title->setAlignment(Qt::AlignCenter);
-        title->setStyleSheet(QString("color:%1;font-size:%2px;font-weight:bold;")
-                                 .arg(K4Styles::Colors::AccentAmber)
-                                 .arg(K4Styles::Dimensions::FontSizePopup));
+        title->setStyleSheet(QString("color:%1;font-size:13px;font-weight:bold;")
+                                 .arg(K4Styles::Colors::AccentAmber));
         layout->addWidget(title);
 
         auto *list = new QListWidget(panel);
@@ -93,17 +101,15 @@ protected:
         list->setSelectionMode(QAbstractItemView::SingleSelection);
         list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
         list->setStyleSheet(QString(
-            "QListWidget{background:%1;color:%2;border:1px solid %3;font-size:%4px;}"
-            "QListWidget::item{padding:7px;}"
+            "QListWidget{background:%1;color:%2;border:1px solid %3;font-size:11px;}"
+            "QListWidget::item{padding:4px 7px;}"
             "QListWidget::item:selected{background:%5;color:%1;}")
             .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite,
-                 K4Styles::Colors::DialogBorder)
-            .arg(K4Styles::Dimensions::FontSizeLarge)
-            .arg(K4Styles::Colors::AccentAmber));
+                 K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber));
         for (int index = 0; index < count(); ++index) {
             auto *item = new QListWidgetItem(itemText(index), list);
             item->setData(Qt::UserRole, index);
-            item->setSizeHint(QSize(0, 40));
+            item->setSizeHint(QSize(0, 30));
         }
         const int initial = qBound(0, currentIndex(), count() - 1);
         list->setCurrentRow(initial);
@@ -117,7 +123,7 @@ protected:
         auto *cancel = new QPushButton("CANCEL", panel);
         auto *use = new QPushButton("USE", panel);
         for (QPushButton *button : {cancel, use}) {
-            button->setMinimumHeight(42);
+            button->setFixedHeight(34);
             button->setStyleSheet(K4Styles::menuBarButton());
             buttons->addWidget(button);
         }
@@ -127,10 +133,8 @@ protected:
         QObject::connect(list, &QListWidget::itemDoubleClicked, &dialog,
                          [&dialog](QListWidgetItem *) { dialog.accept(); });
 
-        const int panelWidth = qMin(620, qMax(300, dialogParent->width() - 20));
-        const int panelHeight = qMin(qMax(210, 105 + qMin(8, count()) * 40),
-                                     qMax(210, dialogParent->height() - 20));
-        dialog.setPanelSize(QSize(panelWidth, panelHeight));
+        const int preferredHeight = 86 + qMin(9, count()) * 30;
+        dialog.setPanelSize(radioManagerSelectorPanelSize(dialogParent, preferredHeight));
         QTimer::singleShot(0, list, [list, initial] {
             if (QListWidgetItem *item = list->item(initial))
                 list->scrollToItem(item, QAbstractItemView::PositionAtCenter);
