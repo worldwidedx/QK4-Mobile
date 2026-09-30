@@ -60,7 +60,8 @@ private slots:
         LogbookUi::show(&host, log);
         QVERIFY(completed);
         QVERIFY(host.isVisible());
-        QCOMPARE(QApplication::focusWidget(), &invoker);
+        // Closing a focused editor queues focus restoration on Windows.
+        QTRY_COMPARE(QApplication::focusWidget(), &invoker);
     }
     void backDismissesOnlyNestedSetup() {
         QTemporaryDir dir;

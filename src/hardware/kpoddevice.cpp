@@ -1,7 +1,7 @@
 #include "kpoddevice.h"
 #include <QDebug>
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
 
 KpodDevice::KpodDevice(QObject *parent)
     : QObject(parent), m_hidDevice(nullptr), m_pollTimer(new QTimer(this)), m_lastRockerPosition(RockerCenter) {
