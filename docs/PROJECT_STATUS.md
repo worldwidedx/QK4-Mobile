@@ -690,7 +690,7 @@ the compact layout; broader device validation is still required.
 
 ### CTR2-MIDI on iOS
 
-Branch `fix/ctr2-midi-ios-coremidi`. `Ctr2MidiDevice` previously had a real
+Branch `feat/ctr2-midi-ios` (ported from QK4-Android's unmerged `fix/ctr2-midi-ios-coremidi`). `Ctr2MidiDevice` previously had a real
 implementation only under `Q_OS_ANDROID`; every other platform fell through to
 a stub that enumerated nothing, so SCAN on iPhone and iPad could never find an
 attached controller. The non-Android branch is now implemented with RtMidi over
