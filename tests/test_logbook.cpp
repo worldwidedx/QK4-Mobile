@@ -60,8 +60,9 @@ private slots:
         LogbookUi::show(&host, log);
         QVERIFY(completed);
         QVERIFY(host.isVisible());
-        // Closing a focused editor queues focus restoration on Windows.
-        QTRY_COMPARE(QApplication::focusWidget(), &invoker);
+        // A headless Windows runner has no application-level active window,
+        // but the host still retains the invoker as its focus child.
+        QTRY_COMPARE(host.focusWidget(), &invoker);
     }
     void backDismissesOnlyNestedSetup() {
         QTemporaryDir dir;
