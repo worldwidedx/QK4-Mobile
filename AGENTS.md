@@ -2,7 +2,7 @@
 
 ## Current release and scope
 
-- Current release: **QK4 Mobile v1.0.5** (`com.w9wdx.qk4phone`).
+- Current release: **QK4 Mobile v1.0.6** (`com.w9wdx.qk4phone`).
 - Current supported build target: ARM64 Android touch devices, API 26+.
   The radio console uses landscape; other screens follow the
   [screen orientation policy](docs/ORIENTATION_POLICY.md).

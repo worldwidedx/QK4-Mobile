@@ -1,6 +1,18 @@
 # Project status
 
-Last updated: 2026-09-20 (orientation policy and validation inventory only)
+Last updated: 2026-09-29 (v1.0.6 Android release)
+
+## QK4 Mobile v1.0.6
+
+The Android ARM64 v1.0.6 release (version code 33) keeps Radio Manager's Audio
+Mode and Streaming Latency choices inside the existing application window. This
+avoids the Android native popup/EGL-surface teardown path reported in issue
+#12. The selectors use compact phone sizing and preserve touch scrolling,
+selection, and cancellation behavior. When TLS is selected, attempting to
+connect without a Password now gives an in-app prompt; non-TLS profiles remain
+permitted to connect with an empty Password. The Samsung Galaxy S26 Ultra
+device test confirmed the selector and prompt workflows. K4 CAT, TLS, and
+audio protocol behavior are unchanged.
 
 ## Device and orientation validation
 
