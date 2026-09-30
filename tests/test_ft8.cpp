@@ -26,6 +26,7 @@
 #include "ft8/ft8logbook.h"
 #include "ui/ft8waterfall.h"
 #include "ui/ft8screen.h"
+#include "ui/buttonrowpopup.h"
 #include "ui/fnpopupwidget.h"
 #include "ui/k4styles.h"
 #include "ui/inwindowdialog.h"
@@ -560,6 +561,37 @@ private slots:
         QTest::mouseRelease(button, Qt::LeftButton);
         QCOMPARE(action.count(), 2);
         QCOMPARE(action[1][0].toString(), MacroIds::Log);
+    }
+    void rxButtonGestures() {
+        QWidget host;
+        host.resize(800, 390);
+        host.show();
+        ButtonRowPopup popup(&host);
+        popup.setButtonLabel(0, "AGC-S", "ON", true);
+        const auto buttons = popup.findChildren<RxMenuButton *>();
+        QCOMPARE(buttons.size(), 7);
+        auto *button = buttons[0];
+        QSignalSpy primary(&popup, &ButtonRowPopup::buttonClicked);
+        QSignalSpy alternate(&popup, &ButtonRowPopup::buttonRightClicked);
+
+        popup.show();
+        QTest::mouseClick(button, Qt::LeftButton);
+        QCOMPARE(primary.size(), 1);
+        QCOMPARE(primary[0][0].toInt(), 0);
+        QCOMPARE(alternate.size(), 0);
+
+        QTest::mousePress(button, Qt::LeftButton);
+        QTest::qWait(650);
+        QTest::mouseRelease(button, Qt::LeftButton);
+        QCOMPARE(primary.size(), 1);
+        QCOMPARE(alternate.size(), 1);
+        QCOMPARE(alternate[0][0].toInt(), 0);
+
+        QTest::mousePress(button, Qt::LeftButton);
+        QTest::mouseMove(button, QPoint(-20, -20));
+        QTest::mouseRelease(button, Qt::LeftButton, Qt::NoModifier, QPoint(-20, -20));
+        QCOMPARE(primary.size(), 1);
+        QCOMPARE(alternate.size(), 1);
     }
     void standardReply() {
         auto s = station();

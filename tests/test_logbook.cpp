@@ -60,7 +60,9 @@ private slots:
         LogbookUi::show(&host, log);
         QVERIFY(completed);
         QVERIFY(host.isVisible());
-        QCOMPARE(QApplication::focusWidget(), &invoker);
+        // A headless Windows runner has no application-level active window,
+        // but the host still retains the invoker as its focus child.
+        QTRY_COMPARE(host.focusWidget(), &invoker);
     }
     void backDismissesOnlyNestedSetup() {
         QTemporaryDir dir;
@@ -120,13 +122,16 @@ private slots:
             QTest::mouseRelease(list->viewport(), Qt::LeftButton, {}, unsent.center());
             QCOMPARE(list->currentItem(), list->item(1)); // Drag does not select another contact.
             list->setProperty("logDragging", true); // Regression: this used to silently discard the action.
-            QTimer::singleShot(40, &host, [&] {
-                const auto dialogs = host.findChildren<InWindowDialog *>();
-                for (auto *dialog : dialogs) {
-                    if (dialog->objectName() == "inWindowDialogOverlay" && dialog->isVisible()) {
-                        opened = true; dialog->reject();
-                    }
-                }
+            auto *logbookSheet = host.findChild<InWindowDialog *>("logbookDialog");
+            QVERIFY(logbookSheet);
+            QTimer::singleShot(0, &host, [&, logbookSheet] {
+                // The feedback dialog is a direct child of the logbook sheet.
+                // Do not search the host: both sheets use the overlay object name.
+                auto *feedback = logbookSheet->findChild<InWindowDialog *>();
+                QVERIFY(feedback);
+                QVERIFY(feedback->isVisible());
+                opened = true;
+                feedback->reject();
             });
             send->click(); // Unconfigured mock service produces feedback; no HTTP request can be sent.
             QTest::mouseClick(list->viewport(), Qt::LeftButton, {}, uploaded.center());

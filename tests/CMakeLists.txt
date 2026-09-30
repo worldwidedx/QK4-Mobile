@@ -16,9 +16,14 @@ qt_add_executable(test_ft8 test_ft8.cpp
     ../src/ui/inwindowdialog.cpp ../src/ui/inwindowdialog.h
     ../src/ui/k4styles.cpp ../src/ui/k4styles.h
     ../src/ui/fnpopupwidget.cpp ../src/ui/fnpopupwidget.h
+    ../src/ui/buttonrowpopup.cpp ../src/ui/buttonrowpopup.h
     ../src/ui/k4popupbase.cpp ../src/ui/k4popupbase.h
     ../src/settings/radiosettings.cpp ../src/settings/radiosettings.h)
 target_link_libraries(test_ft8 PRIVATE qk4_ft8 Qt6::Test)
+# Compile the mobile pointer path into this native test target. Production
+# desktop builds retain click/right-click behavior; Android and iOS select the
+# same path through their Qt platform macros.
+target_compile_definitions(test_ft8 PRIVATE QK4_TEST_TOUCH_GESTURES)
 qt_add_resources(test_ft8 "ft8_test_icons"
     PREFIX "/"
     BASE "../resources"
@@ -72,7 +77,8 @@ endif()
 qt_add_executable(test_digitaltx test_digitaltx.cpp
     ../src/audio/digitaltxguard.cpp ../src/audio/digitaltxguard.h
     ../src/network/tcpclient.cpp ../src/network/tcpclient.h
-    ../src/network/protocol.cpp ../src/network/protocol.h)
+    ../src/network/protocol.cpp ../src/network/protocol.h
+    ../src/network/psktlssocket.h ../src/network/psktlssocket_qssl.cpp)
 target_include_directories(test_digitaltx PRIVATE ../src)
 target_link_libraries(test_digitaltx PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME digitaltx COMMAND test_digitaltx -o digitaltx-results.txt,txt -o -,txt)
@@ -100,6 +106,7 @@ add_test(NAME radiostate COMMAND test_radiostate)
 qt_add_executable(test_macros test_macros.cpp
     ../src/network/tcpclient.cpp ../src/network/tcpclient.h
     ../src/network/protocol.cpp ../src/network/protocol.h
+    ../src/network/psktlssocket.h ../src/network/psktlssocket_qssl.cpp
     ../src/audio/digitaltxguard.cpp ../src/audio/digitaltxguard.h
     ../src/models/radiostate.cpp ../src/models/radiostate.h
     ../src/models/menumodel.cpp ../src/models/menumodel.h)
