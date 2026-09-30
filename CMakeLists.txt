@@ -14,6 +14,16 @@ if(NOT DEFINED QK4_VERSION_FULL)
 endif()
 message(STATUS "QK4 version: ${QK4_VERSION_FULL}")
 
+# iOS build identifier (CFBundleVersion). Apple caps CFBundleShortVersionString
+# (the marketing version, QK4_VERSION_FULL) at three period-separated integers,
+# but allows more for CFBundleVersion, so each TestFlight/App Store upload can
+# bump just this value -- e.g. -DQK4_IOS_BUILD_NUMBER=1.0.6.2 -- without
+# changing the displayed product version. Must still increase monotonically
+# per upload; App Store Connect rejects a duplicate CFBundleVersion.
+if(NOT DEFINED QK4_IOS_BUILD_NUMBER)
+    set(QK4_IOS_BUILD_NUMBER "${QK4_VERSION_FULL}")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -431,7 +441,7 @@ elseif(IOS)
     # Build with the Xcode generator (qt-cmake defaults to it) and pick the
     # SDK at build time: cmake --build . -- -sdk iphonesimulator
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
-    set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_VERSION_FULL})
+    set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_IOS_BUILD_NUMBER})
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
     # Bundle identifier. Defaults to the worldwideDX id used for the primary
     # App Store listing; forks and TestFlight builds signed by a different
