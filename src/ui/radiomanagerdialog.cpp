@@ -1,4 +1,5 @@
 #include "radiomanagerdialog.h"
+#include "inwindowdialog.h"
 #include "overlaybackhandler.h"
 #include "k4styles.h"
 #include "network/protocol.h"
@@ -14,6 +15,141 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QTimer>
+
+namespace {
+
+// Android's native QComboBox popup creates a second EGL surface. Keep the
+// selection inside the Radio Manager window so opening, choosing, cancelling,
+// or switching audio settings never races Qt's Android surface teardown.
+class RadioManagerInWindowComboBox final : public QComboBox {
+public:
+    explicit RadioManagerInWindowComboBox(const QString &title, QWidget *parent = nullptr)
+        : QComboBox(parent), m_title(title) {}
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            // Delay activation until release. A selector press can then still
+            // become a vertical scroll gesture in the containing setup page.
+            m_pressed = true;
+            m_dragged = false;
+            m_pressPosition = event->position();
+            event->accept();
+            return;
+        }
+        QComboBox::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (m_pressed && (event->buttons() & Qt::LeftButton)
+            && (event->position() - m_pressPosition).manhattanLength()
+                   >= qMax(8, QApplication::startDragDistance())) {
+            m_dragged = true;
+        }
+        QComboBox::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            const bool activate = m_pressed && !m_dragged
+                                  && rect().contains(event->position().toPoint());
+            m_pressed = false;
+            m_dragged = false;
+            event->accept();
+            if (activate)
+                QTimer::singleShot(0, this, [this] { showPopup(); });
+            return;
+        }
+        QComboBox::mouseReleaseEvent(event);
+    }
+
+    void showPopup() override {
+        if (!isEnabled() || count() == 0)
+            return;
+
+        QWidget *dialogParent = window();
+        if (!dialogParent)
+            dialogParent = parentWidget();
+        if (!dialogParent)
+            return;
+
+        InWindowDialog dialog(dialogParent);
+        auto *panel = dialog.contentWidget();
+        auto *layout = new QVBoxLayout(panel);
+        layout->setContentsMargins(10, 8, 10, 8);
+        layout->setSpacing(7);
+
+        auto *title = new QLabel(m_title, panel);
+        title->setAlignment(Qt::AlignCenter);
+        title->setStyleSheet(QString("color:%1;font-size:%2px;font-weight:bold;")
+                                 .arg(K4Styles::Colors::AccentAmber)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+        layout->addWidget(title);
+
+        auto *list = new QListWidget(panel);
+        list->setObjectName("radioManagerSelectorList");
+        list->setSelectionMode(QAbstractItemView::SingleSelection);
+        list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        list->setStyleSheet(QString(
+            "QListWidget{background:%1;color:%2;border:1px solid %3;font-size:%4px;}"
+            "QListWidget::item{padding:7px;}"
+            "QListWidget::item:selected{background:%5;color:%1;}")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite,
+                 K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::FontSizeLarge)
+            .arg(K4Styles::Colors::AccentAmber));
+        for (int index = 0; index < count(); ++index) {
+            auto *item = new QListWidgetItem(itemText(index), list);
+            item->setData(Qt::UserRole, index);
+            item->setSizeHint(QSize(0, 40));
+        }
+        const int initial = qBound(0, currentIndex(), count() - 1);
+        list->setCurrentRow(initial);
+#ifdef Q_OS_ANDROID
+        list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
+#endif
+        layout->addWidget(list, 1);
+
+        auto *buttons = new QHBoxLayout;
+        auto *cancel = new QPushButton("CANCEL", panel);
+        auto *use = new QPushButton("USE", panel);
+        for (QPushButton *button : {cancel, use}) {
+            button->setMinimumHeight(42);
+            button->setStyleSheet(K4Styles::menuBarButton());
+            buttons->addWidget(button);
+        }
+        layout->addLayout(buttons);
+        QObject::connect(cancel, &QPushButton::clicked, &dialog, &InWindowDialog::reject);
+        QObject::connect(use, &QPushButton::clicked, &dialog, &InWindowDialog::accept);
+        QObject::connect(list, &QListWidget::itemDoubleClicked, &dialog,
+                         [&dialog](QListWidgetItem *) { dialog.accept(); });
+
+        const int panelWidth = qMin(620, qMax(300, dialogParent->width() - 20));
+        const int panelHeight = qMin(qMax(210, 105 + qMin(8, count()) * 40),
+                                     qMax(210, dialogParent->height() - 20));
+        dialog.setPanelSize(QSize(panelWidth, panelHeight));
+        QTimer::singleShot(0, list, [list, initial] {
+            if (QListWidgetItem *item = list->item(initial))
+                list->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+        });
+        if (dialog.exec() == InWindowDialog::Accepted && list->currentItem()) {
+            const int selected = list->currentItem()->data(Qt::UserRole).toInt();
+            setCurrentIndex(selected);
+            emit activated(selected);
+        }
+    }
+
+private:
+    QString m_title;
+    QPointF m_pressPosition;
+    bool m_pressed = false;
+    bool m_dragged = false;
+};
+
+} // namespace
 
 RadioManagerDialog::RadioManagerDialog(QWidget *parent) : QWidget(parent), m_currentIndex(-1) {
     new OverlayBackHandler(this, [this] { onBackClicked(); });
@@ -247,7 +383,8 @@ void RadioManagerDialog::setupUi() {
     // Row 6: Encode Mode dropdown
     auto *encodeModeLabel = new QLabel("Audio Mode", this);
     encodeModeLabel->setStyleSheet(labelStyle);
-    m_encodeModeCombo = new QComboBox(this);
+    m_encodeModeCombo = new RadioManagerInWindowComboBox("SELECT AUDIO MODE", this);
+    m_encodeModeCombo->setObjectName("radioEncodeMode");
     m_encodeModeCombo->setStyleSheet(
         QString("QComboBox { "
                 "  background-color: #FFFFFF; "
@@ -285,7 +422,8 @@ void RadioManagerDialog::setupUi() {
     // Row 7: Streaming Latency dropdown
     auto *streamingLatencyLabel = new QLabel("Streaming Latency", this);
     streamingLatencyLabel->setStyleSheet(labelStyle);
-    m_streamingLatencyCombo = new QComboBox(this);
+    m_streamingLatencyCombo = new RadioManagerInWindowComboBox("SELECT STREAMING LATENCY", this);
+    m_streamingLatencyCombo->setObjectName("radioStreamingLatency");
     m_streamingLatencyCombo->setStyleSheet(m_encodeModeCombo->styleSheet());
     for (int i = 0; i <= 7; i++) {
         m_streamingLatencyCombo->addItem(QString::number(i), i);
