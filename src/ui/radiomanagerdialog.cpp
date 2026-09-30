@@ -541,6 +541,13 @@ void RadioManagerDialog::refreshList() {
 void RadioManagerDialog::onConnectClicked() {
     QString host = m_hostEdit->text().trimmed();
     if (!host.isEmpty()) {
+        if (m_tlsCheckbox->isChecked() && m_passwordEdit->text().isEmpty()) {
+            showInWindowMessage(this, "TLS password required",
+                                "Enter the K4 TLS pre-shared key in Password, then tap Connect.");
+            m_passwordEdit->setFocus(Qt::OtherFocusReason);
+            return;
+        }
+
         // Check if this is a disconnect request (selected radio is already connected)
         if (!m_connectedHost.isEmpty() && host == m_connectedHost) {
             emit disconnectRequested();
