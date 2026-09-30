@@ -2,13 +2,14 @@
 #define TCPCLIENT_H
 
 #include <QObject>
-#include <QSslSocket>
+#include <QAbstractSocket>
 #include <QThread>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <atomic>
 #include "protocol.h"
 #include "audio/digitaltxguard.h"
+#include "psktlssocket.h"
 
 class TcpClient : public QObject {
     Q_OBJECT
@@ -80,8 +81,6 @@ private slots:
     void onSocketDisconnected();
     void onReadyRead();
     void onSocketError(QAbstractSocket::SocketError error);
-    void onSslErrors(const QList<QSslError> &errors);
-    void onPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator);
     void onConnectTimeout();
     void onAuthTimeout();
     void onPingTimer();
@@ -98,7 +97,7 @@ private:
     void finishDigitalCalibration(bool success, const QString &text);
     void completeDigitalCalibration();
 
-    QSslSocket *m_socket;
+    PskTlsSocket *m_socket;
     Protocol *m_protocol;
     QTimer *m_connectTimer;
     QTimer *m_authTimer;

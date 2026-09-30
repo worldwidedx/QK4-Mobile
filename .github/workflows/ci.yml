@@ -1,0 +1,190 @@
+name: QK4 CI
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  push:
+    branches: [main, 'release/**', 'codex/ci-validation/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qk4-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  QK4_QT_VERSION: '6.11.1'
+
+jobs:
+  policy:
+    name: Policy checks
+    runs-on: windows-2022
+    timeout-minutes: 10
+    outputs:
+      ios: ${{ steps.platforms.outputs.ios }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check contributor documentation
+        shell: pwsh
+        run: ./scripts/ci/check-policy.ps1
+      - name: Detect integrated iOS sources
+        id: platforms
+        shell: pwsh
+        run: |
+          $ios = Test-Path src/ios/iosaudiosession.mm
+          "ios=$($ios.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+  windows:
+    name: ${{ matrix.check }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [Native tests, Android build]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install matching desktop Qt and compiler
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          modules: qtshadertools qtmultimedia qtserialport
+          tools: tools_mingw1310,qt.tools.win64_mingw1310
+          dir: ${{ runner.temp }}
+          cache: true
+      - name: Set explicit build paths
+        shell: pwsh
+        run: |
+          "QK4_QT_HOST=$env:RUNNER_TEMP/Qt/$env:QK4_QT_VERSION/mingw_64" >> $env:GITHUB_ENV
+          "QK4_MINGW_BIN=$env:RUNNER_TEMP/Qt/Tools/mingw1310_64/bin" >> $env:GITHUB_ENV
+          "QK4_CMAKE=$((Get-Command cmake).Source)" >> $env:GITHUB_ENV
+          "QK4_NINJA=$((Get-Command ninja).Source)" >> $env:GITHUB_ENV
+      - name: Native regression suite
+        if: matrix.check == 'Native tests'
+        shell: pwsh
+        run: |
+          ./test-windows.cmd -Action Test -Parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install Android Qt
+        if: matrix.check == 'Android build'
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+          host: all_os
+          target: android
+          arch: android_arm64_v8a
+          modules: qtshadertools qtmultimedia qtserialport
+          dir: ${{ runner.temp }}
+          set-env: false
+          cache: true
+      - name: Install Java
+        if: matrix.check == 'Android build'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build prerequisites
+        if: matrix.check == 'Android build'
+        shell: pwsh
+        run: |
+          $sdkManager = Join-Path $env:ANDROID_HOME 'cmdline-tools/latest/bin/sdkmanager.bat'
+          & $sdkManager 'platform-tools' 'platforms;android-34' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "ANDROID_SDK_ROOT=$env:ANDROID_HOME" >> $env:GITHUB_ENV
+          "ANDROID_NDK_ROOT=$env:ANDROID_HOME/ndk/27.2.12479018" >> $env:GITHUB_ENV
+          "QK4_QT_ANDROID=$env:RUNNER_TEMP/Qt/$env:QK4_QT_VERSION/android_arm64_v8a" >> $env:GITHUB_ENV
+          "QK4_JAVA_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+      - name: Build debug APK without installing
+        if: matrix.check == 'Android build'
+        shell: pwsh
+        run: |
+          ./build-android.cmd -Action Apk
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain native test diagnostics
+        if: always() && matrix.check == 'Native tests'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-test-results-${{ github.run_id }}
+          path: |
+            build-tests/Testing/Temporary/LastTest.log
+            build-tests/*-results.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios:
+    name: iOS compile
+    needs: policy
+    if: needs.policy.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Qt host
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+          host: mac
+          target: desktop
+          arch: clang_64
+          modules: qtshadertools qtmultimedia qtserialport
+          dir: ${{ runner.temp }}
+          cache: true
+      - name: Install Qt iOS
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: ${{ env.QK4_QT_VERSION }}
+          # Pinned upstream fix for Qt 6.11 architecture-specific repositories.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+          host: mac
+          target: ios
+          arch: ios
+          modules: qtshadertools qtmultimedia
+          dir: ${{ runner.temp }}
+          cache: true
+      - name: Compile unsigned ARM64 iOS target
+        shell: bash
+        env:
+          QK4_QT_IOS: ${{ runner.temp }}/Qt/${{ env.QK4_QT_VERSION }}/ios
+          QK4_QT_HOST: ${{ runner.temp }}/Qt/${{ env.QK4_QT_VERSION }}/macos
+        run: bash scripts/ci/build-ios.sh
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [policy, windows, ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enforce expected results
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          IOS_EXPECTED: ${{ needs.policy.outputs.ios }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: |
+          test "$POLICY_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+          if [ "$IOS_EXPECTED" = true ]; then
+            test "$IOS_RESULT" = success
+          else
+            test "$IOS_RESULT" = skipped
+            echo 'iOS platform code is not integrated; no iOS compile claim is made.'
+          fi

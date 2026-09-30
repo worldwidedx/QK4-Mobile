@@ -1,5 +1,11 @@
 # FT8 / FT4 module
 
+Orientation requirements are defined by the authoritative
+[screen orientation policy](ORIENTATION_POLICY.md). Portrait descriptions in
+this scope describe the phone implementation and baseline. Android phones and
+iPhones remain portrait-only; Android tablet and iPad landscape work follows
+the policy's separate acceptance requirements.
+
 Started 2026-09-08 on `codex/ft8-ft4-portrait`, based on tag `v1.0.3`.
 The original `codex/keep-awake-ctr2-midi` working directory and its uncommitted
 SSTV/CW/CTR2 changes are untouched. This module is not a published release.
