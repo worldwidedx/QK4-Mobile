@@ -3,7 +3,9 @@
 
 #include <QList>
 #include <QObject>
+#if !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
 #include <QSerialPortInfo>
+#endif
 #include <QString>
 #include <QThread>
 #include <QTimer>
