@@ -41,6 +41,9 @@
 #ifdef Q_OS_ANDROID
 #include <QPermissions>
 #endif
+#ifdef Q_OS_IOS
+#include "../ios/iosbluetoothmidi.h"
+#endif
 
 // Use K4Styles::Colors::DialogBorder for dialog-specific borders
 
@@ -589,7 +592,7 @@ void OptionsDialog::hideEvent(QHideEvent *event) {
 }
 
 bool OptionsDialog::eventFilter(QObject *watched, QEvent *event) {
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     if (m_cwControlsScroll && watched->property("cwScrollSurface").toBool()) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto *mouseEvent = static_cast<QMouseEvent *>(event);
@@ -1653,7 +1656,7 @@ QWidget *OptionsDialog::createCwKeyerPage() {
                                K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     layout->setContentsMargins(12, 8, 12, 8);
     layout->setSpacing(6);
     auto *androidTitleLabel = new QLabel("CW Keyer", page);
@@ -1662,8 +1665,15 @@ QWidget *OptionsDialog::createCwKeyerPage() {
                                          .arg(K4Styles::Dimensions::FontSizeTitle));
     layout->addWidget(androidTitleLabel);
 
+#ifdef Q_OS_IOS
+    // iOS hides an unpaired Bluetooth LE MIDI device from every app until it is
+    // paired in Apple's browser, which BLUETOOTH presents.
+    auto *helpLabel = new QLabel("Connect a USB MIDI paddle interface, or tap BLUETOOTH to pair a Bluetooth LE "
+                                 "MIDI device, then tap SCAN. USB and BLE MIDI devices appear together below.", page);
+#else
     auto *helpLabel = new QLabel("Connect a USB MIDI paddle interface or make a Bluetooth LE MIDI device "
                                  "discoverable, then tap SCAN. USB and BLE MIDI devices appear together below.", page);
+#endif
     helpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                  .arg(K4Styles::Colors::TextGray)
                                  .arg(K4Styles::Dimensions::FontSizeButton));
@@ -1671,7 +1681,11 @@ QWidget *OptionsDialog::createCwKeyerPage() {
     layout->addWidget(helpLabel);
 
     m_cwKeyerDeviceTypeCombo = new QComboBox(page);
+#ifdef Q_OS_IOS
+    m_cwKeyerDeviceTypeCombo->addItem("HaliKey MIDI", 1);
+#else
     m_cwKeyerDeviceTypeCombo->addItem("Android MIDI", 1);
+#endif
     m_cwKeyerDeviceTypeCombo->hide();
 
     auto *androidStatusLayout = new QHBoxLayout();
@@ -1701,6 +1715,30 @@ QWidget *OptionsDialog::createCwKeyerPage() {
     connect(m_cwKeyerRefreshBtn, &QPushButton::clicked, this, &OptionsDialog::onCwKeyerRefreshClicked);
     deviceLayout->addWidget(m_cwKeyerPortCombo, 1);
     deviceLayout->addWidget(m_cwKeyerRefreshBtn);
+#ifdef Q_OS_IOS
+    auto *bluetoothBtn = new QPushButton("BLUETOOTH", page);
+    bluetoothBtn->setFixedSize(140, 42);
+    bluetoothBtn->setStyleSheet(K4Styles::menuBarButton());
+    connect(bluetoothBtn, &QPushButton::clicked, this, [this]() {
+        if (m_cwKeyerStatusLabel)
+            m_cwKeyerStatusLabel->setText("Pairing Bluetooth MIDI...");
+        QPointer<OptionsDialog> guard(this);
+        iosShowBluetoothMidiPicker([guard]() {
+            if (!guard)
+                return;
+            // A freshly paired peripheral reaches CoreMIDI after a short delay.
+            guard->populateCwKeyerPorts();
+            for (int delay : {1000, 3000, 6000, 8500}) {
+                QTimer::singleShot(delay, guard, [guard]() {
+                    if (guard)
+                        guard->populateCwKeyerPorts();
+                });
+            }
+            guard->updateCwKeyerStatus();
+        });
+    });
+    deviceLayout->addWidget(bluetoothBtn);
+#endif
 
     m_cwKeyerConnectBtn = new QPushButton("CONNECT", page);
     m_cwKeyerConnectBtn->setFixedSize(140, 42);
@@ -2387,6 +2425,30 @@ void OptionsDialog::populateCwKeyerPorts() {
                 }
             }
         }
+#ifdef Q_OS_IOS
+        // CoreMIDI always lists its virtual "Network Session"; never default to
+        // it ahead of a real paddle interface (CTR2 / TinyMIDI report
+        // CTR2_####, XIAO or ESP32 names).
+        if (selectedIndex < 0) {
+            static const QStringList paddleHints = {"CTR2", "TinyMIDI", "XIAO", "XIO", "ESP32"};
+            for (int i = 0; i < m_cwKeyerPortCombo->count() && selectedIndex < 0; i++) {
+                for (const QString &hint : paddleHints) {
+                    if (m_cwKeyerPortCombo->itemText(i).contains(hint, Qt::CaseInsensitive)) {
+                        selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        if (selectedIndex < 0) {
+            for (int i = 0; i < m_cwKeyerPortCombo->count(); i++) {
+                if (!m_cwKeyerPortCombo->itemText(i).contains("Network Session", Qt::CaseInsensitive)) {
+                    selectedIndex = i;
+                    break;
+                }
+            }
+        }
+#endif
     } else {
         // V14 device — enumerate serial ports
         auto ports = HalikeyDevice::availablePortsDetailed();
@@ -2436,6 +2498,10 @@ void OptionsDialog::onCwKeyerRefreshClicked() {
     populateCwKeyerPorts(); // USB enumeration is synchronous and available immediately.
     for (int delay : {1000, 3000, 6000, 8500})
         QTimer::singleShot(delay, this, &OptionsDialog::populateCwKeyerPorts);
+#elif defined(Q_OS_IOS)
+    populateCwKeyerPorts();
+    // One short retry covers a USB or just-paired device still enumerating.
+    QTimer::singleShot(1000, this, &OptionsDialog::populateCwKeyerPorts);
 #else
     populateCwKeyerPorts();
 #endif

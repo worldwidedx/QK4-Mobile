@@ -338,6 +338,26 @@ bool HalikeyDevice::openPort(const QString &portName) {
     connect(m_worker, &HaliKeyWorkerBase::ditStateChanged, this, &HalikeyDevice::onRawDit);
     connect(m_worker, &HaliKeyWorkerBase::dahStateChanged, this, &HalikeyDevice::onRawDah);
     connect(m_worker, &HaliKeyWorkerBase::pttStateChanged, this, &HalikeyDevice::onRawPtt);
+#ifdef Q_OS_IOS
+    // Same profile mapping as the Android branch above, so TinyMIDI, HaliKey
+    // and custom LEARN mappings behave identically on iOS.
+    connect(m_worker, &HaliKeyWorkerBase::rawMidiMessage, this,
+            [this](int status, int note, int velocity, bool pressed) {
+        emit rawMidiEvent(status, note, velocity, pressed);
+        const auto *settings = RadioSettings::instance();
+        const int profile = settings->midiMappingProfile();
+        const int ditStatus = profile < 2 ? 0x90 : settings->midiDitStatus();
+        const int ditData1 = profile < 2 ? 20 : settings->midiDitData1();
+        const int dahStatus = profile < 2 ? 0x90 : settings->midiDahStatus();
+        const int dahData1 = profile < 2 ? 21 : settings->midiDahData1();
+        const int kind = status & 0xf0;
+        const int matchKind = kind == 0x80 ? 0x90 : kind;
+        if (matchKind == ditStatus && note == ditData1)
+            onRawDit(pressed);
+        else if (matchKind == dahStatus && note == dahData1)
+            onRawDah(pressed);
+    });
+#endif
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
         m_connected = true;
         emit connected();
