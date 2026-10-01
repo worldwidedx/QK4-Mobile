@@ -113,7 +113,7 @@ protected:
         }
         const int initial = qBound(0, currentIndex(), count() - 1);
         list->setCurrentRow(initial);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
         QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif

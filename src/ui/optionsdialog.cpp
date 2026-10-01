@@ -409,7 +409,7 @@ QWidget *OptionsDialog::createFnKeySetupPage() {
     rowsLayout->addStretch();
     scroll->setWidget(rows);
     layout->addWidget(scroll, 1);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     scroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
     QScroller::grabGesture(scroll->viewport(), QScroller::TouchGesture);
     if (QScroller *scroller = QScroller::scroller(scroll->viewport())) {
