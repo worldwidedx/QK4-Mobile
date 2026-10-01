@@ -5,6 +5,10 @@
 #include "../hardware/ctr2mididevice.h"
 #include "../settings/radiosettings.h"
 
+#ifdef Q_OS_IOS
+#include "../ios/iosbluetoothmidi.h"
+#endif
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QAbstractButton>
@@ -21,6 +25,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QScrollArea>
@@ -126,7 +131,7 @@ protected:
         }
         const int initial = qBound(0, currentIndex(), count() - 1);
         list->setCurrentRow(initial);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
         QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif
@@ -252,13 +257,22 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
     m_deviceSelector->setStyleSheet(comboStyle());
     m_scanButton = new QPushButton("SCAN", this);
     m_connectButton = new QPushButton("CONNECT", this);
-    for (QPushButton *button : {m_scanButton, m_connectButton}) {
+#ifdef Q_OS_IOS
+    // iOS publishes a BLE MIDI peripheral to CoreMIDI only after it is paired
+    // in Apple's own browser, so pairing needs its own entry point.
+    m_bluetoothButton = new QPushButton("BLUETOOTH", this);
+#endif
+    for (QPushButton *button : {m_scanButton, m_connectButton, m_bluetoothButton}) {
+        if (!button)
+            continue;
         button->setMinimumHeight(42);
         button->setStyleSheet(K4Styles::menuBarButton());
     }
     deviceRow->addWidget(deviceLabel);
     deviceRow->addWidget(m_deviceSelector, 1);
     deviceRow->addWidget(m_scanButton);
+    if (m_bluetoothButton)
+        deviceRow->addWidget(m_bluetoothButton);
     deviceRow->addWidget(m_connectButton);
     root->addLayout(deviceRow);
 
@@ -374,6 +388,18 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
     root->addWidget(ft8Help);
     m_extendedButtons = new QCheckBox("Extended Button Mode", this);
     root->addWidget(m_extendedButtons);
+#ifdef Q_OS_IOS
+    // The iOS default palette draws checkbox text dark, invisible on this
+    // page; use the same style as the other settings checkboxes.
+    for (QCheckBox *box : {m_cwEnabled, m_tipRingSwapped, m_extendedButtons}) {
+        box->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                   "QCheckBox::indicator { width: %4px; height: %4px; }")
+                               .arg(K4Styles::Colors::TextWhite)
+                               .arg(K4Styles::Dimensions::FontSizePopup)
+                               .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                               .arg(K4Styles::Dimensions::CheckboxSize));
+    }
+#endif
     auto *extendedButtonHelp = new QLabel(
         "Enable this only when Extended BTN Mode is also enabled in CTR2-MIDI. It expands the "
         "list from 12 shared functions to 48 functions across Home and Knob modes 1-3.", this);
@@ -429,6 +455,10 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
     connect(exportButton, &QPushButton::clicked, this, &Ctr2MappingEditor::exportMapping);
     connect(apply, &QPushButton::clicked, this, [this]() { saveCurrent(); });
     connect(m_scanButton, &QPushButton::clicked, this, &Ctr2MappingEditor::scanMidiDevices);
+    if (m_bluetoothButton) {
+        connect(m_bluetoothButton, &QPushButton::clicked, this,
+                &Ctr2MappingEditor::showBluetoothPairing);
+    }
     connect(m_connectButton, &QPushButton::clicked, this, &Ctr2MappingEditor::toggleConnection);
     connect(m_deviceSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int index) {
@@ -451,7 +481,7 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
     m_scroll->setWidget(content);
     outer->addWidget(m_scroll);
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     m_scroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
     QScroller::grabGesture(m_scroll->viewport(), QScroller::TouchGesture);
     if (QScroller *scroller = QScroller::scroller(m_scroll->viewport())) {
@@ -500,6 +530,97 @@ void Ctr2MappingEditor::installInteractiveFilters() {
     }
 }
 
+namespace {
+// CTR2-MIDI does not present a branded USB MIDI name. The controller is built
+// on a Seeed XIAO ESP32-S3 and CoreMIDI and Android both report that module
+// identity (for example "XIO_ESP32S3"), so match the hardware identity as well
+// as the branded BLE names.
+bool looksLikeCtr2Device(const QString &name) {
+    static const QStringList hints = {
+        QStringLiteral("CTR2"),
+        QStringLiteral("Lynovation"),
+        QStringLiteral("XIAO"),
+        QStringLiteral("XIO"),
+        QStringLiteral("ESP32"),
+    };
+    for (const QString &hint : hints) {
+        if (name.contains(hint, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+// Software endpoints that CoreMIDI and the desktop backends always publish.
+// They are never a CTR2 controller, so they must not win the default
+// selection simply by sorting first.
+bool isVirtualMidiEndpoint(const QString &name) {
+    static const QStringList virtualNames = {
+        QStringLiteral("Network Session"),
+        QStringLiteral("IAC Driver"),
+        QStringLiteral("Bluetooth"),
+    };
+    for (const QString &entry : virtualNames) {
+        if (name.contains(entry, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+// Selector keys carry a transport prefix that the device layer strips before
+// resolving a port. Comparisons must ignore it too.
+QString strippedDeviceKey(const QString &key) {
+    if (key.startsWith(QStringLiteral("usb:")) || key.startsWith(QStringLiteral("ble:")))
+        return key.mid(4);
+    return key;
+}
+
+// Apple's Bluetooth MIDI driver names the endpoint after the peripheral with
+// the transport appended, so a paired CTR2 arrives as "CTR2_C0F8 Bluetooth".
+// Appending the transport tag on top of that reads "Bluetooth (BLE)". Drop the
+// driver's trailing word so the entry matches the Android wording,
+// "CTR2_C0F8 (BLE)". Network endpoints are left alone: their transport word is
+// part of the name itself, as in "Network Session 1".
+QString withoutRedundantTransportWord(const QString &label, const QString &transport) {
+    QStringList redundant;
+    if (transport == QStringLiteral("BLE"))
+        redundant << QStringLiteral("Bluetooth") << QStringLiteral("BLE");
+    else if (transport == QStringLiteral("USB"))
+        redundant << QStringLiteral("USB");
+
+    for (const QString &word : std::as_const(redundant)) {
+        if (!label.endsWith(word, Qt::CaseInsensitive))
+            continue;
+        const QString trimmed =
+            label.left(label.size() - word.size()).trimmed();
+        if (!trimmed.isEmpty())
+            return trimmed;
+    }
+    return label;
+}
+
+// Over USB the controller reports only its module identity, so the selector
+// would otherwise read "XIO_ESP32S3" with nothing to tie it to CTR2. Android
+// shows branding because it discovers CTR2 over BLE, where the advertised name
+// carries it. Add the branding here while keeping the reported identity
+// visible, so the operator can still tell two attached modules apart.
+QString ctr2DisplayName(const QString &name) {
+    QString label = name;
+    if (looksLikeCtr2Device(name)
+        && !name.contains(QStringLiteral("CTR2"), Qt::CaseInsensitive)) {
+        label = QStringLiteral("CTR2-MIDI (%1)").arg(name);
+    }
+#ifdef Q_OS_IOS
+    // Transport comes from the CoreMIDI driver and is appended only when it is
+    // positively identified, so an entry is never mislabeled.
+    const QString transport = iosMidiTransportForName(name);
+    if (!transport.isEmpty())
+        label = QStringLiteral("%1 (%2)").arg(withoutRedundantTransportWord(label, transport),
+                                              transport);
+#endif
+    return label;
+}
+}
+
 void Ctr2MappingEditor::populateMidiDevices() {
     if (!m_deviceSelector)
         return;
@@ -514,9 +635,10 @@ void Ctr2MappingEditor::populateMidiDevices() {
         const QString key = fields.value(1);
         if (key.isEmpty())
             continue;
-        m_deviceSelector->addItem(name, key);
-        if (key == savedKey || (key.startsWith(QStringLiteral("ble:"))
-                                && key.mid(4) == savedKey))
+        m_deviceSelector->addItem(ctr2DisplayName(name), key);
+        // Match without the transport prefix so a controller remembered over
+        // one transport is still recognized when it returns over the other.
+        if (key == savedKey || strippedDeviceKey(key) == strippedDeviceKey(savedKey))
             selected = m_deviceSelector->count() - 1;
     }
     if (selected < 0 && !savedKey.isEmpty()) {
@@ -529,9 +651,17 @@ void Ctr2MappingEditor::populateMidiDevices() {
     }
     if (selected < 0) {
         for (int index = 0; index < m_deviceSelector->count(); ++index) {
-            const QString name = m_deviceSelector->itemText(index);
-            if (name.contains(QStringLiteral("CTR2"), Qt::CaseInsensitive)
-                || name.contains(QStringLiteral("Lynovation"), Qt::CaseInsensitive)) {
+            if (looksLikeCtr2Device(m_deviceSelector->itemText(index))) {
+                selected = index;
+                break;
+            }
+        }
+    }
+    if (selected < 0) {
+        // No recognizable CTR2. Prefer any real endpoint over a virtual one so
+        // the default selection is never a software MIDI session.
+        for (int index = 0; index < m_deviceSelector->count(); ++index) {
+            if (!isVirtualMidiEndpoint(m_deviceSelector->itemText(index))) {
                 selected = index;
                 break;
             }
@@ -545,11 +675,47 @@ void Ctr2MappingEditor::populateMidiDevices() {
 
 void Ctr2MappingEditor::scanMidiDevices() {
     Ctr2MidiDevice::startMidiScan();
-    if (m_connectionStatus)
+    if (m_connectionStatus) {
+#ifdef Q_OS_ANDROID
         m_connectionStatus->setText(QStringLiteral("Scanning USB and BLE MIDI…"));
+#elif defined(Q_OS_IOS)
+        // A Bluetooth peripheral is listed once it has been paired through the
+        // BLUETOOTH button; CoreMIDI does not discover unpaired peripherals.
+        m_connectionStatus->setText(QStringLiteral("Scanning USB and paired Bluetooth MIDI…"));
+#else
+        m_connectionStatus->setText(QStringLiteral("Scanning USB MIDI…"));
+#endif
+    }
     populateMidiDevices();
+#ifdef Q_OS_ANDROID
     for (int delay : {1000, 3000, 6000, 8500})
         QTimer::singleShot(delay, this, &Ctr2MappingEditor::populateMidiDevices);
+#else
+    // One short retry covers a device that is still enumerating.
+    QTimer::singleShot(1000, this, &Ctr2MappingEditor::populateMidiDevices);
+#endif
+}
+
+void Ctr2MappingEditor::showBluetoothPairing() {
+#ifdef Q_OS_IOS
+    if (m_connectionStatus)
+        m_connectionStatus->setText(QStringLiteral("Pairing Bluetooth MIDI…"));
+    QPointer<Ctr2MappingEditor> guard(this);
+    iosShowBluetoothMidiPicker([guard]() {
+        if (!guard)
+            return;
+        // A freshly paired peripheral does not become a CoreMIDI source
+        // immediately, so re-enumerate on the same staggered schedule the
+        // Android BLE scan uses.
+        guard->populateMidiDevices();
+        for (int delay : {1000, 3000, 6000, 8500}) {
+            QTimer::singleShot(delay, guard, [guard]() {
+                if (guard)
+                    guard->populateMidiDevices();
+            });
+        }
+    });
+#endif
 }
 
 void Ctr2MappingEditor::toggleConnection() {
