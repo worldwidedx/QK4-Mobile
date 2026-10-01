@@ -3,6 +3,21 @@
 #import <CoreAudioKit/CoreAudioKit.h>
 #import <CoreMIDI/CoreMIDI.h>
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+
+// Programmatic dismissal (Done) never reaches this; only a user swipe does.
+@interface QK4BtMidiPickerDismissDelegate : NSObject <UIAdaptivePresentationControllerDelegate>
+@property (nonatomic, copy) void (^onDismiss)(void);
+@end
+
+@implementation QK4BtMidiPickerDismissDelegate
+- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {
+    if (self.onDismiss)
+        self.onDismiss();
+}
+@end
+
+static char kDismissDelegateKey;
 
 #include <QDebug>
 
@@ -125,17 +140,28 @@ void iosShowBluetoothMidiPicker(std::function<void()> onDismiss) {
             [[UINavigationController alloc] initWithRootViewController:picker];
         navigation.modalPresentationStyle = UIModalPresentationFormSheet;
 
+        void (^finished)(void) = ^{
+            if (onDismiss)
+                onDismiss();
+        };
+
         __weak UINavigationController *weakNavigation = navigation;
         UIAction *done = [UIAction actionWithHandler:^(UIAction *) {
-            [weakNavigation dismissViewControllerAnimated:YES
-                                               completion:^{
-                                                   if (onDismiss)
-                                                       onDismiss();
-                                               }];
+            [weakNavigation dismissViewControllerAnimated:YES completion:finished];
         }];
-        picker.navigationItem.rightBarButtonItem =
+        // Left side: the picker replaces its right bar item with a scanning
+        // indicator, which hid a right-side Done and left no way out on iPhone,
+        // where the sheet is full screen in landscape and cannot be swiped away.
+        picker.navigationItem.leftBarButtonItem =
             [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                                    primaryAction:done];
+
+        // Swiping the sheet away (iPad) must clean up the same way as Done.
+        QK4BtMidiPickerDismissDelegate *dismissDelegate = [[QK4BtMidiPickerDismissDelegate alloc] init];
+        dismissDelegate.onDismiss = finished;
+        navigation.presentationController.delegate = dismissDelegate;
+        objc_setAssociatedObject(navigation, &kDismissDelegateKey, dismissDelegate,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
         [presenter presentViewController:navigation animated:YES completion:nil];
     });
