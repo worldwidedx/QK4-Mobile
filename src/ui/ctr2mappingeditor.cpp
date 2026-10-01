@@ -388,6 +388,18 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
     root->addWidget(ft8Help);
     m_extendedButtons = new QCheckBox("Extended Button Mode", this);
     root->addWidget(m_extendedButtons);
+#ifdef Q_OS_IOS
+    // The iOS default palette draws checkbox text dark, invisible on this
+    // page; use the same style as the other settings checkboxes.
+    for (QCheckBox *box : {m_cwEnabled, m_tipRingSwapped, m_extendedButtons}) {
+        box->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                   "QCheckBox::indicator { width: %4px; height: %4px; }")
+                               .arg(K4Styles::Colors::TextWhite)
+                               .arg(K4Styles::Dimensions::FontSizePopup)
+                               .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                               .arg(K4Styles::Dimensions::CheckboxSize));
+    }
+#endif
     auto *extendedButtonHelp = new QLabel(
         "Enable this only when Extended BTN Mode is also enabled in CTR2-MIDI. It expands the "
         "list from 12 shared functions to 48 functions across Home and Knob modes 1-3.", this);
