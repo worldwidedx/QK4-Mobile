@@ -1619,6 +1619,20 @@ MainWindow::MainWindow(QWidget *parent)
     // Create notification popup for K4 error/status messages (ERxx:)
     m_notificationWidget = new NotificationWidget(this);
 
+    // A fresh install shows an idle console with nothing to say it is waiting
+    // for a radio; App Review read that as "failed to load any content".
+    m_noRadioHint = new QLabel("No radio configured.\nTap CONN to add your radio.", centralWidget());
+    m_noRadioHint->setAlignment(Qt::AlignCenter);
+    m_noRadioHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_noRadioHint->setStyleSheet(QString("QLabel { color: %1; background-color: rgba(0, 0, 0, 200);"
+                                         " border: 1px solid %2; border-radius: 8px; padding: 14px 22px;"
+                                         " font-size: %3px; font-weight: bold; }")
+                                     .arg(K4Styles::Colors::TextWhite, K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizePopup));
+    m_noRadioHint->hide();
+    connect(RadioSettings::instance(), &RadioSettings::radiosChanged, this, &MainWindow::updateNoRadioHint);
+    QTimer::singleShot(0, this, &MainWindow::updateNoRadioHint);
+
     // TcpClient signals
     connect(m_tcpClient, &TcpClient::stateChanged, this, &MainWindow::onStateChanged);
     connect(m_tcpClient, &TcpClient::errorOccurred, this, &MainWindow::onError);
@@ -5602,6 +5616,7 @@ void MainWindow::showRadioManager() {
             QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
         });
         connect(m_radioManager, &RadioManagerDialog::closeRequested, m_radioManager, &QWidget::hide);
+        connect(m_radioManager, &RadioManagerDialog::closeRequested, this, &MainWindow::updateNoRadioHint);
     }
 
     // Set the connected host so the manager can show "Disconnect" for the
@@ -5611,6 +5626,7 @@ void MainWindow::showRadioManager() {
     m_radioManager->show();
     m_radioManager->raise();
     m_radioManager->setFocus(Qt::OtherFocusReason);
+    updateNoRadioHint();
 }
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
@@ -5655,6 +5671,7 @@ void MainWindow::onDisconnectClicked() {
 void MainWindow::onStateChanged(TcpClient::ConnectionState state) {
     m_connectionState = state;
     updateConnectionState(state);
+    updateNoRadioHint();
 }
 
 void MainWindow::onError(const QString &error) {
@@ -7369,6 +7386,23 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     }
     if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(rect());
     updatePhoneTxInputShieldGeometry();
+    updateNoRadioHint();
+}
+
+void MainWindow::updateNoRadioHint() {
+    if (!m_noRadioHint || !centralWidget())
+        return;
+    const bool show = !m_tcpClient->isConnected() && RadioSettings::instance()->radios().isEmpty()
+                      && !(m_radioManager && m_radioManager->isVisible());
+    if (!show) {
+        m_noRadioHint->hide();
+        return;
+    }
+    m_noRadioHint->adjustSize();
+    const QRect area = centralWidget()->rect();
+    m_noRadioHint->move(area.center() - QPoint(m_noRadioHint->width() / 2, m_noRadioHint->height() / 2));
+    m_noRadioHint->show();
+    m_noRadioHint->raise();
 }
 
 void MainWindow::positionCompactBSetIndicator() {
