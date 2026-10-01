@@ -205,7 +205,13 @@ void RadioManagerDialog::setupUi() {
     contentWidget->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
     scrollArea->setWidget(contentWidget);
     if (compact) {
+#ifndef Q_OS_IOS
         contentWidget->setMinimumWidth(qMax(300, width() - 20));
+#endif
+        // iOS: availableGeometry() is the whole screen, but this overlay sits in
+        // the safe-area central widget (iPhone landscape: 874pt screen, 750pt
+        // safe). A width taken from the screen pushed CLOSE off the right edge,
+        // so let the resizable scroll area track the real viewport instead.
         contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     }
 
