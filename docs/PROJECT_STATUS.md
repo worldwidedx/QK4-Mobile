@@ -1,10 +1,10 @@
 # Project status
 
-Last updated: 2026-10-04 (unreleased issue #21 correction)
+Last updated: 2026-10-06 (unreleased Fold transition investigation)
 
 ## Unreleased: compact console on folding Android devices (#21)
 
-The approved correction checks Android's hinge-angle hardware feature and sensor
+The proposed correction checks Android's hinge-angle hardware feature and sensor
 presence before constructing the console. A positive result forces compact mode
 on both the cover and inner displays, regardless of screen diagonal. This is a
 capability check, not a hinge-angle subscription or a model-name list. Devices
@@ -14,28 +14,46 @@ Mobile; changing it does not rebuild the live console or affect a radio session.
 
 The existing v1.0.6 tablet heuristic remains for other devices. Earlier statements
 that all Android displays still force compact mode were stale. Automatic
-window-based switching is deferred; the fixed startup choice preserves the
-existing connection/audio lifecycle during folding. No CAT, audio, transmit,
-per-module orientation, or iOS device-selection behavior is changed.
+window-based layout switching is deferred. No CAT, audio, transmit,
+per-module orientation, or iOS device-selection behavior is intentionally changed.
 
-Validation on 2026-10-04: all 17 native suites passed through
-`test-windows.cmd -Action Test`, including the new Android layout-policy,
-preference persistence, and settings-page fit checks. The settings page was
-visually inspected at a 400 x 220 logical viewport. Android ARM64 debug APK
-packaging passed through `build-android.cmd -Action Apk`.
-Policy links and working-tree whitespace checks passed.
+On 2026-10-04, all 17 native suites passed through `test-windows.cmd -Action Test`,
+including synthetic Android layout-policy, preference persistence, and
+settings-page fit checks. Android ARM64 debug APK packaging passed through
+`build-android.cmd -Action Apk`, and the separate **QK4 Mobile Test** package was
+installed on a Samsung Galaxy S26 Ultra. This was not physical Fold acceptance.
 
-At the owner's request, the same native build was subsequently packaged and
-installed on the attached Samsung Galaxy S26 Ultra as **QK4 Mobile Test**
-(`com.w9wdx.qk4phone.test`) using `build-android.cmd -Action Install -TestApp`.
-It replaced the previous debuggable test build while retaining test-app data;
-the published package was preserved. Installation is not UI or radio acceptance.
+On 2026-10-06, a Fold tester reported a repeatable blank cover screen after
+closing the device while QK4 Mobile is connected on the inner display; the
+application remains running and connected. Cold-launch layout selection does not
+establish live display continuity. Physical Fold capability detection, cold
+launch on both screens, connected folding transitions in both directions,
+phone regressions, and tablet acceptance remain pending. The synthetic test
+sizes are not measurements of the reported device.
 
-Physical Fold capability detection, launch while folded/unfolded, connected
-folding transitions, phone regressions, and tablet acceptance remain pending.
-Representative native test sizes are synthetic, not measurements of the reported
-device. The package still uses v1.0.6 / version code 33; this is an unreleased
-branch build, not a new published release.
+## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
+
+## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
+
+The mobile panadapter's Average control could show a K4 value while its main
+trace and waterfall used fixed smoothing and its mini pans used raw frames.
+Connection refresh also omitted the `#AVG;` readback, so the app could start
+with a stale value. This behavior was present in every tagged mobile release
+from v1.0.1 through v1.0.6. The correction restores K4-controlled smoothing
+for both main and mini pans, queries the value on connection and after macros,
+and reads back changes made through the app's Average control.
+
+On 2026-10-05, the owner confirmed on a Samsung Galaxy S26 Ultra that the
+corrected **QK4 Mobile Test** build follows the K4 Average setting. This test
+APK used v1.0.6 / version code 33 and contained the issue #21 foldable-layout
+branch plus this Average correction; the Average PR isolates this correction
+on `main`. The focused RadioState and renderer suites passed, and the Android
+ARM64 native build and test-app APK packaging succeeded. The patch release
+uses Android version code 34. The owner also confirms the v1.0.6.1 release APK
+was radio-tested with the K4 on the same phone. PR #23 passed the iOS compile
+check.
+Android tablet and physical iPhone/iPad behavior have not been validated for
+this change.
 
 ## QK4 Mobile v1.0.6
 
