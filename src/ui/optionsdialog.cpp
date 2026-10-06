@@ -5,6 +5,7 @@
 #include "inwindowdialog.h"
 #include "fnpopupwidget.h"
 #include "ctr2mappingeditor.h"
+#include "layoutsettingspage.h"
 #include "../models/radiostate.h"
 #include "../hardware/kpoddevice.h"
 #include "../hardware/halikeydevice.h"
@@ -174,6 +175,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("Fn Key Setup");
 #ifdef Q_OS_ANDROID
+    m_tabList->addItem("Layout");
     // The phone settings surface intentionally contains app information plus
     // the independent CW Keyer and CTR2-MIDI device/setup roles.
     for (Page hiddenPage : {PageAudioInput, PageAudioOutput, PageRigControl, PageKpod})
@@ -225,6 +227,11 @@ void OptionsDialog::ensurePageCreated(int index) {
     case PageFnKeySetup:
         page = createFnKeySetupPage();
         break;
+#ifdef Q_OS_ANDROID
+    case PageLayout:
+        page = createLayoutSettingsPage(this);
+        break;
+#endif
     default:
         return;
     }

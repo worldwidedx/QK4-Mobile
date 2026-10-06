@@ -205,11 +205,12 @@ void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qrea
     // layout. iOS separates by the landscape short edge (iPad >= ~740 pt,
     // iPhone <= ~440 pt). Android logical sizes vary a lot, so prefer the
     // reported physical diagonal there (phones <= ~7", tablets larger), falling
-    // back to the short edge when the physical size is unknown.
-#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+    // back to the short edge when the physical size is unknown. Android startup
+    // forces compact for detected folding hardware or a saved layout preference.
+#if defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(QK4_TEST_ANDROID_LAYOUT)
     Q_UNUSED(devicePixelRatio);
     const int shortEdge = std::min(availableSize.width(), availableSize.height());
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) || defined(QK4_TEST_ANDROID_LAYOUT)
     const bool regular =
         (physicalDiagonalInches > 0.0) ? (physicalDiagonalInches >= 7.0) : (shortEdge > 700);
 #else
@@ -234,13 +235,15 @@ void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qrea
     bool forceRegularEnvOk = false;
     const int forceCompactEnv = qEnvironmentVariableIntValue("QK4_FORCE_COMPACT_UI", &forceCompactEnvOk);
     const int forceRegularEnv = qEnvironmentVariableIntValue("QK4_FORCE_REGULAR_UI", &forceRegularEnvOk);
-    if (forceCompactEnvOk && forceCompactEnv > 0) {
+    // A detected foldable or saved operator preference takes priority even
+    // over a development-only request for the regular layout.
+    if (forceCompact || (forceCompactEnvOk && forceCompactEnv > 0)) {
         useCompact = true;
     } else if (forceRegularEnvOk && forceRegularEnv > 0) {
         useCompact = false;
     }
 
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) || defined(QK4_TEST_ANDROID_LAYOUT)
     // Android tablets are wider and shorter than an iPad (e.g. 1340x800), so
     // the regular layout's iPad vertical rhythm overflows and clips the bottom
     // of each column. Tighten the vertical density for the Android tablet

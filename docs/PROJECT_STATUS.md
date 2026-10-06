@@ -1,6 +1,42 @@
 # Project status
 
-Last updated: 2026-10-05 (v1.0.6.1 panadapter Average patch)
+Last updated: 2026-10-06 (unreleased Fold transition investigation)
+
+## Unreleased: compact console on folding Android devices (#21)
+
+The proposed correction checks Android's hinge-angle hardware feature and sensor
+presence before constructing the console. A positive result forces compact mode
+on both the cover and inner displays, regardless of screen diagonal. This is a
+capability check, not a hinge-angle subscription or a model-name list. Devices
+that expose neither signal can use **Settings > Layout > Always use compact
+layout**. That preference saves locally and takes effect after restarting QK4
+Mobile; changing it does not rebuild the live console or affect a radio session.
+
+The existing v1.0.6 tablet heuristic remains for other devices. Earlier statements
+that all Android displays still force compact mode were stale. Automatic
+window-based layout switching is deferred. No CAT, audio, transmit,
+per-module orientation, or iOS device-selection behavior is intentionally changed.
+
+On 2026-10-04, all 17 native suites passed through `test-windows.cmd -Action Test`,
+including synthetic Android layout-policy, preference persistence, and
+settings-page fit checks. Android ARM64 debug APK packaging passed through
+`build-android.cmd -Action Apk`, and the separate **QK4 Mobile Test** package was
+installed on a Samsung Galaxy S26 Ultra. This was not physical Fold acceptance.
+
+On 2026-10-06, a Fold tester reported a repeatable blank cover screen after
+closing the device while QK4 Mobile is connected on the inner display; the
+application remains running and connected. Cold-launch layout selection does not
+establish live display continuity. The PR now rebuilds mini-pan GPU resources
+when Qt replaces its rendering context and requests a fresh window and RHI
+composition on Android activation, exposure, display change, and resize. The
+updated ARM64 separate-test APK packaged successfully, and all 18 native suites
+passed on Windows. Neither check reproduces a physical display transfer.
+Physical Fold capability detection, cold launch on both screens, connected
+folding transitions in both directions, phone regressions, and tablet acceptance
+remain pending. The synthetic test sizes are not measurements of the reported
+device.
+
+## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
@@ -47,8 +83,8 @@ has never tested that device. This documentation update performed no device test
 | Device class / configuration | Recorded evidence | Validation still required |
 |---|---|---|
 | Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
-| Other Android phones, including foldables | No complete orientation acceptance record in this document. | Phone policy, device classification, usable-space changes, and all claimed window configurations on named physical devices. |
-| Android tablet | Production Android uses the compact fallback. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
+| Other Android phones, including foldables | A Fold tester reports a repeatable blank cover screen after closing the device during a live connection on the pre-correction PR build; no complete orientation acceptance is recorded. | Cold launch on each display; connected folding transitions both ways; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
+| Android tablet | v1.0.6 selects regular layout for large screens. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
 | iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
 | iPad | PR #4 reports an iPad simulator build/launch; no physical iPad acceptance is recorded. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
 

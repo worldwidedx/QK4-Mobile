@@ -47,6 +47,7 @@ protected:
     // QRhiWidget overrides
     void initialize(QRhiCommandBuffer *cb) override;
     void render(QRhiCommandBuffer *cb) override;
+    void releaseResources() override;
     void resizeEvent(QResizeEvent *event) override;
 
     // Input events

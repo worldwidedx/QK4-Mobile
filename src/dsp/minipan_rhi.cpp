@@ -38,6 +38,49 @@ MiniPanRhiWidget::~MiniPanRhiWidget() {
     // QRhi resources are automatically cleaned up
 }
 
+void MiniPanRhiWidget::releaseResources() {
+    // A fold/display transition can replace the window's QRhi while this
+    // widget and its CPU-side spectrum/waterfall data remain alive.
+    m_spectrumPipeline.reset();
+    m_waterfallPipeline.reset();
+    m_overlayLinePipeline.reset();
+    m_overlayTrianglePipeline.reset();
+    m_spectrumSrb.reset();
+    m_waterfallSrb.reset();
+    m_overlaySrb.reset();
+    m_passbandSrb.reset();
+    m_passbandEdgeSrb.reset();
+    m_centerLineSrb.reset();
+    m_notchSrb.reset();
+    m_separatorSrb.reset();
+    m_borderSrb.reset();
+    m_spectrumVbo.reset();
+    m_spectrumUniformBuffer.reset();
+    m_waterfallVbo.reset();
+    m_waterfallUniformBuffer.reset();
+    m_overlayVbo.reset();
+    m_overlayUniformBuffer.reset();
+    m_passbandVbo.reset();
+    m_passbandUniformBuffer.reset();
+    m_passbandEdgeVbo.reset();
+    m_passbandEdgeUniformBuffer.reset();
+    m_centerLineVbo.reset();
+    m_centerLineUniformBuffer.reset();
+    m_notchVbo.reset();
+    m_notchUniformBuffer.reset();
+    m_separatorVbo.reset();
+    m_separatorUniformBuffer.reset();
+    m_borderVbo.reset();
+    m_borderUniformBuffer.reset();
+    m_waterfallTexture.reset();
+    m_colorLutTexture.reset();
+    m_sampler.reset();
+    m_rhiInitialized = false;
+    m_pipelinesCreated = false;
+    m_rhi = nullptr;
+    m_rpDesc = nullptr;
+}
+
 void MiniPanRhiWidget::initColorLUT() {
     // Create 256-entry RGBA color LUT for waterfall
     m_colorLUT.resize(256 * 4);
@@ -86,8 +129,10 @@ void MiniPanRhiWidget::initColorLUT() {
 }
 
 void MiniPanRhiWidget::initialize(QRhiCommandBuffer *cb) {
-    if (m_rhiInitialized)
+    if (m_rhiInitialized && m_rhi == rhi())
         return;
+    if (m_rhiInitialized)
+        releaseResources();
 
     m_rhi = rhi();
     if (!m_rhi) {
