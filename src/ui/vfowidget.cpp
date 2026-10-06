@@ -327,6 +327,7 @@ void VFOWidget::showMiniPan() {
         m_miniPan->setIfShift(m_pendingIfShift);
         m_miniPan->setCwPitch(m_pendingCwPitch);
         m_miniPan->setNotchFilter(m_pendingNotchEnabled, m_pendingNotchPitchHz);
+        m_miniPan->setAveraging(m_pendingAveraging);
 
         // Connect mini-pan click to show normal view and emit signal
         connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() {
@@ -367,6 +368,12 @@ void VFOWidget::setMiniPanNotchFilter(bool enabled, int pitchHz) {
     m_pendingNotchPitchHz = pitchHz;
     if (m_miniPan)
         m_miniPan->setNotchFilter(enabled, pitchHz);
+}
+
+void VFOWidget::setMiniPanAveraging(int level) {
+    m_pendingAveraging = level;
+    if (m_miniPan)
+        m_miniPan->setAveraging(level);
 }
 
 void VFOWidget::setMiniPanSpectrumColor(const QColor &color) {

@@ -2143,6 +2143,12 @@ MainWindow::MainWindow(QWidget *parent)
         m_panadapterB->setWaterfallColor(color);
     });
     connect(m_radioState, &RadioState::averagingChanged, m_displayPopup, &DisplayPopupWidget::setAveraging);
+    connect(m_radioState, &RadioState::averagingChanged, m_panadapterA, &PanadapterRhiWidget::setAveraging);
+    connect(m_radioState, &RadioState::averagingChanged, m_panadapterB, &PanadapterRhiWidget::setAveraging);
+    connect(m_radioState, &RadioState::averagingChanged, this, [this](int level) {
+        m_vfoA->setMiniPanAveraging(level);
+        m_vfoB->setMiniPanAveraging(level);
+    });
     connect(m_radioState, &RadioState::peakModeChanged, this, [this](bool enabled) {
         // #PKM controls both the radio's peak trace and the locally rendered
         // panadapter.  The popup label was previously updated, but the two
@@ -2201,16 +2207,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Averaging control +/- -> CAT commands (range 1-20, step by 1)
     connect(m_displayPopup, &DisplayPopupWidget::averagingIncrementRequested, this, [this]() {
-        int current = m_radioState->averaging();
+        int current = m_radioState->averaging() > 0 ? m_radioState->averaging() : 5;
         int next = qMin(current + 1, 20);
         m_radioState->setAveraging(next); // Optimistic update
-        m_tcpClient->sendCAT(QString("#AVG%1;").arg(next, 2, 10, QChar('0')));
+        m_tcpClient->sendCAT(QString("#AVG%1;#AVG;").arg(next, 2, 10, QChar('0')));
     });
     connect(m_displayPopup, &DisplayPopupWidget::averagingDecrementRequested, this, [this]() {
-        int current = m_radioState->averaging();
+        int current = m_radioState->averaging() > 0 ? m_radioState->averaging() : 5;
         int next = qMax(current - 1, 1);
         m_radioState->setAveraging(next); // Optimistic update
-        m_tcpClient->sendCAT(QString("#AVG%1;").arg(next, 2, 10, QChar('0')));
+        m_tcpClient->sendCAT(QString("#AVG%1;#AVG;").arg(next, 2, 10, QChar('0')));
     });
 
     // DDC NB level control +/- -> CAT commands
