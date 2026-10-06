@@ -1,8 +1,8 @@
 # Project status
 
-Last updated: 2026-10-05 (unreleased panadapter Average correction)
+Last updated: 2026-10-05 (v1.0.6.1 panadapter Average patch)
 
-## Unreleased: panadapter Average follows the K4
+## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
 The mobile panadapter's Average control could show a K4 value while its main
 trace and waterfall used fixed smoothing and its mini pans used raw frames.
@@ -17,8 +17,10 @@ corrected **QK4 Mobile Test** build follows the K4 Average setting. This test
 APK used v1.0.6 / version code 33 and contained the issue #21 foldable-layout
 branch plus this Average correction; the Average PR isolates this correction
 on `main`. The focused RadioState and renderer suites passed, and the Android
-ARM64 native build and test-app APK packaging succeeded. Android tablet and
-iPhone/iPad builds or device behavior have not been validated for this change.
+ARM64 native build and test-app APK packaging succeeded. The patch release
+uses Android version code 34. PR #23 also passed the iOS compile check.
+Android tablet and physical iPhone/iPad behavior have not been validated for
+this change.
 
 ## QK4 Mobile v1.0.6
 
