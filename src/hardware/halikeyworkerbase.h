@@ -22,6 +22,8 @@ signals:
     void ditStateChanged(bool pressed);
     void dahStateChanged(bool pressed);
     void pttStateChanged(bool pressed);
+    // Every note/CC message before paddle mapping; status keeps the channel.
+    void rawMidiMessage(int status, int data1, int data2, bool pressed);
     void errorOccurred(const QString &error);
     void portOpened();
 
