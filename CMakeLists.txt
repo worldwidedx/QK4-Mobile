@@ -441,7 +441,12 @@ elseif(IOS)
     # App icon: compile the iOS asset catalog (AppIcon) into the bundle.
     set(QK4_IOS_ASSETS "${CMAKE_SOURCE_DIR}/resources/ios/Assets.xcassets")
     set_source_files_properties(${QK4_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION MACOSX_BUNDLE ${SOURCES} ${HEADERS} ${QK4_IOS_ASSETS})
+    # App privacy manifest. Static Qt's own PrivacyInfo.xcprivacy files are not
+    # bundled, so the app declares the required-reason APIs its binary uses.
+    set(QK4_IOS_PRIVACY_MANIFEST "${CMAKE_SOURCE_DIR}/resources/ios/PrivacyInfo.xcprivacy")
+    set_source_files_properties(${QK4_IOS_PRIVACY_MANIFEST} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION MACOSX_BUNDLE ${SOURCES} ${HEADERS}
+        ${QK4_IOS_ASSETS} ${QK4_IOS_PRIVACY_MANIFEST})
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist.ios.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${QK4_IOS_BUNDLE_ID}"
