@@ -42,13 +42,14 @@ Use `adb devices` first when more than one device may be attached.
 
 Do not promote a result from one level as proof of the next.
 
-## Tablet-layout interim policy
+## Folding-device and tablet layout validation
 
-QK4 Mobile v0.7.6.2 deliberately uses the compact landscape phone layout on
-all Android screen sizes. This is an interim fallback while physical tablet
-testing is unavailable. The original screen-size selection code is preserved as
-comments in `src/ui/k4styles.cpp`; do not remove it. Restoring or replacing the
-tablet layout requires a visual test on a real tablet before release.
+The old all-Android compact override was replaced before v1.0.6. Issue #21
+forces compact startup presentation on devices exposing folding hardware and
+adds a saved manual override under Settings > Layout. Verify cold launch on
+both displays, folding during connected RX operation, and preservation of
+phone and tablet behavior. Test saved preference changes across app restarts.
+Do not claim hardware detection or rendering is verified from native tests.
 
 ## Hearing-aid RX validation
 

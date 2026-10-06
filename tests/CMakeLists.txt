@@ -50,6 +50,17 @@ target_include_directories(test_frequencyentryparser PRIVATE ../src)
 target_link_libraries(test_frequencyentryparser PRIVATE Qt6::Core Qt6::Test)
 
 enable_testing()
+qt_add_executable(test_layoutselection test_layoutselection.cpp
+    ../src/ui/k4styles.cpp ../src/ui/layoutsettingspage.cpp
+    ../src/settings/radiosettings.cpp ../src/settings/radiosettings.h)
+target_include_directories(test_layoutselection PRIVATE ../src)
+# Exercise Android's production layout branch without pretending the host Qt
+# libraries have an Android ABI. Device/JNI capability queries need device QA.
+target_compile_definitions(test_layoutselection PRIVATE QK4_TEST_ANDROID_LAYOUT)
+target_link_libraries(test_layoutselection PRIVATE Qt6::Widgets Qt6::Test)
+qt_add_resources(test_layoutselection "layout_test_icons"
+    PREFIX "/" BASE "../resources" FILES ../resources/icons/check.svg)
+add_test(NAME layoutselection COMMAND test_layoutselection -o layoutselection-results.txt,txt -o -,txt)
 qt_add_executable(test_overlayback test_overlayback.cpp
     ../src/ui/inwindowdialog.cpp ../src/ui/k4styles.cpp)
 target_include_directories(test_overlayback PRIVATE ../src)
@@ -185,7 +196,7 @@ target_link_libraries(test_sstvstorage PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME sstvstorage COMMAND test_sstvstorage)
 
 cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH compiler_runtime_dir)
-set_tests_properties(${digital_codec_test} overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
+set_tests_properties(${digital_codec_test} layoutselection overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         "PATH=path_list_prepend:${compiler_runtime_dir}"

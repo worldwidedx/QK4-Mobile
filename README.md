@@ -225,7 +225,7 @@ delayed monitor audio is not required.
 | Platform | Android 8.0 (API 26) or later |
 | ABI | ARM64 (`arm64-v8a`) |
 | Android package | `com.w9wdx.qk4phone` |
-| UI | Landscape radio console; other screens follow the [orientation policy](docs/ORIENTATION_POLICY.md). Production Android temporarily uses the compact layout on all display sizes, including tablets. |
+| UI | Landscape radio console; other screens follow the [orientation policy](docs/ORIENTATION_POLICY.md). v1.0.6 selects compact or regular layout using screen metrics; see [project status](docs/PROJECT_STATUS.md) for the pending foldable correction and validation boundaries. |
 | Framework | Qt 6.11.1 |
 | Android API | Minimum 26, target 34 |
 | Radio | Elecraft K4/K4D |

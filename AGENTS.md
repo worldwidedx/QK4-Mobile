@@ -49,10 +49,11 @@
 - PTT represents deliberate transmit state; never emulate PTT using VOX.
 - Android hearing aids are an RX-only output route when Android exposes them as
   `TYPE_HEARING_AID`; do not add them to TX communication-device selection.
-- Until tablet-specific validation is available, retain the production Android
-  compact phone layout override for all display sizes. The original tablet
-  selection logic is intentionally commented in `src/ui/k4styles.cpp`; do not remove it or
-  re-enable it without a tested tablet UX plan.
+- Android folding devices with reported hinge hardware use the compact console
+  on both displays. The saved Layout preference can also force compact mode;
+  it takes effect on the next launch. Preserve the existing v1.0.6 tablet
+  selection for other devices. Automatic window-based layout switching is
+  separate work and requires a tested UX plan; device acceptance remains required.
 - The phone orientation rules apply equally to Android phones and iPhones:
   the main radio console is landscape, SSTV supports portrait and landscape,
   and FT8/FT4 is portrait-only. The shared logbook follows the invoking

@@ -41,10 +41,14 @@ exception must not change Android-phone or iPhone behavior.
 | Logbook opened from the radio console | Open in landscape, allow both orientations after a device turn, and restore landscape on exit. |
 
 Android tablet validation does not establish iPad validation, or vice versa.
-Preserve the production Android compact-layout override until the relevant
-tablet acceptance checks pass. iPad contributions must likewise retain a
-compact fallback until their regular layout is validated. Neither fallback
-changes the module orientation rules above.
+The v1.0.6 Android implementation selects a regular layout for large screens;
+the earlier blanket compact override is no longer present. Preserve working
+tablet presentation while requiring the relevant acceptance checks for changes.
+The issue #21 correction forces detected folding hardware and the saved compact
+preference to use compact presentation at startup. This maintainer-approved
+correction does not add dynamic window-based switching or change the module
+orientation rules above. iPad contributions retain a compact fallback until
+their regular layout is validated.
 
 ## Device class, available space, and multitasking
 
@@ -121,4 +125,7 @@ Before a regular tablet layout or tablet FT8/FT4 landscape support is merged:
   background/resume. Do not infer multitasking support from a full-screen test.
 - Keep tablet-specific layout work isolated from radio protocol, CAT, audio, decoding, and transmit timing unless a separate functional change requires it.
 
-Until this validation exists, the production Android build continues to use the compact phone layout on all display sizes as described in `AGENTS.md` and `docs/PROJECT_STATUS.md`.
+Record missing physical acceptance as pending. The released size heuristic is
+not evidence that every tablet or window configuration is validated. Detected
+Android folding devices keep compact presentation across folding transitions;
+the manual compact preference applies after restarting the app.
