@@ -114,6 +114,15 @@ target_include_directories(test_macros PRIVATE ../src)
 target_link_libraries(test_macros PRIVATE Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME macros COMMAND test_macros -o macros-results.txt,txt -o -,txt)
 
+qt_add_executable(test_panaverage test_panaverage.cpp
+    ../src/dsp/panadapter_rhi.cpp ../src/dsp/panadapter_rhi.h
+    ../src/dsp/minipan_rhi.cpp ../src/dsp/minipan_rhi.h
+    ../src/ui/wheelaccumulator.cpp ../src/ui/wheelaccumulator.h
+    ../src/ui/k4styles.cpp ../src/ui/k4styles.h)
+target_include_directories(test_panaverage PRIVATE ../src)
+target_link_libraries(test_panaverage PRIVATE Qt6::GuiPrivate Qt6::Widgets Qt6::Test)
+add_test(NAME panaverage COMMAND test_panaverage)
+
 qt_add_executable(test_midimapping test_midimapping.cpp
     ../src/hardware/midimapping.cpp ../src/hardware/midimapping.h
     ../src/hardware/midiinputrouter.cpp ../src/hardware/midiinputrouter.h)
@@ -185,7 +194,7 @@ target_link_libraries(test_sstvstorage PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME sstvstorage COMMAND test_sstvstorage)
 
 cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH compiler_runtime_dir)
-set_tests_properties(${digital_codec_test} overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
+set_tests_properties(${digital_codec_test} overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros panaverage modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         "PATH=path_list_prepend:${compiler_runtime_dir}"

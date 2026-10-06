@@ -1,4 +1,5 @@
 #include "models/radiostate.h"
+#include "network/protocol.h"
 
 #include <QSignalSpy>
 #include <QtTest>
@@ -12,6 +13,7 @@ private slots:
     void reverseDataSubModesUseDistinctDisplayLabels();
     void attenuatorLevelSettersClampAndNotify();
     void vfoTuningStepsRemainIndependent();
+    void panAverageFollowsK4Readback();
 };
 
 void RadioStateTest::transmitQueryConfirmsState() {
@@ -103,6 +105,26 @@ void RadioStateTest::vfoTuningStepsRemainIndependent() {
     state.parseCATCommand(QStringLiteral("VT$34;"));
     QCOMPARE(state.tuningStepB(), 3);
     QCOMPARE(subSpy.count(), 1);
+}
+
+void RadioStateTest::panAverageFollowsK4Readback() {
+    QVERIFY(QString::fromLatin1(K4Protocol::Commands::ADDITIONAL_STATE_QUERIES).contains(QStringLiteral("#AVG;")));
+    RadioState state;
+    QSignalSpy spy(&state, &RadioState::averagingChanged);
+
+    state.parseCATCommand(QStringLiteral("#AVG12;"));
+    QCOMPARE(state.averaging(), 12);
+    QCOMPARE(spy.count(), 1);
+
+    // Physical K4 changes should replace the displayed and rendered value.
+    state.parseCATCommand(QStringLiteral("#AVG06;"));
+    QCOMPARE(state.averaging(), 6);
+    QCOMPARE(spy.count(), 2);
+
+    state.parseCATCommand(QStringLiteral("#AVG06;"));
+    state.parseCATCommand(QStringLiteral("#AVG99;"));
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(state.averaging(), 6);
 }
 
 QTEST_MAIN(RadioStateTest)

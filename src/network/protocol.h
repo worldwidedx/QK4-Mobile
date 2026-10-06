@@ -76,7 +76,7 @@ constexpr const char *READY = "RDY;";
 // State needed by the UI in addition to the comprehensive RDY response.
 // Shared by connection setup and post-macro refresh; GETs only.
 constexpr const char *ADDITIONAL_STATE_QUERIES =
-    "#DSM;#HDSM;#PKM;#AR;#NB$;#NBL$;#FRZ;#FPS;#SCL;"
+    "#DSM;#HDSM;#PKM;#AR;#AVG;#NB$;#NBL$;#FRZ;#FPS;#SCL;"
     "RT$;RO$;VT;VT$;KP;PL;PL$;RP;";
 constexpr const char *ENABLE_K4_MODE = "K41;";
 constexpr const char *ENABLE_LONG_ERRORS = "ER1;";

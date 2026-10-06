@@ -38,6 +38,7 @@ public:
     void setFilterBandwidth(int bwHz);
     void setIfShift(int shift);
     void setCwPitch(int pitchHz);
+    void setAveraging(int level);
 
 signals:
     void clicked(); // Emitted when user clicks to toggle back to normal view
@@ -52,6 +53,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
 
 private:
+    friend class PanAverageTest;
     // Initialization
     void initColorLUT();
     void createPipelines();
@@ -127,6 +129,9 @@ private:
     // Spectrum data
     QVector<float> m_spectrum;
     QVector<float> m_smoothedSpectrum;
+    int m_averagingLevel = 1;
+    float m_attackAlpha = 0.52f;
+    float m_decayAlpha = 0.34f;
 
     // Waterfall data
     static constexpr int WATERFALL_HISTORY = 100;
