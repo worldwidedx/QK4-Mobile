@@ -9,8 +9,8 @@ back changes made in the app.
 
 - Android version code: **34**; package: `com.w9wdx.qk4phone`.
 - The owner confirmed the correction on a Samsung Galaxy S26 Ultra using a
-  v1.0.6 test app with the same Average code. The exact v1.0.6.1 release APK
-  was not separately radio-tested.
+  v1.0.6 test app with the same Average code. The owner also confirms the
+  v1.0.6.1 release APK was radio-tested with the K4 on that phone.
 - Focused state, renderer, and fake-K4 regression tests passed. PR #23 passed
   policy, native, Android build, iOS compile, and aggregate required CI checks
   before the version bump. The release commit's checks are recorded on that PR.

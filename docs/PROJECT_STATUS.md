@@ -18,7 +18,9 @@ APK used v1.0.6 / version code 33 and contained the issue #21 foldable-layout
 branch plus this Average correction; the Average PR isolates this correction
 on `main`. The focused RadioState and renderer suites passed, and the Android
 ARM64 native build and test-app APK packaging succeeded. The patch release
-uses Android version code 34. PR #23 also passed the iOS compile check.
+uses Android version code 34. The owner also confirms the v1.0.6.1 release APK
+was radio-tested with the K4 on the same phone. PR #23 passed the iOS compile
+check.
 Android tablet and physical iPhone/iPad behavior have not been validated for
 this change.
 
