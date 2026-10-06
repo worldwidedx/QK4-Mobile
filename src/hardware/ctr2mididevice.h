@@ -6,6 +6,12 @@
 #include <QStringList>
 #include <QTimer>
 
+#ifndef Q_OS_ANDROID
+#include <memory>
+#include <vector>
+class RtMidiIn;
+#endif
+
 // Raw MIDI connection dedicated to the CTR2-MIDI setup role. The proven CW
 // HalikeyDevice remains independent and continues to own Android MIDI session
 // zero; this class owns session one.
@@ -32,6 +38,13 @@ signals:
     void rawMidiEvent(int status, int data1, int data2);
 
 private:
+#ifndef Q_OS_ANDROID
+    static void midiCallback(double deltaTime, std::vector<unsigned char> *message, void *userData);
+    void handleMidiMessage(const std::vector<unsigned char> &message);
+
+    std::unique_ptr<RtMidiIn> m_midiIn;
+    QString m_statusMessage;
+#endif
     QString m_portName;
     bool m_connected = false;
     int m_androidConnectionState = 0;
