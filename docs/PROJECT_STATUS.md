@@ -1,6 +1,21 @@
 # Project status
 
-Last updated: 2026-10-05 (v1.0.6.1 panadapter Average patch)
+Last updated: 2026-10-10 (unreleased CW MIDI candidate)
+
+## Unreleased: CW MIDI edge accuracy candidate
+
+The Android CW MIDI path now preserves split/running-status MIDI messages,
+removes the 10 ms release hold for paddle notes, polls connected sessions every
+4 ms, and offers opt-in raw MIDI capture. Straight-key contact debounce remains.
+The changes are source/build candidates; no 30 WPM or higher device acceptance
+has been recorded. TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed,
+and HaliKey fast-speed testing requires an external operator. See the
+[CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
+
+On 2026-10-10, the Java stream-parser test, the native iambic-keyer tests at
+30/40/50 WPM, and the MIDI mapping suite passed. The current-base Android
+ARM64 debug APK packaged successfully. These checks use synthetic inputs;
+TinyMIDI, CTR2-MIDI, HaliKey, and K4 acceptance remain pending.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 

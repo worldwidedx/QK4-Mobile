@@ -13,7 +13,8 @@ QJniObject androidContext() {
 
 Ctr2MidiDevice::Ctr2MidiDevice(QObject *parent) : QObject(parent) {
     m_eventPollTimer = new QTimer(this);
-    m_eventPollTimer->setInterval(8);
+    m_eventPollTimer->setTimerType(Qt::PreciseTimer);
+    m_eventPollTimer->setInterval(4);
     connect(m_eventPollTimer, &QTimer::timeout, this, [this]() {
         for (int count = 0; count < 64; ++count) {
             const int event = QJniObject::callStaticMethod<jint>(

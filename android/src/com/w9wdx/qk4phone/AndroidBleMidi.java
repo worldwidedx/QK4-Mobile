@@ -39,6 +39,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /** Android BLE/USB MIDI discovery and two independent input sessions. */
 public final class AndroidBleMidi {
     private static final String TAG = "QK4-Midi";
+    // Opt-in raw capture for device timing analysis. Disabled at the normal
+    // Android log level so no per-message formatting occurs while keying.
+    private static final String RAW_TAG = "QK4-MidiRaw";
     private static final UUID MIDI_SERVICE = UUID.fromString("03b80e5a-ede8-4b33-a751-6ce34ec4c700");
     private static final int PERMISSION_REQUEST = 7406;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -56,6 +59,7 @@ public final class AndroidBleMidi {
         MidiOutputPort outputPort;
         MidiReceiver midiReceiver;
         final ConcurrentLinkedQueue<Integer> events = new ConcurrentLinkedQueue<>();
+        final MidiStreamParser parser = new MidiStreamParser();
         volatile int connectionState; // 0 disconnected, 1 connecting, 2 connected, 3 error
         volatile String statusMessage = "Not connected";
         String deviceKey = "";
@@ -64,7 +68,7 @@ public final class AndroidBleMidi {
         int midiDeviceId = -1;
         BluetoothLeScanner verificationScanner;
         ScanCallback verificationCallback;
-        int generation;
+        volatile int generation;
     }
 
     // Session 0 remains the established CW Keyer connection. Session 1 is
@@ -384,6 +388,10 @@ public final class AndroidBleMidi {
             if (session.outputPort == null) continue;
             session.midiReceiver = new MidiReceiver() {
                 @Override public void onSend(byte[] data, int offset, int count, long timestamp) {
+                    if (generation != session.generation)
+                        return;
+                    if (Log.isLoggable(RAW_TAG, Log.DEBUG))
+                        traceRawMidi(sessionIndex, data, offset, count, timestamp);
                     parseMidi(session, data, offset, count);
                 }
             };
@@ -415,8 +423,9 @@ public final class AndroidBleMidi {
         session.deviceKey = "";
         session.deviceName = "";
         session.transport = "";
-        session.events.clear();
         closeDevice(session);
+        session.parser.reset();
+        session.events.clear();
     }
 
     public static int getConnectionState() { return getConnectionState(0); }
@@ -442,19 +451,22 @@ public final class AndroidBleMidi {
     }
 
     private static void parseMidi(Session session, byte[] data, int offset, int count) {
-        for (int i = offset; i + 2 < offset + count; ) {
-            final int status = data[i] & 0xff;
-            final int kind = status & 0xf0;
-            if (kind == 0x80 || kind == 0x90 || kind == 0xb0) {
-                final int data1 = data[i + 1] & 0x7f;
-                final int data2 = data[i + 2] & 0x7f;
-                session.events.offer((status << 16) | (data1 << 8) | data2);
-                Log.d(TAG, "MIDI status=" + status + " data1=" + data1 + " data2=" + data2);
-                i += 3;
-            } else {
-                i++;
-            }
+        session.parser.feed(data, offset, count, (status, data1, data2) ->
+                session.events.offer((status << 16) | (data1 << 8) | data2));
+    }
+
+    private static void traceRawMidi(int sessionIndex, byte[] data, int offset,
+                                     int count, long timestamp) {
+        final StringBuilder hex = new StringBuilder(count * 3);
+        for (int i = offset; i < offset + count; ++i) {
+            if (i > offset) hex.append(' ');
+            final int value = data[i] & 0xff;
+            hex.append(Character.forDigit(value >> 4, 16));
+            hex.append(Character.forDigit(value & 0x0f, 16));
         }
+        Log.d(RAW_TAG, "session=" + sessionIndex
+                + " callbackNs=" + SystemClock.elapsedRealtimeNanos()
+                + " midiTimestampNs=" + timestamp + " bytes=" + hex);
     }
 
     private static void stopScan() {
