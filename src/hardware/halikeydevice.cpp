@@ -60,21 +60,23 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
                 emit connected();
             } else if (state == 3) {
                 m_androidMidiPollTimer->stop();
+                resetInputState();
                 emit connectionError(statusMessage());
                 if (previous == 2)
                     emit disconnected();
             } else if (state == 0 && previous == 2) {
                 m_androidMidiPollTimer->stop();
+                resetInputState();
                 emit disconnected();
             }
         }
     });
 
-    // Eight milliseconds keeps paddle latency below one hundredth of a second
-    // while reducing main-thread JNI traffic. This timer runs only while a
-    // BLE or USB MIDI endpoint is actually connected.
+    // Poll only while connected. Four milliseconds bounds the scheduling delay
+    // to a small fraction of a 30-50 WPM dit without continuous idle JNI work.
     m_androidMidiPollTimer = new QTimer(this);
-    m_androidMidiPollTimer->setInterval(8);
+    m_androidMidiPollTimer->setTimerType(Qt::PreciseTimer);
+    m_androidMidiPollTimer->setInterval(4);
     connect(m_androidMidiPollTimer, &QTimer::timeout, this, [this]() {
         for (int count = 0; count < 64; ++count) {
             const int event = QJniObject::callStaticMethod<jint>(
@@ -102,8 +104,6 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
                 onRawDit(pressed);
             else if (matchKind == dahStatus && note == dahData1)
                 onRawDah(pressed);
-            else
-                qDebug() << "Android MIDI event" << note << "pressed" << pressed;
         }
     });
     m_androidConnectionPollTimer->start();
@@ -115,6 +115,16 @@ HalikeyDevice::~HalikeyDevice() {
 
 void HalikeyDevice::onRawDit(bool pressed) {
     m_rawDitState = pressed;
+    if (RadioSettings::instance()->cwMidiKeyingMode() == 0) {
+        // A MIDI paddle message is already a digital edge. Holding its release
+        // for the straight-key contact debounce can change squeeze timing.
+        m_ditDebounceTimer->stop();
+        if (pressed != m_confirmedDitState) {
+            m_confirmedDitState = pressed;
+            emitMappedPaddle(true, pressed);
+        }
+        return;
+    }
     if (pressed && !m_confirmedDitState) {
         m_confirmedDitState = true;
         m_ditDebounceTimer->stop();
@@ -126,6 +136,14 @@ void HalikeyDevice::onRawDit(bool pressed) {
 
 void HalikeyDevice::onRawDah(bool pressed) {
     m_rawDahState = pressed;
+    if (RadioSettings::instance()->cwMidiKeyingMode() == 0) {
+        m_dahDebounceTimer->stop();
+        if (pressed != m_confirmedDahState) {
+            m_confirmedDahState = pressed;
+            emitMappedPaddle(false, pressed);
+        }
+        return;
+    }
     if (pressed && !m_confirmedDahState) {
         m_confirmedDahState = true;
         m_dahDebounceTimer->stop();
@@ -163,15 +181,10 @@ bool HalikeyDevice::openPort(const QString &portName) {
 void HalikeyDevice::closePort() {
     QJniObject::callStaticMethod<void>("com/w9wdx/qk4phone/AndroidBleMidi", "disconnect", "()V");
     m_androidMidiPollTimer->stop();
+    resetInputState();
     bool wasConnected = m_connected;
     m_androidConnectionState = 0;
     m_connected = false;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
 
     if (wasConnected) {
         emit disconnected();
@@ -373,19 +386,9 @@ void HalikeyDevice::closePort() {
 
     m_worker = nullptr; // Deleted by QThread::finished -> deleteLater
 
-    // Stop any pending debounce timers
-    m_ditDebounceTimer->stop();
-    m_dahDebounceTimer->stop();
-    m_pttDebounceTimer->stop();
-
+    resetInputState();
     bool wasConnected = m_connected;
     m_connected = false;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
 
     if (wasConnected) {
         emit disconnected();
@@ -473,6 +476,18 @@ bool HalikeyDevice::dahPressed() const {
 }
 
 #endif
+
+void HalikeyDevice::resetInputState() {
+    m_ditDebounceTimer->stop();
+    m_dahDebounceTimer->stop();
+    m_pttDebounceTimer->stop();
+    m_rawDitState = false;
+    m_rawDahState = false;
+    m_rawPttState = false;
+    m_confirmedDitState = false;
+    m_confirmedDahState = false;
+    m_confirmedPttState = false;
+}
 
 void HalikeyDevice::emitMappedPaddle(bool physicalLeft, bool pressed) {
     const RadioSettings *settings = RadioSettings::instance();

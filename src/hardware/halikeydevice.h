@@ -57,6 +57,7 @@ private:
     void onRawDit(bool pressed);
     void onRawDah(bool pressed);
     void onRawPtt(bool pressed);
+    void resetInputState();
     void emitMappedPaddle(bool physicalLeft, bool pressed);
 
     QThread *m_workerThread = nullptr;
@@ -75,7 +76,7 @@ private:
     bool m_confirmedDahState = false;
     bool m_confirmedPttState = false;
 
-    // Debounce timers — emit ON immediately, delay OFF by 10ms to absorb bounce
+    // Straight-key contact debounce; MIDI paddles bypass the release delay.
     QTimer *m_ditDebounceTimer = nullptr;
     QTimer *m_dahDebounceTimer = nullptr;
     QTimer *m_pttDebounceTimer = nullptr;
