@@ -183,6 +183,7 @@ private slots:
     void onSubRxButtonRightClicked(int index);
 
 private:
+    QRect fullScreenOverlayRect() const;
     void setupMenuBar();
     void showSettings();
     void showAboutDialog();
