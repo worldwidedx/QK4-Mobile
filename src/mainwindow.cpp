@@ -7371,9 +7371,9 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
         m_radioManager->setGeometry(centralWidget()->rect());
     }
     if (m_sstvScreen && m_sstvScreen->isVisible()) {
-        m_sstvScreen->setGeometry(rect());
+        m_sstvScreen->setGeometry(fullScreenOverlayRect());
     }
-    if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(rect());
+    if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(fullScreenOverlayRect());
     updatePhoneTxInputShieldGeometry();
 }
 
@@ -7419,6 +7419,28 @@ void MainWindow::changeEvent(QEvent *event) {
     // Audio runs on its own thread now — no flush needed on minimize/restore.
     // The audio thread keeps playing smoothly; the waterfall catches up visually on restore.
     QMainWindow::changeEvent(event);
+#ifdef Q_OS_IOS
+    // Safe-area margins can change after the resize that follows a rotation.
+    if (event->type() == QEvent::ContentsRectChange) {
+        if (m_sstvScreen && m_sstvScreen->isVisible())
+            m_sstvScreen->setGeometry(fullScreenOverlayRect());
+        if (m_ft8Screen && m_ft8Screen->isVisible())
+            m_ft8Screen->setGeometry(fullScreenOverlayRect());
+    }
+#endif
+}
+
+// SSTV and FT8/FT4 are full-window children placed by hand, so Qt does not
+// inset them for the iOS safe area the way it insets the central widget. The
+// top-level contentsRect() carries the safe-area margins: use it on iOS so the
+// iPhone Dynamic Island and home indicator never cover controls. Android keeps
+// the full window rect it has always used.
+QRect MainWindow::fullScreenOverlayRect() const {
+#ifdef Q_OS_IOS
+    return contentsRect();
+#else
+    return rect();
+#endif
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event) {
@@ -8128,7 +8150,7 @@ void MainWindow::openFt8Screen() {
     if (centralWidget()) centralWidget()->hide();
     m_ft8Screen->setWaterfallAppearance(m_panadapterA->waterfallColor(), m_panadapterA->waterfallColorRange());
     m_ft8Screen->selectDialTarget(Ft8Screen::DialTarget::RxAudio);
-    m_ft8Screen->setGeometry(rect());
+    m_ft8Screen->setGeometry(fullScreenOverlayRect());
     m_ft8Screen->show(); m_ft8Screen->raise(); m_ft8Screen->setFocus();
     setFt8PortraitEnabled(true);
     QTimer::singleShot(250, this, [this] {
@@ -8351,7 +8373,7 @@ void MainWindow::openSstvScreen() {
     // bleeding through at the sides of the SSTV canvas.
     if (centralWidget())
         centralWidget()->hide();
-    m_sstvScreen->setGeometry(rect());
+    m_sstvScreen->setGeometry(fullScreenOverlayRect());
     m_sstvScreen->show();
     m_sstvScreen->raise();
     m_sstvScreen->setFocus();
