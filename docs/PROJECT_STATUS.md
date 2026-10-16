@@ -32,9 +32,9 @@ composition on Android activation, exposure, display change, and resize. The
 updated ARM64 separate-test APK packaged successfully, and all 18 native suites
 passed on Windows. Neither check reproduces a physical display transfer.
 
-On 2026-10-16, the owner relayed that a Fold tester confirmed the latest fix
-resolves the reported blank cover screen when closing the device during a live
-session. The exact device model, Android/One UI version, build identifier, and
+On 2026-10-16, the owner relayed that a tester using a Samsung Fold 8 Ultra
+confirmed the latest fix resolves the reported blank cover screen when closing
+the device during a live session. Android/One UI version, build identifier, and
 number of transition cycles were not supplied. This is evidence for the reported
 inner-to-cover transition, not for cold launch on both displays, reopening while
 connected, other module paths, or radio/audio behavior. Those checks, other-phone
@@ -86,7 +86,7 @@ has never tested that device. This documentation update performed no device test
 | Device class / configuration | Recorded evidence | Validation still required |
 |---|---|---|
 | Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
-| Other Android phones, including foldables | A Fold tester reported a repeatable blank cover screen after closing during a live connection on the earlier PR build. On 2026-10-16 the owner relayed tester confirmation that the latest fix resolves that reported transition; device/OS/build details were not supplied. | Cold launch on each display; reopening while connected; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
+| Other Android phones, including foldables | A Samsung Fold 8 Ultra tester reported a repeatable blank cover screen after closing during a live connection on the earlier PR build. On 2026-10-16 the owner relayed tester confirmation that the latest fix resolves that reported transition; OS/build details were not supplied. | Cold launch on each display; reopening while connected; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
 | Android tablet | v1.0.6 selects regular layout for large screens. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
 | iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
 | iPad | PR #4 reports an iPad simulator build/launch; no physical iPad acceptance is recorded. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
