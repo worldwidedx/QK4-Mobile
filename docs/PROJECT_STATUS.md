@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-16 (Fold cover-display retest)
+Last updated: 2026-10-16 (Fold open/close behavior clarification)
 
 ## Unreleased: compact console on folding Android devices (#21)
 
@@ -32,12 +32,16 @@ composition on Android activation, exposure, display change, and resize. The
 updated ARM64 separate-test APK packaged successfully, and all 18 native suites
 passed on Windows. Neither check reproduces a physical display transfer.
 
-On 2026-10-16, the owner relayed that a tester using a Samsung Fold 8 Ultra
-confirmed the latest fix resolves the reported blank cover screen when closing
-the device during a live session. Android/One UI version, build identifier, and
-number of transition cycles were not supplied. This is evidence for the reported
-inner-to-cover transition, not for cold launch on both displays, reopening while
-connected, other module paths, or radio/audio behavior. Those checks, other-phone
+On 2026-10-16, the owner clarified the Samsung Fold 8 Ultra tester's result:
+starting QK4 Mobile with the Fold closed shows the normal console, opening it
+transitions to the correctly scaled unfolded view, and closing it from that view
+closes the app, which the owner considers the expected behavior. The earlier
+summary incorrectly claimed that closing preserved a visible cover-screen
+session. The tester's confirmation establishes the observed closed-start and
+closed-to-open display behavior and the expected app close on folding shut; it
+does not establish inner-to-cover session continuity. Android/One UI version,
+build identifier, connection/audio state, and number of transition cycles were
+not supplied. Direct launch while unfolded, other module paths, other-phone
 regressions, and tablet acceptance remain pending. The synthetic test sizes are
 not measurements of the reported device.
 
@@ -86,7 +90,7 @@ has never tested that device. This documentation update performed no device test
 | Device class / configuration | Recorded evidence | Validation still required |
 |---|---|---|
 | Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
-| Other Android phones, including foldables | A Samsung Fold 8 Ultra tester reported a repeatable blank cover screen after closing during a live connection on the earlier PR build. On 2026-10-16 the owner relayed tester confirmation that the latest fix resolves that reported transition; OS/build details were not supplied. | Cold launch on each display; reopening while connected; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
+| Other Android phones, including foldables | A Samsung Fold 8 Ultra tester reported a repeatable blank cover screen after closing during a live connection on the earlier PR build. On 2026-10-16 the owner clarified that the latest build starts normally while closed, scales correctly when opened, and closes the app when folded shut from the open view; the owner considers that close behavior expected. OS/build and connection/audio details were not supplied. | Direct launch unfolded; connection/audio behavior across the observed transitions; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
 | Android tablet | v1.0.6 selects regular layout for large screens. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
 | iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
 | iPad | PR #4 reports an iPad simulator build/launch; no physical iPad acceptance is recorded. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
