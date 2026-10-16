@@ -14,23 +14,26 @@ rely on; note numbers 20/21 alone do not establish it.
 - The first candidate removed the 10 ms HaliKey-path paddle release debounce
   and changed both Android MIDI sessions from 8 ms to 4 ms precise polling.
   A HaliKey operator reported cumulative delay and burst-like characters at
-  25 WPM, worse than their 1.0.5 baseline. Both timing changes have been
-  reverted pending device evidence. CTR2 paddle input still has no software
-  release debounce. Normal per-message logging remains removed.
+  25 WPM, worse than their 1.0.5 baseline. Those timing changes were reverted.
+  The current candidate keeps the 10 ms CW-session release debounce and polls
+  both Android MIDI sessions at 4 ms on the high-priority keyer thread. CTR2
+  retains its established UI path for knobs, buttons, straight key, and PTT;
+  its paddle notes use the timestamped keyer path. Normal per-message logging
+  remains removed.
+- Android now retains each MIDI callback timestamp. The keyer records paddle
+  history and evaluates it at scheduled element boundaries, including when
+  several edges arrive together after a delay. Old batches are replayed at
+  legal element speed with character gaps. A missed timer deadline cannot arm
+  an immediate extra element.
 - Optional raw callback logging records the entire MIDI byte sequence before
   QK4 filters messages. It is for device characterization, not a timing source
   used by the keyer.
 
-The stream parser avoids dropped callback fragments. It does not establish a
-maximum usable WPM; device and operator validation is required. The Android
-main event loop still polls MIDI, so scheduling stalls can delay delivery of
-several edges at once. Unlike K4-Companion, QK4 Mobile currently discards the
-MIDI edge time when queuing events and cannot decide keyer elements from the
-paddle state at the intended element boundary after such a stall. Retaining
-timestamps and testing scheduled-boundary behavior is the next architecture
-step. The HaliKey report did not identify whether its burst was heard in local
-sidetone, K4-returned audio, or both, so the source of accumulated delay is
-not yet established.
+The stream parser and timestamped keyer address software delivery delays, but
+they do not establish a maximum usable WPM. Android callback timestamps are
+not necessarily measured contact times at the MIDI device. The HaliKey report
+did not identify whether the burst was heard in local sidetone, K4-returned
+audio, or both; physical acceptance and a short trace remain necessary.
 
 ## Capture the device's unfiltered MIDI
 

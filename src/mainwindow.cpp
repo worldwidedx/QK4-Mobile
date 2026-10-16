@@ -2478,14 +2478,16 @@ MainWindow::MainWindow(QWidget *parent)
             }
         }
         m_midiInputRouter->setMapping(QStringLiteral("ctr2-midi"), mapping);
+        m_ctr2MidiDevice->setMapping(mapping);
     };
     loadCtr2Mapping();
     connect(RadioSettings::instance(), &RadioSettings::ctr2MidiMappingChanged,
             this, loadCtr2Mapping);
 
-    // Feed the logical CW edges from the unchanged CW device path and raw
-    // CTR2 events into one source-aware aggregator. Releasing/disconnecting
-    // either device cannot release an input that the other device still holds.
+    // Desktop CW edges and CTR2 events use the logical input router. Android
+    // session 0 paddle edges go straight to the keyer thread with their MIDI
+    // timestamps; routing them through this UI thread would lose that timing.
+#ifndef Q_OS_ANDROID
     connect(m_halikeyDevice, &HalikeyDevice::ditStateChanged, this, [this](bool pressed) {
         m_midiInputRouter->setLogicalInput(QStringLiteral("cw-midi"),
                                            MidiMapping::LogicalInput::Dit, pressed);
@@ -2494,6 +2496,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_midiInputRouter->setLogicalInput(QStringLiteral("cw-midi"),
                                            MidiMapping::LogicalInput::Dah, pressed);
     });
+#endif
     connect(m_halikeyDevice, &HalikeyDevice::straightKeyStateChanged, this, [this](bool pressed) {
         m_midiInputRouter->setLogicalInput(QStringLiteral("cw-midi"),
                                            MidiMapping::LogicalInput::StraightKey, pressed);
@@ -2504,23 +2507,31 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_halikeyDevice, &HalikeyDevice::disconnected, this, [this]() {
         m_midiInputRouter->clearSourceState(QStringLiteral("cw-midi"));
+#ifndef Q_OS_ANDROID
         if (!m_midiInputRouter->logicalInputActive(MidiMapping::LogicalInput::Dit)
             && !m_midiInputRouter->logicalInputActive(MidiMapping::LogicalInput::Dah)
             && m_iambicKeyer) {
             QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::QueuedConnection);
         }
+#endif
     });
     connect(m_ctr2MidiDevice, &Ctr2MidiDevice::rawMidiEvent, this,
             [this](int status, int data1, int data2) {
+#ifdef Q_OS_ANDROID
+                if (m_ctr2MidiDevice->isPaddleEvent(status, data1))
+                    return;
+#endif
                 m_midiInputRouter->processEvent(QStringLiteral("ctr2-midi"), status, data1, data2);
             });
     connect(m_ctr2MidiDevice, &Ctr2MidiDevice::disconnected, this, [this]() {
         m_midiInputRouter->clearSourceState(QStringLiteral("ctr2-midi"));
+#ifndef Q_OS_ANDROID
         if (!m_midiInputRouter->logicalInputActive(MidiMapping::LogicalInput::Dit)
             && !m_midiInputRouter->logicalInputActive(MidiMapping::LogicalInput::Dah)
             && m_iambicKeyer) {
             QMetaObject::invokeMethod(m_iambicKeyer, "stop", Qt::QueuedConnection);
         }
+#endif
     });
 
     // Match current upstream QK4: raw paddle edges feed a high-priority local
@@ -2532,6 +2543,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_keyerThread->setObjectName("CW Keyer");
     m_iambicKeyer->moveToThread(m_keyerThread);
     m_keyerThread->start(QThread::HighPriority);
+#ifdef Q_OS_ANDROID
+    m_halikeyDevice->attachKeyer(m_iambicKeyer, m_keyerThread);
+    m_ctr2MidiDevice->attachKeyer(m_iambicKeyer, m_keyerThread);
+#endif
     const int initialWpm = m_radioState->keyerSpeed() > 0 ? m_radioState->keyerSpeed() : 20;
     QMetaObject::invokeMethod(m_iambicKeyer, "setSpeed", Qt::QueuedConnection, Q_ARG(int, initialWpm));
     QMetaObject::invokeMethod(m_iambicKeyer, "setReversed", Qt::QueuedConnection,
@@ -2780,9 +2795,15 @@ MainWindow::~MainWindow() {
 
     if (m_halikeyDevice) {
         m_halikeyDevice->closePort();
+#ifdef Q_OS_ANDROID
+        m_halikeyDevice->detachKeyer();
+#endif
     }
     if (m_ctr2MidiDevice) {
         m_ctr2MidiDevice->closePort();
+#ifdef Q_OS_ANDROID
+        m_ctr2MidiDevice->detachKeyer();
+#endif
     }
 
     // Stop the KZ producer before the network thread it targets.

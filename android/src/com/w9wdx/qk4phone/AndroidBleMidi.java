@@ -53,12 +53,23 @@ public final class AndroidBleMidi {
     private static final long BLE_OPEN_RETRY_DELAY_MS = 300;
     private static final long BLE_DISCOVERY_FRESH_MS = 15000;
     private static final long BLE_VERIFY_TIMEOUT_MS = 6000;
+    private static final long MAX_EVENT_AGE_NS = 10_000_000_000L;
+
+    private static final class TimedMidiEvent {
+        final int message;
+        final long timeNs;
+
+        TimedMidiEvent(int message, long timeNs) {
+            this.message = message;
+            this.timeNs = timeNs;
+        }
+    }
 
     private static final class Session {
         MidiDevice midiDevice;
         MidiOutputPort outputPort;
         MidiReceiver midiReceiver;
-        final ConcurrentLinkedQueue<Integer> events = new ConcurrentLinkedQueue<>();
+        final ConcurrentLinkedQueue<TimedMidiEvent> events = new ConcurrentLinkedQueue<>();
         final MidiStreamParser parser = new MidiStreamParser();
         volatile int connectionState; // 0 disconnected, 1 connecting, 2 connected, 3 error
         volatile String statusMessage = "Not connected";
@@ -392,7 +403,7 @@ public final class AndroidBleMidi {
                         return;
                     if (Log.isLoggable(RAW_TAG, Log.DEBUG))
                         traceRawMidi(sessionIndex, data, offset, count, timestamp);
-                    parseMidi(session, data, offset, count);
+                    parseMidi(session, data, offset, count, timestamp);
                 }
             };
             session.outputPort.connect(session.midiReceiver);
@@ -446,13 +457,35 @@ public final class AndroidBleMidi {
     public static int pollEvent(int sessionIndex) {
         final Session session = session(sessionIndex);
         if (session == null) return -1;
-        final Integer event = session.events.poll();
-        return event == null ? -1 : event;
+        final TimedMidiEvent event = session.events.poll();
+        return event == null ? -1 : event.message;
     }
 
-    private static void parseMidi(Session session, byte[] data, int offset, int count) {
+    // The upper 40 bits are the event's age in nanoseconds and the lower 24
+    // bits are the existing packed MIDI message. A single JNI call transfers
+    // both values without an allocation on the C++ polling thread.
+    public static long pollEventTimed(int sessionIndex) {
+        final Session session = session(sessionIndex);
+        if (session == null) return -1;
+        final TimedMidiEvent event = session.events.poll();
+        if (event == null) return -1;
+        final long ageNs = Math.max(0, Math.min(MAX_EVENT_AGE_NS,
+                System.nanoTime() - event.timeNs));
+        return (ageNs << 24) | (event.message & 0x00ffffffL);
+    }
+
+    private static void parseMidi(Session session, byte[] data, int offset,
+                                  int count, long timestamp) {
+        final long callbackNs = System.nanoTime();
+        // Android MIDI timestamps use System.nanoTime(). Some USB/BLE drivers
+        // provide zero or a value outside the current clock window; use the
+        // callback time in that case rather than inventing an old paddle edge.
+        final long eventNs = timestamp > 0 && timestamp <= callbackNs
+                && callbackNs - timestamp <= MAX_EVENT_AGE_NS
+                ? timestamp : callbackNs;
         session.parser.feed(data, offset, count, (status, data1, data2) ->
-                session.events.offer((status << 16) | (data1 << 8) | data2));
+                session.events.offer(new TimedMidiEvent(
+                        (status << 16) | (data1 << 8) | data2, eventNs)));
     }
 
     private static void traceRawMidi(int sessionIndex, byte[] data, int offset,

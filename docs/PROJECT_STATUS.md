@@ -1,24 +1,26 @@
 # Project status
 
-Last updated: 2026-10-16 (HaliKey CW regression report)
+Last updated: 2026-10-16 (timestamped CW candidate)
 
 ## Unreleased: CW MIDI edge accuracy candidate
 
-The Android CW MIDI path preserves split/running-status MIDI messages and offers
-opt-in raw MIDI capture. An external HaliKey operator reported that the first
-test build accumulated delay, then sounded multiple characters in a burst at
-25 WPM, worse than their QK4 Mobile 1.0.5 experience. The report did not
-separate local sidetone from K4-returned audio. Pending a timestamped capture,
-the test branch restores the previous 8 ms Android MIDI polling cadence and
-10 ms paddle release debounce. These are source/build candidates; no 30 WPM
-or higher device acceptance has been recorded. TinyMIDI and CTR2-MIDI MoMIDI
-support remains unconfirmed, and HaliKey fast-speed testing requires an
-external operator. See the
+The Android CW MIDI path preserves split/running-status messages and offers
+opt-in raw capture. An external HaliKey operator reported that the first test
+build accumulated delay, then sounded several characters in a burst at 25 WPM,
+worse than QK4 Mobile 1.0.5. The report did not separate local sidetone from
+K4-returned audio. A new candidate retains MIDI callback timestamps, reads CW
+and CTR2 session events on the keyer thread, evaluates paddle history at each scheduled
+element boundary, replays delayed character gaps, and prevents zero-delay
+catch-up elements. The 10 ms paddle release debounce remains. These are
+source/build candidates; no 30 WPM or higher device acceptance has been
+recorded. TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed, and
+HaliKey fast-speed testing requires an external operator. All three devices
+use the shared boundary-aware keyer; physical acceptance remains separate. See the
 [CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
 
-On 2026-10-10, the Java stream-parser test, the native iambic-keyer tests at
-30/40/50 WPM, and the MIDI mapping suite passed. The current-base Android
-ARM64 debug APK packaged successfully. These checks use synthetic inputs;
+On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
+passed. The Java stream-parser test previously passed, and the current Android
+ARM64 test APK packaged successfully. These checks use synthetic inputs;
 TinyMIDI, CTR2-MIDI, HaliKey, and K4 acceptance remain pending.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
