@@ -95,6 +95,7 @@
 #include <QShowEvent>
 #include <QPointer>
 #include <QScreen>
+#include <QWindow>
 #include <QTimer>
 #include <QVector>
 #include <cmath>
@@ -520,6 +521,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(qApp, &QGuiApplication::applicationStateChanged, this,
             [this](Qt::ApplicationState state) {
+#ifdef Q_OS_ANDROID
+        if (state == Qt::ApplicationActive)
+            scheduleDisplayRefresh();
+#endif
         if (state != Qt::ApplicationActive && m_sstvScreen)
             m_sstvScreen->flushDraft();
         if (state != Qt::ApplicationActive && (m_sstvTxActive || m_sstvTxStarting))
@@ -7155,6 +7160,15 @@ void MainWindow::onPttReleased() {
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+#ifdef Q_OS_ANDROID
+    // Android may recreate the native window when a Fold moves from the inner
+    // display to the cover display without destroying this QWidget tree.
+    if (watched == m_displayWindow && event->type() == QEvent::Expose) {
+        if (m_displayWindow && m_displayWindow->isExposed())
+            scheduleDisplayRefresh();
+        return false;
+    }
+#endif
     // Match the K4 console: tapping either displayed filter shape selects the
     // next smaller filter setting: FIL1 -> FIL3 -> FIL2 -> FIL1.
     if ((watched == m_filterAWidget || watched == m_filterBWidget)
@@ -7361,10 +7375,25 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
+#ifdef Q_OS_ANDROID
+    if (QWindow *handle = windowHandle(); handle && m_displayWindow != handle) {
+        if (m_displayWindow)
+            m_displayWindow->removeEventFilter(this);
+        m_displayWindow = handle;
+        handle->installEventFilter(this);
+        connect(handle, &QWindow::screenChanged, this, [this](QScreen *) {
+            scheduleDisplayRefresh();
+        });
+    }
+    scheduleDisplayRefresh();
+#endif
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
+#ifdef Q_OS_ANDROID
+    scheduleDisplayRefresh();
+#endif
     if (K4Styles::isCompactLayout())
         QTimer::singleShot(0, this, &MainWindow::positionCompactBSetIndicator);
     if (m_radioManager && centralWidget()) {
@@ -7376,6 +7405,28 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(rect());
     updatePhoneTxInputShieldGeometry();
 }
+
+#ifdef Q_OS_ANDROID
+void MainWindow::scheduleDisplayRefresh() {
+    if (m_displayRefreshPending)
+        return;
+    m_displayRefreshPending = true;
+    QTimer::singleShot(0, this, [this] {
+        m_displayRefreshPending = false;
+        if (!isVisible() || !windowHandle() || !windowHandle()->isExposed())
+            return;
+        // Keep the connected radio/audio session and the selected compact
+        // layout. Request a new QWidget composition and fresh RHI textures on
+        // the newly exposed Android surface.
+        update();
+        if (centralWidget()) centralWidget()->update();
+        if (m_panadapterA) m_panadapterA->update();
+        if (m_panadapterB) m_panadapterB->update();
+        if (m_vfoA && m_vfoA->miniPan()) m_vfoA->miniPan()->update();
+        if (m_vfoB && m_vfoB->miniPan()) m_vfoB->miniPan()->update();
+    });
+}
+#endif
 
 void MainWindow::positionCompactBSetIndicator() {
     if (!K4Styles::isCompactLayout() || !m_bSetLabel || !m_txIndicator)

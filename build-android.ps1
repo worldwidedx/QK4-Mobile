@@ -4,10 +4,15 @@ param(
     [ValidateSet("Debug", "Release")]
     [string] $DeploymentType = "Debug",
     [string] $DeviceSerial = "",
-    [string] $BuildDirectory = ""
+    [string] $BuildDirectory = "",
+    [switch] $TestApp
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($TestApp -and $DeploymentType -ne "Debug") {
+    throw "TestApp is a debug-only, separately installed application."
+}
 
 function Find-ExistingPath {
     param(
@@ -226,6 +231,9 @@ if ($Action -eq "Build") {
 
 $packageDir = Join-Path $buildDir "android-build"
 $deploymentSettings = Join-Path $buildDir "android-QK4-deployment-settings.json"
+if ($TestApp) {
+    $packageDir = Join-Path $buildDir "android-build-test"
+}
 $applicationLibrary = Join-Path $buildDir "libQK4_arm64-v8a.so"
 $packageLibraryDir = Join-Path $packageDir "libs\arm64-v8a"
 $packageLibrary = Join-Path $packageLibraryDir "libQK4_arm64-v8a.so"
@@ -236,6 +244,25 @@ $env:Path = "$javaHome\bin;$env:Path"
 & $cmake --build $buildDir --target QK4 --parallel 4
 if ($LASTEXITCODE -ne 0) {
     throw "Android build failed with exit code $LASTEXITCODE."
+}
+
+if ($TestApp) {
+    # Reuse the tested native library with a separate package identity and
+    # private data directory. Never replace the operator's published app.
+    $testSource = Join-Path $buildDir "android-test-source"
+    New-Item -ItemType Directory -Force -Path $testSource | Out-Null
+    Copy-Item -Path (Join-Path $projectDir "android\*") -Destination $testSource -Recurse -Force
+    $manifestPath = Join-Path $testSource "AndroidManifest.xml"
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw
+    $manifest = $manifest.Replace('package="com.w9wdx.qk4phone"', 'package="com.w9wdx.qk4phone.test"')
+    $manifest = $manifest.Replace('android:label="QK4 Mobile"', 'android:label="QK4 Mobile Test"')
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($manifestPath, $manifest, $utf8NoBom)
+    $testDeployment = Get-Content -LiteralPath $deploymentSettings -Raw | ConvertFrom-Json
+    $testDeployment.'android-package-name' = 'com.w9wdx.qk4phone.test'
+    $testDeployment.'android-package-source-directory' = $testSource.Replace('\', '/')
+    $deploymentSettings = Join-Path $buildDir "android-QK4-test-deployment-settings.json"
+    [System.IO.File]::WriteAllText($deploymentSettings, ($testDeployment | ConvertTo-Json -Depth 20), $utf8NoBom)
 }
 
 New-Item -ItemType Directory -Force -Path $packageLibraryDir | Out-Null
@@ -318,7 +345,13 @@ if ($Action -eq "Install") {
     if ($DeviceSerial) {
         $adbArgs += @("-s", $DeviceSerial)
     }
-    $adbArgs += @("install", "-r", $apk.FullName)
+    $adbArgs += @("install", "-r")
+    if ($TestApp) {
+        # Branch test builds can have lower codes than a previous test build.
+        # Android permits this for debuggable packages; retain existing data.
+        $adbArgs += "-d"
+    }
+    $adbArgs += $apk.FullName
 
     & $adb @adbArgs
     if ($LASTEXITCODE -ne 0) {

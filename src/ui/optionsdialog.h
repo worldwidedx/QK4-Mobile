@@ -45,6 +45,9 @@ public:
         PageCtr2Midi,
         PageKpod,
         PageFnKeySetup,
+#ifdef Q_OS_ANDROID
+        PageLayout,
+#endif
         PageCount
     };
 

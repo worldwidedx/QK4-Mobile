@@ -15,6 +15,8 @@
 #endif
 #include "mainwindow.h"
 #include "ui/k4styles.h"
+#include "android/deviceinfo.h"
+#include "settings/radiosettings.h"
 
 // Filter out known benign Qt warnings on macOS
 // QSocketNotifier::Exception is not supported by kqueue (macOS's event system)
@@ -118,6 +120,12 @@ int main(int argc, char *argv[]) {
     app.setOrganizationName("AI5QK");
     app.setOrganizationDomain("ai5qk.com");
 
+    // Choose once, before constructing widgets. Folding/resizing then keeps
+    // the compact console and the existing radio/audio session intact.
+    bool forceCompact = false;
+#ifdef Q_OS_ANDROID
+    forceCompact = AndroidDeviceInfo::hasFoldingHardware() || RadioSettings::instance()->alwaysCompactLayout();
+#endif
     if (QScreen *screen = app.primaryScreen()) {
         qreal diagonalInches = 0.0;
         const QSizeF physicalSizeMm = screen->physicalSize();
@@ -125,9 +133,10 @@ int main(int argc, char *argv[]) {
             const qreal diagonalMm = std::hypot(physicalSizeMm.width(), physicalSizeMm.height());
             diagonalInches = diagonalMm / 25.4;
         }
-        K4Styles::configureForScreen(screen->availableGeometry().size(), screen->devicePixelRatio(), diagonalInches);
+        K4Styles::configureForScreen(screen->availableGeometry().size(), screen->devicePixelRatio(), diagonalInches,
+                                    forceCompact);
     } else {
-        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0);
+        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0, forceCompact);
     }
 
     // Load embedded Inter font family
