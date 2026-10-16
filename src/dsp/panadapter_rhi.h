@@ -61,6 +61,7 @@ public:
     void setNotchFilter(bool enabled, int pitchHz);
     void setCursorVisible(bool visible);
     void setAmplitudeUnits(bool useSUnits); // false=dBm, true=S-units
+    void setAveraging(int level);
 
     // Secondary VFO (other receiver's passband)
     void setSecondaryVfo(qint64 freq, int bwHz, const QString &mode, int ifShift, int cwPitch);
@@ -105,6 +106,7 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
 
 private:
+    friend class PanAverageTest;
     // Update dBm scale overlay position and values
     void updateDbmScaleOverlay();
     // Update frequency scale overlay position and values
@@ -247,6 +249,9 @@ private:
     int m_refLevel = -110;
     int m_scale = 75; // 10-150, default 75 (neutral)
     int m_spanHz = 10000;
+    int m_averagingLevel = 1;
+    float m_attackAlpha = 0.52f;
+    float m_decayAlpha = 0.34f;
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;
     bool m_cursorVisible = true;
