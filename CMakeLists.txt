@@ -14,16 +14,6 @@ if(NOT DEFINED QK4_VERSION_FULL)
 endif()
 message(STATUS "QK4 version: ${QK4_VERSION_FULL}")
 
-# iOS build identifier (CFBundleVersion). Apple caps CFBundleShortVersionString
-# (the marketing version, QK4_VERSION_FULL) at three period-separated integers,
-# but allows more for CFBundleVersion, so each TestFlight/App Store upload can
-# bump just this value -- e.g. -DQK4_IOS_BUILD_NUMBER=1.0.6.2 -- without
-# changing the displayed product version. Must still increase monotonically
-# per upload; App Store Connect rejects a duplicate CFBundleVersion.
-if(NOT DEFINED QK4_IOS_BUILD_NUMBER)
-    set(QK4_IOS_BUILD_NUMBER "${QK4_VERSION_FULL}")
-endif()
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -440,9 +430,28 @@ elseif(IOS)
     # Qt for iOS is static and needs qt_add_executable for plugin import.
     # Build with the Xcode generator (qt-cmake defaults to it) and pick the
     # SDK at build time: cmake --build . -- -sdk iphonesimulator
+    # Apple's marketing version has exactly three numeric components, while
+    # CFBundleVersion has one to three. Keep Android's full version (including
+    # a point-release fourth component) separate from these iOS bundle values.
+    if(NOT QK4_VERSION_FULL MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        message(FATAL_ERROR "Cannot derive an iOS marketing version from '${QK4_VERSION_FULL}'.")
+    endif()
+    set(_qk4_ios_marketing_default "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+    set(QK4_IOS_MARKETING_VERSION "${_qk4_ios_marketing_default}" CACHE STRING
+        "Three-component iOS marketing version")
+    if(NOT QK4_IOS_MARKETING_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+        message(FATAL_ERROR "QK4_IOS_MARKETING_VERSION must contain exactly three numeric components.")
+    endif()
+    if(NOT DEFINED QK4_IOS_BUILD_NUMBER)
+        set(QK4_IOS_BUILD_NUMBER "${QK4_IOS_MARKETING_VERSION}")
+    endif()
+    if(NOT QK4_IOS_BUILD_NUMBER MATCHES "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$")
+        message(FATAL_ERROR "QK4_IOS_BUILD_NUMBER must contain one to three numeric components.")
+    endif()
+    # Pass a new QK4_IOS_BUILD_NUMBER for each TestFlight/App Store upload.
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
     set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_IOS_BUILD_NUMBER})
-    set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
+    set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_IOS_MARKETING_VERSION})
     # Bundle identifier. Defaults to the worldwideDX id used for the primary
     # App Store listing; forks and TestFlight builds signed by a different
     # Apple team override with -DQK4_IOS_BUNDLE_ID=your.reverse.dns.id
