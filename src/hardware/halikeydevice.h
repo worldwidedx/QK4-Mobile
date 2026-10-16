@@ -76,7 +76,7 @@ private:
     bool m_confirmedDahState = false;
     bool m_confirmedPttState = false;
 
-    // Straight-key contact debounce; MIDI paddles bypass the release delay.
+    // Release debounce for MIDI paddles and straight-key contacts.
     QTimer *m_ditDebounceTimer = nullptr;
     QTimer *m_dahDebounceTimer = nullptr;
     QTimer *m_pttDebounceTimer = nullptr;

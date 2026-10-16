@@ -11,19 +11,26 @@ rely on; note numbers 20/21 alone do not establish it.
 
 - Android parses MIDI messages across callback boundaries and handles running
   status, so a split callback cannot discard a paddle edge.
-- Android CW MIDI paddle releases now go directly to the local iambic keyer.
-  The 10 ms release debounce remains for straight-key/external-keyer input.
-  CTR2 paddle input already had no software release debounce.
-- Connected Android sessions poll their event queues every 4 ms with a precise
-  timer, rather than every 8 ms. Normal per-message logging is removed.
+- The first candidate removed the 10 ms HaliKey-path paddle release debounce
+  and changed both Android MIDI sessions from 8 ms to 4 ms precise polling.
+  A HaliKey operator reported cumulative delay and burst-like characters at
+  25 WPM, worse than their 1.0.5 baseline. Both timing changes have been
+  reverted pending device evidence. CTR2 paddle input still has no software
+  release debounce. Normal per-message logging remains removed.
 - Optional raw callback logging records the entire MIDI byte sequence before
   QK4 filters messages. It is for device characterization, not a timing source
   used by the keyer.
 
-These changes reduce known latency and avoid dropped stream fragments. They do
-not establish a maximum usable WPM; device and operator validation is required.
-The Android main event loop still polls MIDI, so scheduling stalls can delay
-delivery of several edges at once.
+The stream parser avoids dropped callback fragments. It does not establish a
+maximum usable WPM; device and operator validation is required. The Android
+main event loop still polls MIDI, so scheduling stalls can delay delivery of
+several edges at once. Unlike K4-Companion, QK4 Mobile currently discards the
+MIDI edge time when queuing events and cannot decide keyer elements from the
+paddle state at the intended element boundary after such a stall. Retaining
+timestamps and testing scheduled-boundary behavior is the next architecture
+step. The HaliKey report did not identify whether its burst was heard in local
+sidetone, K4-returned audio, or both, so the source of accumulated delay is
+not yet established.
 
 ## Capture the device's unfiltered MIDI
 

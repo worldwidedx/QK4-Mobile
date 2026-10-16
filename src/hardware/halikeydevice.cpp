@@ -72,11 +72,10 @@ HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
         }
     });
 
-    // Poll only while connected. Four milliseconds bounds the scheduling delay
-    // to a small fraction of a 30-50 WPM dit without continuous idle JNI work.
+    // Use the established Android poll cadence until paddle edge timestamps can
+    // distinguish a real release from a delayed batch of MIDI callbacks.
     m_androidMidiPollTimer = new QTimer(this);
-    m_androidMidiPollTimer->setTimerType(Qt::PreciseTimer);
-    m_androidMidiPollTimer->setInterval(4);
+    m_androidMidiPollTimer->setInterval(8);
     connect(m_androidMidiPollTimer, &QTimer::timeout, this, [this]() {
         for (int count = 0; count < 64; ++count) {
             const int event = QJniObject::callStaticMethod<jint>(
@@ -115,16 +114,6 @@ HalikeyDevice::~HalikeyDevice() {
 
 void HalikeyDevice::onRawDit(bool pressed) {
     m_rawDitState = pressed;
-    if (RadioSettings::instance()->cwMidiKeyingMode() == 0) {
-        // A MIDI paddle message is already a digital edge. Holding its release
-        // for the straight-key contact debounce can change squeeze timing.
-        m_ditDebounceTimer->stop();
-        if (pressed != m_confirmedDitState) {
-            m_confirmedDitState = pressed;
-            emitMappedPaddle(true, pressed);
-        }
-        return;
-    }
     if (pressed && !m_confirmedDitState) {
         m_confirmedDitState = true;
         m_ditDebounceTimer->stop();
@@ -136,14 +125,6 @@ void HalikeyDevice::onRawDit(bool pressed) {
 
 void HalikeyDevice::onRawDah(bool pressed) {
     m_rawDahState = pressed;
-    if (RadioSettings::instance()->cwMidiKeyingMode() == 0) {
-        m_dahDebounceTimer->stop();
-        if (pressed != m_confirmedDahState) {
-            m_confirmedDahState = pressed;
-            emitMappedPaddle(false, pressed);
-        }
-        return;
-    }
     if (pressed && !m_confirmedDahState) {
         m_confirmedDahState = true;
         m_dahDebounceTimer->stop();
