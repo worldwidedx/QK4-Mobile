@@ -447,6 +447,11 @@ elseif(IOS)
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${QK4_IOS_BUNDLE_ID}"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        # Sign only the application bundle. A global Xcode signing setting also
+        # marks static helper libraries as signable and makes Xcode demand a
+        # development team for targets such as qk4_ft8 and qk4_ft8_codec.
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "YES"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
         # Emit a dSYM so App Store Connect can symbolicate crash reports; the
         # CMake Xcode generator otherwise defaults to plain DWARF and archives
         # ship without one (ITMS "Upload Symbols Failed" warning).
