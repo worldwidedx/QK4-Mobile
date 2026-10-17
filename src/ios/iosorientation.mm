@@ -26,11 +26,20 @@
 namespace {
 // Landscape is the default and the only orientation ever authorized for the
 // main radio console per docs/ORIENTATION_POLICY.md; screens that need
-// portrait (SSTV, FT8, some logbook entries) widen this via
-// IosOrientation::requestPortrait()/allowPortraitAndLandscape() and narrow it
-// back to requestLandscape() on exit, mirroring the Android call sites in
-// src/mainwindow.cpp through src/android/sstvorientation.cpp.
+// portrait (SSTV, FT8, some logbook entries) change this through the
+// IosOrientation functions. The radio logbook keeps landscape until a
+// physical device turn and restores it on exit, matching the Android path.
 UIInterfaceOrientationMask g_allowedMask = UIInterfaceOrientationMaskLandscape;
+id g_radioLogbookObserver = nil;
+bool g_radioLogbookActive = false;
+UIDeviceOrientation g_initialRadioLogbookOrientation = UIDeviceOrientationUnknown;
+
+void onMainThread(dispatch_block_t action) {
+    if ([NSThread isMainThread])
+        action();
+    else
+        dispatch_async(dispatch_get_main_queue(), action);
+}
 
 UIWindowScene *activeWindowScene() {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -41,32 +50,46 @@ UIWindowScene *activeWindowScene() {
     return nil;
 }
 
-void requestOrientations(UIInterfaceOrientationMask mask) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        g_allowedMask = mask;
+void applyOrientations(UIInterfaceOrientationMask mask) {
+    g_allowedMask = mask;
 
-        UIWindowScene *scene = activeWindowScene();
-        if (!scene)
-            return;
+    UIWindowScene *scene = activeWindowScene();
+    if (!scene)
+        return;
 
-        // Force iOS to re-query -application:supportedInterfaceOrientationsForWindow:
-        // (and any view controller in the chain) now that g_allowedMask changed;
-        // without this the mask above only takes effect on the next rotation
-        // iOS happens to re-evaluate on its own.
-        if (@available(iOS 16.0, *)) {
-            for (UIWindow *window in scene.windows) {
-                if (window.rootViewController)
-                    [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
-            }
-            UIWindowSceneGeometryPreferencesIOS *preferences =
-                [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
-            [scene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
-                qWarning() << "IosOrientation: geometry update failed:"
-                           << QString::fromNSString(error.localizedDescription);
-            }];
+    // Force iOS to re-query -application:supportedInterfaceOrientationsForWindow:
+    // (and any view controller in the chain) now that g_allowedMask changed;
+    // without this the mask above only takes effect on the next rotation
+    // iOS happens to re-evaluate on its own.
+    if (@available(iOS 16.0, *)) {
+        for (UIWindow *window in scene.windows) {
+            if (window.rootViewController)
+                [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
         }
-        [UIViewController attemptRotationToDeviceOrientation];
-    });
+        UIWindowSceneGeometryPreferencesIOS *preferences =
+            [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
+        [scene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
+            qWarning() << "IosOrientation: geometry update failed:"
+                       << QString::fromNSString(error.localizedDescription);
+        }];
+    }
+    [UIViewController attemptRotationToDeviceOrientation];
+}
+
+void requestOrientations(UIInterfaceOrientationMask mask) {
+    onMainThread(^{ applyOrientations(mask); });
+}
+
+void stopRadioLogbookObservation() {
+    if (g_radioLogbookObserver) {
+        [[NSNotificationCenter defaultCenter] removeObserver:g_radioLogbookObserver];
+        g_radioLogbookObserver = nil;
+    }
+    if (g_radioLogbookActive) {
+        [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
+        g_radioLogbookActive = false;
+    }
+    g_initialRadioLogbookOrientation = UIDeviceOrientationUnknown;
 }
 }
 
@@ -97,4 +120,51 @@ void IosOrientation::requestPortrait() {
 
 void IosOrientation::allowPortraitAndLandscape() {
     requestOrientations(UIInterfaceOrientationMaskAll);
+}
+
+void IosOrientation::beginRadioLogbookRotation() {
+    onMainThread(^{
+        stopRadioLogbookObservation();
+        // Keep the entry landscape even if the device is already held upright.
+        applyOrientations(UIInterfaceOrientationMaskLandscape);
+
+        UIDevice *device = [UIDevice currentDevice];
+        [device beginGeneratingDeviceOrientationNotifications];
+        g_radioLogbookActive = true;
+        const UIDeviceOrientation initial = device.orientation;
+        if (UIDeviceOrientationIsValidInterfaceOrientation(initial))
+            g_initialRadioLogbookOrientation = initial;
+
+        g_radioLogbookObserver = [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIDeviceOrientationDidChangeNotification
+                        object:device
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *notification) {
+            Q_UNUSED(notification)
+            if (!g_radioLogbookActive || !g_radioLogbookObserver)
+                return;
+            const UIDeviceOrientation current = device.orientation;
+            if (!UIDeviceOrientationIsValidInterfaceOrientation(current))
+                return; // Flat/unknown readings are not a deliberate turn.
+            if (g_initialRadioLogbookOrientation == UIDeviceOrientationUnknown) {
+                g_initialRadioLogbookOrientation = current;
+                return;
+            }
+            if (current == g_initialRadioLogbookOrientation)
+                return;
+
+            // Keep sensor updates active until the logbook closes so UIKit can
+            // follow subsequent turns after portrait is allowed.
+            [[NSNotificationCenter defaultCenter] removeObserver:g_radioLogbookObserver];
+            g_radioLogbookObserver = nil;
+            applyOrientations(UIInterfaceOrientationMaskAll);
+        }];
+    });
+}
+
+void IosOrientation::endRadioLogbookRotation() {
+    onMainThread(^{
+        stopRadioLogbookObservation();
+        applyOrientations(UIInterfaceOrientationMaskLandscape);
+    });
 }

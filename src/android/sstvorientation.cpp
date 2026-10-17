@@ -46,9 +46,9 @@ void setRadioLogbookOrientationEnabled(bool enabled) {
                                      "setRadioLogbookRotation", "(Z)V", jboolean(enabled));
 #elif defined(Q_OS_IOS)
     if (enabled)
-        IosOrientation::allowPortraitAndLandscape();
+        IosOrientation::beginRadioLogbookRotation();
     else
-        IosOrientation::requestLandscape();
+        IosOrientation::endRadioLogbookRotation();
 #else
     Q_UNUSED(enabled)
 #endif
