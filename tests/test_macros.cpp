@@ -96,7 +96,7 @@ private slots:
         QTRY_VERIFY(radio.packets.contains("ID;"));
         radio.packets.removeAll("PING;");
         QCOMPARE(radio.packets, QStringList({macro, "RDY;",
-            "#DSM;#HDSM;#PKM;#AR;#NB$;#NBL$;#FRZ;#FPS;#SCL;RT$;RO$;VT;VT$;KP;PL;PL$;RP;", "ID;"}));
+            "#DSM;#HDSM;#PKM;#AR;#AVG;#NB$;#NBL$;#FRZ;#FPS;#SCL;RT$;RO$;VT;VT$;KP;PL;PL$;RP;", "ID;"}));
         QCOMPARE(frequencySpy.count(), 0);
         QCOMPARE(radio.state.vfoA(), quint64(14074000));
         QCOMPARE(radio.state.vfoB(), quint64(7074000));
@@ -147,6 +147,7 @@ private slots:
         QSignalSpy subBandwidthSpy(&radio.state, &RadioState::filterBandwidthBChanged);
         QSignalSpy modeSpy(&radio.state, &RadioState::modeChanged);
         QSignalSpy freezeSpy(&radio.state, &RadioState::freezeChanged);
+        QSignalSpy averagingSpy(&radio.state, &RadioState::averagingChanged);
         const QString macro = "MD3;FP2;BW0050;IS+0010;MD$2;BW$0240;PC025H;RT/;#FRZ/;ME0007.0123;";
         radio.client->sendMacro(macro);
         radio.barrier();
@@ -161,8 +162,10 @@ private slots:
                              "MEDF0007,AGC Hold Time,RX AGC,DEC,1,0,200,0,123,1;";
         radio.peer->write(Protocol::buildCATPacket(dump));
         // The supplemental query handles a display setting absent from RDY.
-        radio.peer->write(Protocol::buildCATPacket("#FRZ1;VT2;VT$3;"));
+        radio.peer->write(Protocol::buildCATPacket("#FRZ1;#AVG12;VT2;VT$3;"));
         QTRY_COMPARE(freezeSpy.count(), 1);
+        QTRY_COMPARE(averagingSpy.count(), 1);
+        QCOMPARE(radio.state.averaging(), 12);
         QCOMPARE(radio.state.mode(), RadioState::CW);
         QCOMPARE(radio.state.modeB(), RadioState::USB);
         QCOMPARE(radio.state.filterPosition(), 2);
@@ -179,6 +182,11 @@ private slots:
         QCOMPARE(modeSpy.count(), 1);
         QVERIFY(radio.menus.getMenuItem(7));
         QCOMPARE(radio.menus.getMenuItem(7)->currentValue, 123);
+
+        // A change made at the K4 arrives through AI4 without an app SET echo.
+        radio.peer->write(Protocol::buildCATPacket("#AVG06;"));
+        QTRY_COMPARE(averagingSpy.count(), 2);
+        QCOMPARE(radio.state.averaging(), 6);
 
         // Repeated macro refreshes must replace menu definitions, not add duplicates.
         radio.packets.clear();
