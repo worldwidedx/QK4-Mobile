@@ -710,6 +710,32 @@ the compact layout; broader device validation is still required.
 
 ## Known boundaries / next validation
 
+### CTR2-MIDI on iOS
+
+Branch `feat/ctr2-midi-ios` (ported from QK4-Android's unmerged `fix/ctr2-midi-ios-coremidi`). `Ctr2MidiDevice` previously had a real
+implementation only under `Q_OS_ANDROID`; every other platform fell through to
+a stub that enumerated nothing, so SCAN on iPhone and iPad could never find an
+attached controller. The non-Android branch is now implemented with RtMidi over
+CoreMIDI, and the CTR2 setup page gained a BLUETOOTH button that presents
+Apple's pairing browser, because CoreMIDI does not expose an unpaired BLE MIDI
+peripheral. See `docs/CTR2_MIDI_SCOPE.md` for the transport boundary.
+
+Validated over USB on both an iPhone 17 Pro and an iPad Pro 13-inch (M5): the
+controller is discovered, connects, and the tuning knob tracks proportionally.
+
+Validated over Bluetooth LE on the iPad: pairing through the CoreAudioKit
+browser succeeds, the pairing sheet is usable on iPad, the selector then lists
+the controller as `CTR2_C0F8 (BLE)`, and the transport label is correct.
+
+Still to validate:
+
+- Bluetooth LE on iPhone. The code path is identical to the iPad one that was
+  validated, but it has not been run there.
+- A controller reachable over USB and BLE at the same time produces two
+  distinct selector entries rather than one displacing the other.
+- Desktop builds now compile the same non-Android branch, which was previously
+  a stub. No desktop CTR2 testing has been done.
+
 ### Next-build enhancements
 
 - Add CTR2 MIDI support. Confirm the CTR2 MIDI transport, messages, control
