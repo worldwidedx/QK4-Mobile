@@ -3,11 +3,11 @@
 QK4 Mobile is the Mobile fork of QK4 for Elecraft K4 transceivers. It preserves the proven radio-control, TCP/TLS, panadapter-stream, and TX/RX audio architecture of QK4 while replacing its desktop-oriented interaction model with a touch interface. The radio console uses landscape; other screens follow the [screen orientation policy](docs/ORIENTATION_POLICY.md).
 
 The application is under active development and is intended for use with an
-Elecraft K4/K4D attached to the internet. Version 1.0.6 is the current ARM64
+Elecraft K4/K4D attached to the internet. Version 1.0.6.1 is the current ARM64
 release.
 
 The current stable APK is available from the [QK4 Mobile
-v1.0.6 release](https://github.com/worldwidedx/QK4-Mobile/releases/tag/v1.0.6).
+v1.0.6.1 release](https://github.com/worldwidedx/QK4-Mobile/releases/tag/v1.0.6.1).
 
 ![QK4 Mobile v0.8.0 console](./docs/images/QK4-Mobile-v0.8.0-Console.png)
 
@@ -62,7 +62,7 @@ to remote clients, such as BAND/MEM, remain outside the application's control.
 - Local non-decaying Peak Hold and local WTR CLRS waterfall brightness control
 - Release-signed APK distribution support
 
-See the [v1.0.6 release notes](docs/RELEASE_NOTES_v1.0.6.md) and
+See the [v1.0.6.1 release notes](docs/RELEASE_NOTES_v1.0.6.1.md) and
 [project status](docs/PROJECT_STATUS.md) for the verified state and next work.
 Contributors changing screen rotation or device-class layouts must also follow
 the [screen orientation policy](docs/ORIENTATION_POLICY.md), the authoritative
