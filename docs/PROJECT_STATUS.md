@@ -1,6 +1,28 @@
 # Project status
 
-Last updated: 2026-09-29 (v1.0.6 Android release)
+Last updated: 2026-10-05 (v1.0.6.1 panadapter Average patch)
+
+## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
+
+The mobile panadapter's Average control could show a K4 value while its main
+trace and waterfall used fixed smoothing and its mini pans used raw frames.
+Connection refresh also omitted the `#AVG;` readback, so the app could start
+with a stale value. This behavior was present in every tagged mobile release
+from v1.0.1 through v1.0.6. The correction restores K4-controlled smoothing
+for both main and mini pans, queries the value on connection and after macros,
+and reads back changes made through the app's Average control.
+
+On 2026-10-05, the owner confirmed on a Samsung Galaxy S26 Ultra that the
+corrected **QK4 Mobile Test** build follows the K4 Average setting. This test
+APK used v1.0.6 / version code 33 and contained the issue #21 foldable-layout
+branch plus this Average correction; the Average PR isolates this correction
+on `main`. The focused RadioState and renderer suites passed, and the Android
+ARM64 native build and test-app APK packaging succeeded. The patch release
+uses Android version code 34. The owner also confirms the v1.0.6.1 release APK
+was radio-tested with the K4 on the same phone. PR #23 passed the iOS compile
+check.
+Android tablet and physical iPhone/iPad behavior have not been validated for
+this change.
 
 ## QK4 Mobile v1.0.6
 
@@ -687,6 +709,32 @@ the compact layout; broader device validation is still required.
   CAT command because it maps the application's local waterfall LUT.
 
 ## Known boundaries / next validation
+
+### CTR2-MIDI on iOS
+
+Branch `feat/ctr2-midi-ios` (ported from QK4-Android's unmerged `fix/ctr2-midi-ios-coremidi`). `Ctr2MidiDevice` previously had a real
+implementation only under `Q_OS_ANDROID`; every other platform fell through to
+a stub that enumerated nothing, so SCAN on iPhone and iPad could never find an
+attached controller. The non-Android branch is now implemented with RtMidi over
+CoreMIDI, and the CTR2 setup page gained a BLUETOOTH button that presents
+Apple's pairing browser, because CoreMIDI does not expose an unpaired BLE MIDI
+peripheral. See `docs/CTR2_MIDI_SCOPE.md` for the transport boundary.
+
+Validated over USB on both an iPhone 17 Pro and an iPad Pro 13-inch (M5): the
+controller is discovered, connects, and the tuning knob tracks proportionally.
+
+Validated over Bluetooth LE on the iPad: pairing through the CoreAudioKit
+browser succeeds, the pairing sheet is usable on iPad, the selector then lists
+the controller as `CTR2_C0F8 (BLE)`, and the transport label is correct.
+
+Still to validate:
+
+- Bluetooth LE on iPhone. The code path is identical to the iPad one that was
+  validated, but it has not been run there.
+- A controller reachable over USB and BLE at the same time produces two
+  distinct selector entries rather than one displacing the other.
+- Desktop builds now compile the same non-Android branch, which was previously
+  a stub. No desktop CTR2 testing has been done.
 
 ### Next-build enhancements
 

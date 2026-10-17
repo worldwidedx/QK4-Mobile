@@ -1,8 +1,18 @@
+# Required local workspace
+
+The owner explicitly requires all QK4 Mobile development, builds, fixes, and release work to use C:\codex\QK4-Mobile.
+Always pass that absolute directory as the working directory for commands.
+Do not create or choose another clone, temporary checkout, OneDrive workspace, or K4Dev workspace unless the owner explicitly requests it.
+The former K4Dev, OneDrive, and temporary-release paths are compatibility junctions, not separate development locations.
+The .local-archive directory contains preserved historical work and build artifacts. Do not build, edit, or release from its retired checkouts.
+Use origin (https://github.com/worldwidedx/QK4-Mobile.git). android-archive points to the historical QK4-Android repository.
+Preserve this local workspace instruction when updating tracked project instructions.
+
 # QK4 Mobile development instructions
 
 ## Current release and scope
 
-- Current release: **QK4 Mobile v1.0.6** (`com.w9wdx.qk4phone`).
+- Current release: **QK4 Mobile v1.0.6.1** (`com.w9wdx.qk4phone`).
 - Current supported build target: ARM64 Android touch devices, API 26+.
   The radio console uses landscape; other screens follow the
   [screen orientation policy](docs/ORIENTATION_POLICY.md).
