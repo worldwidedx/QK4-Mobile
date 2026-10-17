@@ -97,6 +97,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Test MIDI stream parser
+        if: matrix.check == 'Android build'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-tests/midi-java | Out-Null
+          javac -d build-tests/midi-java android/src/com/w9wdx/qk4phone/MidiStreamParser.java tests/java/com/w9wdx/qk4phone/MidiStreamParserTest.java
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          java -cp build-tests/midi-java com.w9wdx.qk4phone.MidiStreamParserTest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Android build prerequisites
         if: matrix.check == 'Android build'
         shell: pwsh

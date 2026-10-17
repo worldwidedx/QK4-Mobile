@@ -130,6 +130,12 @@ target_include_directories(test_midimapping PRIVATE ../src)
 target_link_libraries(test_midimapping PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME midimapping COMMAND test_midimapping)
 
+qt_add_executable(test_iambickeyer test_iambickeyer.cpp
+    ../src/hardware/iambickeyer.cpp ../src/hardware/iambickeyer.h)
+target_include_directories(test_iambickeyer PRIVATE ../src)
+target_link_libraries(test_iambickeyer PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME iambickeyer COMMAND test_iambickeyer)
+
 qt_add_executable(test_fnkeymemory test_fnkeymemory.cpp
     ../src/settings/fnkeymemory.cpp ../src/settings/fnkeymemory.h)
 target_include_directories(test_fnkeymemory PRIVATE ../src)
@@ -194,7 +200,7 @@ target_link_libraries(test_sstvstorage PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 add_test(NAME sstvstorage COMMAND test_sstvstorage)
 
 cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH compiler_runtime_dir)
-set_tests_properties(${digital_codec_test} overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros panaverage modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
+set_tests_properties(${digital_codec_test} overlayback logbook qrzlogbook digitalui digitaltx ft8 midimapping iambickeyer fnkeymemory frequencyentryparser frequencydisplaywidget radiostate macros panaverage modepopupwidget sstvencoder sstvcomposer sstvstorage PROPERTIES
     ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         "PATH=path_list_prepend:${compiler_runtime_dir}"

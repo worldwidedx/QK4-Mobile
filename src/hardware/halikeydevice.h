@@ -11,6 +11,10 @@
 #include <QTimer>
 
 class HaliKeyWorkerBase;
+class IambicKeyer;
+#ifdef Q_OS_ANDROID
+class AndroidCwMidiPump;
+#endif
 
 struct HaliKeyPortInfo {
     QString portName;
@@ -40,6 +44,10 @@ public:
     // Current paddle state
     bool ditPressed() const;
     bool dahPressed() const;
+#ifdef Q_OS_ANDROID
+    void attachKeyer(IambicKeyer *keyer, QThread *keyerThread);
+    void detachKeyer();
+#endif
 
 signals:
     void connected();
@@ -57,7 +65,14 @@ private:
     void onRawDit(bool pressed);
     void onRawDah(bool pressed);
     void onRawPtt(bool pressed);
+    void resetInputState();
     void emitMappedPaddle(bool physicalLeft, bool pressed);
+#ifdef Q_OS_ANDROID
+    friend class AndroidCwMidiPump;
+    void processAndroidMidiEvent(int event);
+    void configureAndroidPump();
+    AndroidCwMidiPump *m_androidPump = nullptr;
+#endif
 
     QThread *m_workerThread = nullptr;
     HaliKeyWorkerBase *m_worker = nullptr;
@@ -75,11 +90,10 @@ private:
     bool m_confirmedDahState = false;
     bool m_confirmedPttState = false;
 
-    // Debounce timers — emit ON immediately, delay OFF by 10ms to absorb bounce
+    // Release debounce for MIDI paddles and straight-key contacts.
     QTimer *m_ditDebounceTimer = nullptr;
     QTimer *m_dahDebounceTimer = nullptr;
     QTimer *m_pttDebounceTimer = nullptr;
-    QTimer *m_androidMidiPollTimer = nullptr;
     QTimer *m_androidConnectionPollTimer = nullptr;
     int m_androidConnectionState = 0;
     static constexpr int DEBOUNCE_MS = 10;

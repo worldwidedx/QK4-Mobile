@@ -1,6 +1,41 @@
 # Project status
 
-Last updated: 2026-10-05 (v1.0.6.1 panadapter Average patch)
+Last updated: 2026-10-17 (HaliKey operator feedback)
+
+## Unreleased: CW MIDI edge accuracy candidate
+
+The Android CW MIDI path preserves split/running-status messages and offers
+opt-in raw capture. An external HaliKey operator reported that the first test
+build accumulated delay, then sounded several characters in a burst at 25 WPM,
+worse than QK4 Mobile 1.0.5. The report did not separate local sidetone from
+K4-returned audio. A new candidate retains MIDI callback timestamps, reads CW
+and CTR2 session events on the keyer thread, evaluates paddle history at each scheduled
+element boundary, replays delayed character gaps, and prevents zero-delay
+catch-up elements. The 10 ms paddle release debounce remains. These are
+source/build candidates; no 30 WPM or higher device acceptance has been
+recorded. TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed, and
+HaliKey fast-speed testing requires an external operator. All three devices
+use the shared boundary-aware keyer; physical acceptance remains separate. See the
+[CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
+
+An external HaliKey operator subsequently reported that the current test app no
+longer stacks characters and that its local sidetone is usable to about 30 WPM.
+They still hear an extra final dit, especially above 30 WPM. A focused keyer
+regression test reproduced an extra element when a brief same-paddle re-press
+was released before the current element boundary; the candidate correction
+remembers only opposite-paddle presses. The operator has not yet tested that
+correction. The same report said the K4 was not keyed, and that the test app
+connected on port 9205 but failed on 9204 while the production app worked on
+9204. The error, test-app TLS profile, and radio command receipt are unknown.
+The CW candidate did not change TCP/TLS, authentication, or radio-profile code.
+The test app has separate saved profiles, so connection settings need direct
+comparison before assigning a cause. Radio keying and TLS acceptance remain
+pending.
+
+On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
+passed. The Java stream-parser test previously passed, and the current Android
+ARM64 test APK packaged successfully. These checks use synthetic inputs;
+TinyMIDI, CTR2-MIDI, HaliKey, and K4 acceptance remain pending.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
