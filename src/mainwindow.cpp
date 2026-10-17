@@ -101,6 +101,9 @@
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
 #include <QPermissions>
 #endif
+#ifdef Q_OS_IOS
+#include "ios/iosorientation.h"
+#endif
 
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
@@ -7437,7 +7440,9 @@ void MainWindow::changeEvent(QEvent *event) {
 // the full window rect it has always used.
 QRect MainWindow::fullScreenOverlayRect() const {
 #ifdef Q_OS_IOS
-    return contentsRect();
+    // A windowed iPad app has window controls floating over its top-left; keep
+    // the screens' Back button below them.
+    return contentsRect().adjusted(0, IosWindow::controlsTopInset(), 0, 0);
 #else
     return rect();
 #endif
