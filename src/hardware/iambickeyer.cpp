@@ -189,9 +189,14 @@ void IambicKeyer::onTimerFired() {
     const PaddleSnapshot snapshot = stateAt(boundary);
     const bool liveDit = m_reversed ? snapshot.dah : snapshot.dit;
     const bool liveDah = m_reversed ? snapshot.dit : snapshot.dah;
-    const bool dit = liveDit || (m_reversed ? snapshot.dahPressed : snapshot.ditPressed);
-    const bool dah = liveDah || (m_reversed ? snapshot.ditPressed : snapshot.dahPressed);
     const bool wasDit = m_state == PlayingDit;
+    // Remember a brief press of the opposite paddle, which cannot sound until
+    // this element ends. A released re-press of the paddle already sounding
+    // must not queue another element (for example, after contact bounce).
+    const bool dit = liveDit || (!wasDit && (m_reversed ? snapshot.dahPressed
+                                                         : snapshot.ditPressed));
+    const bool dah = liveDah || (wasDit && (m_reversed ? snapshot.ditPressed
+                                                       : snapshot.dahPressed));
 
     if (snapshot.squeezed && !liveDit && !liveDah) {
         if (m_mode == IambicB)

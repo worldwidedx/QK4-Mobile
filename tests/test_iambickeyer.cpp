@@ -44,6 +44,26 @@ private slots:
         QCOMPARE(elements.size(), 2);
     }
 
+    void releasedSamePaddleTapDoesNotRepeat() {
+        IambicKeyer keyer;
+        keyer.setSpeed(40);
+        QSignalSpy elements(&keyer, &IambicKeyer::elementStarted);
+
+        const qint64 firstPress = monotonicNs() - 30'000'000;
+        keyer.setMidiDitPaddle(true, firstPress);
+        QCOMPARE(elements.size(), 1);
+
+        // A release and second brief press within this dit can be contact
+        // bounce or a tap too early to form another element. Only the
+        // opposite paddle is remembered across an element boundary.
+        keyer.setMidiDitPaddle(false, firstPress + 8'000'000);
+        keyer.setMidiDitPaddle(true, firstPress + 13'000'000);
+        keyer.setMidiDitPaddle(false, firstPress + 18'000'000);
+
+        QTest::qWait(180);
+        QCOMPARE(elements.size(), 1);
+    }
+
     void delayedMidiBatchKeepsNextCharacterSeparate() {
         IambicKeyer keyer;
         keyer.setSpeed(30);

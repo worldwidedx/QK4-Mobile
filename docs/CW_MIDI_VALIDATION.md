@@ -35,6 +35,21 @@ not necessarily measured contact times at the MIDI device. The HaliKey report
 did not identify whether the burst was heard in local sidetone, K4-returned
 audio, or both; physical acceptance and a short trace remain necessary.
 
+The next HaliKey report says the new candidate no longer stacks characters
+and its local sidetone is usable to about 30 WPM. The remaining extra final
+dit is in the local sidetone, especially above 30 WPM. A focused regression
+test now covers a brief same-paddle re-press released before the element
+boundary; only an opposite-paddle press is remembered. This correction still
+needs operator validation. The same report says the K4 did not key, and the
+test app connected on 9205 but not 9204. Compare the test app's separate TLS
+profile with the production app's before diagnosing a network regression.
+
+For the next radio test, use K4 CW/CW-R and TX TEST mode, confirm the app shows
+live radio state, then key a short pattern and check the K4's own TX/monitor
+indication separately from the phone sidetone. Record the test app's connection
+error verbatim, port, TLS setting, and whether its PSK identity/password match
+the working production profile. Do not include credentials in the report.
+
 ## Capture the device's unfiltered MIDI
 
 With a debug/test build installed and one device connected in its usual setup

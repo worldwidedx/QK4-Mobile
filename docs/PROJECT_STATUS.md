@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-16 (timestamped CW candidate)
+Last updated: 2026-10-17 (HaliKey operator feedback)
 
 ## Unreleased: CW MIDI edge accuracy candidate
 
@@ -17,6 +17,20 @@ recorded. TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed, and
 HaliKey fast-speed testing requires an external operator. All three devices
 use the shared boundary-aware keyer; physical acceptance remains separate. See the
 [CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
+
+An external HaliKey operator subsequently reported that the current test app no
+longer stacks characters and that its local sidetone is usable to about 30 WPM.
+They still hear an extra final dit, especially above 30 WPM. A focused keyer
+regression test reproduced an extra element when a brief same-paddle re-press
+was released before the current element boundary; the candidate correction
+remembers only opposite-paddle presses. The operator has not yet tested that
+correction. The same report said the K4 was not keyed, and that the test app
+connected on port 9205 but failed on 9204 while the production app worked on
+9204. The error, test-app TLS profile, and radio command receipt are unknown.
+The CW candidate did not change TCP/TLS, authentication, or radio-profile code.
+The test app has separate saved profiles, so connection settings need direct
+comparison before assigning a cause. Radio keying and TLS acceptance remain
+pending.
 
 On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
 passed. The Java stream-parser test previously passed, and the current Android
