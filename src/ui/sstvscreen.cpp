@@ -738,7 +738,7 @@ int promptSstvFont(QWidget *parent, const QComboBox *fontOptions, int currentInd
         item->setFont(preview);
     }
     list->setCurrentRow(qBound(0, currentIndex, list->count() - 1));
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
     QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif
@@ -825,7 +825,7 @@ protected:
         }
         const int initialIndex = qBound(0, currentIndex(), list->count() - 1);
         list->setCurrentRow(initialIndex);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
         QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif
@@ -1218,7 +1218,7 @@ void SstvScreen::setupUi() {
     controlsScroll->setStyleSheet(QStringLiteral(
         "QScrollArea { background: #101314; border: 0; }"
         "QScrollArea > QWidget > QWidget { background: #101314; }"));
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     QScroller::grabGesture(controlsScroll->viewport(), QScroller::TouchGesture);
     if (QScroller *scroller = QScroller::scroller(controlsScroll->viewport())) {
         QScrollerProperties properties = scroller->scrollerProperties();
@@ -3776,7 +3776,7 @@ void SstvScreen::openImageTemplateGallery() {
         empty->setTextAlignment(Qt::AlignCenter);
         empty->setSizeHint(QSize(320, 110));
     }
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
     QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif
