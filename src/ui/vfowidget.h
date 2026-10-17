@@ -49,6 +49,7 @@ public:
     void setMiniPanIfShift(int shift);
     void setMiniPanCwPitch(int pitch);
     void setMiniPanNotchFilter(bool enabled, int pitchHz);
+    void setMiniPanAveraging(int level);
     void setMiniPanSpectrumColor(const QColor &color);
     void setMiniPanPassbandColor(const QColor &color);
 
@@ -108,6 +109,7 @@ private:
     int m_pendingCwPitch = 600;
     bool m_pendingNotchEnabled = false;
     int m_pendingNotchPitchHz = 0;
+    int m_pendingAveraging = 1;
     QColor m_pendingSpectrumColor;
     QColor m_pendingPassbandColor;
 };
