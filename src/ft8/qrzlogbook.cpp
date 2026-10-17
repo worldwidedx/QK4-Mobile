@@ -15,6 +15,8 @@
 #ifdef Q_OS_ANDROID
 #include <QJniObject>
 #include <QtCore/qcoreapplication_platform.h>
+#elif defined(Q_OS_IOS)
+#include "ios/iossecurecredentials.h"
 #endif
 
 namespace {
@@ -28,6 +30,8 @@ QString readKey(QString *error) {
         "com/w9wdx/qk4phone/QrzCredentials", "read", "(Landroid/content/Context;)Ljava/lang/String;",
         context.object()).toString();
     if (result.startsWith("OK:")) return result.mid(3);
+#elif defined(Q_OS_IOS)
+    return IosSecureCredentials::readQrzApiKey(error);
 #endif
     fail(error, secureError);
     return {};
@@ -38,6 +42,8 @@ bool writeKey(const QString &key, QString *error) {
     const auto value = QJniObject::fromString(key);
     if (QJniObject::callStaticMethod<jboolean>("com/w9wdx/qk4phone/QrzCredentials", "write",
             "(Landroid/content/Context;Ljava/lang/String;)Z", context.object(), value.object())) return true;
+#elif defined(Q_OS_IOS)
+    return IosSecureCredentials::writeQrzApiKey(key, error);
 #else
     Q_UNUSED(key)
 #endif
@@ -48,6 +54,8 @@ bool clearKey(QString *error) {
     const auto context = QNativeInterface::QAndroidApplication::context();
     if (QJniObject::callStaticMethod<jboolean>("com/w9wdx/qk4phone/QrzCredentials", "clear",
             "(Landroid/content/Context;)Z", context.object())) return true;
+#elif defined(Q_OS_IOS)
+    return IosSecureCredentials::clearQrzApiKey(error);
 #endif
     return fail(error, "Cannot remove the encrypted QRZ key.");
 }
@@ -57,7 +65,7 @@ int findId(const Ft8Logbook &log, const QString &id) {
     return -1;
 }
 }
-QrzKeyStore QrzKeyStore::android() { return {readKey, writeKey, clearKey}; }
+QrzKeyStore QrzKeyStore::platform() { return {readKey, writeKey, clearKey}; }
 QrzLogbook::QrzLogbook(const QString &path, QObject *parent, QNetworkAccessManager *network, QrzKeyStore keys)
     : QObject(parent), m_path(path), m_keys(std::move(keys)),
       m_network(network ? network : new QNetworkAccessManager(this)) {
