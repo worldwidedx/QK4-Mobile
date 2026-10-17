@@ -664,7 +664,18 @@ MainWindow::MainWindow(QWidget *parent)
             m_bottomMenuBar->setFnActive(false);
         }
     });
+#ifdef Q_OS_IOS
+    // A long-press action (e.g. Hold DXLIST for Log) is emitted from the button's
+    // QTimer callback. Opening an InWindowDialog there starts a nested event loop
+    // inside a CoreFoundation timer callback, which Qt's iOS dispatcher does not
+    // support: the next nested dialog aborts on
+    // "m_blockedRunLoopTimer == m_runLoopTimer". Queue the action so it runs
+    // after the timer callback returns.
+    connect(m_fnPopup, &FnPopupWidget::functionTriggered, this, &MainWindow::onFnFunctionTriggered,
+            Qt::QueuedConnection);
+#else
     connect(m_fnPopup, &FnPopupWidget::functionTriggered, this, &MainWindow::onFnFunctionTriggered);
+#endif
 
     // Create macro configuration dialog (full-screen overlay)
     m_macroDialog = new MacroDialog(this);
