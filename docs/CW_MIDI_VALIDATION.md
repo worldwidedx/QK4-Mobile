@@ -69,19 +69,22 @@ default. The current MIDI mapping cannot distinguish TinyMIDI's built-in touch
 pad from a paddle connected to its external key input, so a touch-specific
 setting must leave the external input's normal behavior selectable.
 
-An experimental Android TinyMIDI touch control now offers OFF, 40 ms, and
-60 ms lookahead. It starts each touch-initiated sequence after that delay but
-keeps the selected WPM cadence for a held paddle. At a DIT/DAH boundary, only
-a release of the currently sounding paddle during the lookahead window can
+An experimental Android TinyMIDI touch control now offers OFF (0 ms) through
+100 ms lookahead in 5 ms steps. It starts each touch-initiated sequence after
+that delay but keeps the selected WPM cadence for a held paddle. At a DIT/DAH
+boundary, only a release of the currently sounding paddle during the lookahead window can
 cancel a repeat; an opposite-paddle press is still evaluated at the original
 boundary. The control applies only to session 0's TinyMIDI paddle profile.
-OFF is the default and should be selected for TinyMIDI's external key jack.
+OFF is the default, adds no touch lookahead, and should be selected for
+TinyMIDI's external key jack. The existing 10 ms release debounce remains
+active even when touch lookahead is OFF.
 CTR2 and HaliKey paths retain their current timing. This is an unvalidated
 candidate, not a demonstrated 30 WPM touch solution.
 
 For acceptance, have an operator copy the same written test text with OFF,
-40 ms, and 60 ms at 20, 25, and 30 WPM using built-in touch. Include separate
-single-DIT taps, a held DIT, alternating paddles, and squeeze-heavy text.
+40 ms, 60 ms, and nearby 5 ms increments at 20, 25, and 30 WPM using built-in
+touch. Include separate single-DIT taps, a held DIT, alternating paddles,
+and squeeze-heavy text.
 Measure wrong letters and the delay from touch to local sidetone. Use a physical
 key on TinyMIDI's external jack with OFF to confirm normal repeat behavior.
 Record the chosen setting with each trace; select the smallest delay that

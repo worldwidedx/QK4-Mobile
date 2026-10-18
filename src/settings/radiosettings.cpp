@@ -378,7 +378,7 @@ void RadioSettings::setMidiMappingProfile(int profile) {
 }
 int RadioSettings::tinyMidiTouchLookahead() const { return m_tinyMidiTouchLookahead; }
 void RadioSettings::setTinyMidiTouchLookahead(int milliseconds) {
-    milliseconds = milliseconds >= 60 ? 60 : milliseconds >= 40 ? 40 : 0;
+    milliseconds = ((qBound(0, milliseconds, 100) + 2) / 5) * 5;
     if (m_tinyMidiTouchLookahead == milliseconds) return;
     m_tinyMidiTouchLookahead = milliseconds;
     save();
@@ -528,8 +528,7 @@ void RadioSettings::load() {
     m_cwPaddlesReversed = m_settings.value("halikey/paddlesReversed", false).toBool();
     m_midiMappingProfile = qBound(0, m_settings.value("halikey/midiProfile", 0).toInt(), 2);
     const int touchLookahead = m_settings.value("halikey/touchLookaheadMs", 0).toInt();
-    m_tinyMidiTouchLookahead = touchLookahead == 40 || touchLookahead == 60
-            ? touchLookahead : 0;
+    m_tinyMidiTouchLookahead = ((qBound(0, touchLookahead, 100) + 2) / 5) * 5;
     m_midiDitStatus = m_settings.value("halikey/midiDitStatus", 0x90).toInt();
     m_midiDitData1 = m_settings.value("halikey/midiDitData1", 20).toInt();
     m_midiDahStatus = m_settings.value("halikey/midiDahStatus", 0x90).toInt();

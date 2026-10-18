@@ -1832,39 +1832,73 @@ QWidget *OptionsDialog::createCwKeyerPage() {
     controlsLayout->addWidget(keyingHelp);
 
 #ifdef Q_OS_ANDROID
-    auto *touchAssistButton = new QPushButton(page);
-    touchAssistButton->setMinimumHeight(38);
+    auto *touchAssistRow = new QWidget(page);
+    auto *touchAssistLayout = new QHBoxLayout(touchAssistRow);
+    touchAssistLayout->setContentsMargins(0, 0, 0, 0);
+    touchAssistLayout->setSpacing(6);
+    auto *touchAssistTitle = new QLabel("Touch timing:", touchAssistRow);
+    touchAssistTitle->setFixedWidth(135);
+    touchAssistTitle->setStyleSheet(QString("color:%1;font-size:%2px;")
+                                       .arg(K4Styles::Colors::TextGray)
+                                       .arg(K4Styles::Dimensions::FontSizePopup));
+    auto *touchAssistMinus = new QPushButton(QString(QChar(0x2212)), touchAssistRow);
+    auto *touchAssistButton = new QPushButton(touchAssistRow);
+    auto *touchAssistPlus = new QPushButton("+", touchAssistRow);
+    for (QPushButton *button : {touchAssistMinus, touchAssistPlus}) {
+        button->setFixedSize(42, 38);
+        button->setStyleSheet(K4Styles::menuBarButton());
+    }
+    touchAssistButton->setMinimumSize(170, 38);
+    touchAssistLayout->addWidget(touchAssistTitle);
+    touchAssistLayout->addWidget(touchAssistMinus);
+    touchAssistLayout->addWidget(touchAssistButton);
+    touchAssistLayout->addWidget(touchAssistPlus);
+    touchAssistLayout->addStretch(1);
     auto *touchAssistHelp = new QLabel(
-        "Built-in TinyMIDI touch paddles: delay the first sound slightly so a "
-        "late finger release does not add a dit. A held paddle still repeats "
-        "at the selected CW speed. Select OFF for a paddle plugged into the key jack.", page);
+        "Built-in TinyMIDI touch paddles: adjust by 5 ms from 0 to 100 ms. "
+        "Tap the center button to switch between OFF and your last setting. "
+        "A held paddle still repeats at the selected CW speed. Use OFF for an external paddle.", page);
     touchAssistHelp->setWordWrap(true);
     touchAssistHelp->setStyleSheet(QString("color:%1;font-size:%2px;font-style:italic;")
                                       .arg(K4Styles::Colors::TextGray)
                                       .arg(K4Styles::Dimensions::FontSizeLarge));
-    const auto updateTouchAssist = [touchAssistButton, touchAssistHelp]() {
+    const auto updateTouchAssist = [this, touchAssistRow, touchAssistButton,
+                                   touchAssistMinus, touchAssistPlus, touchAssistHelp]() {
         auto *settings = RadioSettings::instance();
         const bool available = settings->midiMappingProfile() == 0
                 && settings->cwMidiKeyingMode() == 0;
-        touchAssistButton->setVisible(available);
+        touchAssistRow->setVisible(available);
         touchAssistHelp->setVisible(available);
         const int delay = settings->tinyMidiTouchLookahead();
+        if (delay > 0)
+            m_tinyMidiTouchLastNonzero = delay;
         touchAssistButton->setText(delay == 0 ? "TINYMIDI TOUCH: OFF"
                 : QString("TINYMIDI TOUCH: %1 MS").arg(delay));
         touchAssistButton->setStyleSheet(delay == 0 ? K4Styles::menuBarButton()
                                                    : K4Styles::menuBarButtonActive());
+        touchAssistMinus->setEnabled(delay > 0);
+        touchAssistPlus->setEnabled(delay < 100);
     };
-    connect(touchAssistButton, &QPushButton::clicked, this, [updateTouchAssist]() {
+    connect(touchAssistMinus, &QPushButton::clicked, this, []() {
         auto *settings = RadioSettings::instance();
-        const int current = settings->tinyMidiTouchLookahead();
-        settings->setTinyMidiTouchLookahead(current == 0 ? 40 : current == 40 ? 60 : 0);
-        updateTouchAssist();
+        settings->setTinyMidiTouchLookahead(settings->tinyMidiTouchLookahead() - 5);
     });
+    connect(touchAssistPlus, &QPushButton::clicked, this, []() {
+        auto *settings = RadioSettings::instance();
+        settings->setTinyMidiTouchLookahead(settings->tinyMidiTouchLookahead() + 5);
+    });
+    connect(touchAssistButton, &QPushButton::clicked, this, [this]() {
+        auto *settings = RadioSettings::instance();
+        settings->setTinyMidiTouchLookahead(settings->tinyMidiTouchLookahead() == 0
+                                               ? m_tinyMidiTouchLastNonzero : 0);
+    });
+    connect(RadioSettings::instance(), &RadioSettings::tinyMidiTouchLookaheadChanged,
+            this, updateTouchAssist);
     connect(RadioSettings::instance(), &RadioSettings::midiMappingProfileChanged,
             this, updateTouchAssist);
     connect(RadioSettings::instance(), &RadioSettings::cwMidiKeyingModeChanged,
             this, updateTouchAssist);
-    controlsLayout->addWidget(touchAssistButton);
+    controlsLayout->addWidget(touchAssistRow);
     controlsLayout->addWidget(touchAssistHelp);
     updateTouchAssist();
 #endif

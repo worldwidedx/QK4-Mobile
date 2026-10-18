@@ -155,6 +155,7 @@ private:
     QPushButton *m_midiLearnDitButton = nullptr;
     QPushButton *m_midiLearnDahButton = nullptr;
     int m_midiLearningTarget = 0; // 0=none, 1=dit, 2=dah
+    int m_tinyMidiTouchLastNonzero = 40;
     QSlider *m_touchSlider = nullptr;
     QScrollArea *m_cwControlsScroll = nullptr;
     QObject *m_cwScrollTouchTarget = nullptr;

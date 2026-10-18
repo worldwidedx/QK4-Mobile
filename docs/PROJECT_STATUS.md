@@ -41,7 +41,8 @@ On 2026-10-17, a controlled TinyMIDI built-in touch capture at 20 WPM showed
 that two of ten intended single-DIT taps lasted past the 120 ms repeat
 boundary. The MIDI stream contained no duplicate press events. A selectable
 TinyMIDI touch lookahead candidate now delays the first element while keeping
-held-paddle cadence; OFF remains the default and supports the external key
+held-paddle cadence. Its Android control offers 0-100 ms in 5 ms steps;
+OFF (0 ms) remains the default and supports the external key
 jack. Its 20-30 WPM touch accuracy and feel require physical comparison by
 operators. No 30 WPM touch acceptance is recorded.
 

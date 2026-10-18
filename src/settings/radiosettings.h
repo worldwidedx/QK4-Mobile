@@ -128,7 +128,7 @@ public:
     void setCwPaddlesReversed(bool reversed);
     int midiMappingProfile() const;
     void setMidiMappingProfile(int profile); // 0=TinyMIDI, 1=HaliKey MIDI, 2=Custom
-    int tinyMidiTouchLookahead() const; // 0, 40, or 60 ms; built-in touch only
+    int tinyMidiTouchLookahead() const; // 0-100 ms in 5 ms steps; user-selected touch mode
     void setTinyMidiTouchLookahead(int milliseconds);
     int midiDitStatus() const;
     int midiDitData1() const;

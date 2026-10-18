@@ -37,7 +37,7 @@ void IambicKeyer::setSpeed(int wpm) {
 }
 
 void IambicKeyer::setMidiTouchLookahead(int milliseconds) {
-    m_midiTouchLookaheadMs = std::clamp(milliseconds, 0, 60);
+    m_midiTouchLookaheadMs = std::clamp(milliseconds, 0, 100);
     if (m_state == Idle)
         handlePaddleChange();
 }
