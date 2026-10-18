@@ -214,6 +214,8 @@ set(SOURCES
     src/sstv/sstvdecoder.cpp
     src/sstv/sstvstorage.cpp
     src/android/sstvorientation.cpp
+    src/android/deviceinfo.cpp
+    src/ui/layoutsettingspage.cpp
     src/android/sstvmedia.cpp
     src/hardware/iambickeyer.cpp
     src/hardware/midimapping.cpp
@@ -340,6 +342,8 @@ set(HEADERS
     src/sstv/sstvdecoder.h
     src/sstv/sstvstorage.h
     src/android/sstvorientation.h
+    src/android/deviceinfo.h
+    src/ui/layoutsettingspage.h
     src/android/sstvmedia.h
     src/hardware/iambickeyer.h
     src/hardware/midimapping.h

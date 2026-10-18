@@ -66,6 +66,7 @@ class VfoRowWidget;
 class SidetoneGenerator;
 class RadioManagerDialog;
 class QResizeEvent;
+class QWindow;
 class QImage;
 class SstvScreen;
 class SstvDecoder;
@@ -210,6 +211,9 @@ private:
     void setPhoneTxInputShieldActive(bool active);
     void updatePhoneTxInputShieldGeometry();
     void positionCompactBSetIndicator();
+#ifdef Q_OS_ANDROID
+    void scheduleDisplayRefresh();
+#endif
     void updateNoRadioHint();
     void openSstvScreen();
     void openLogbook(bool fromSstv = false);
@@ -499,6 +503,10 @@ private:
 
     WheelAccumulator m_ritWheelAccumulator;
     bool m_closingTransientMenus = false;
+#ifdef Q_OS_ANDROID
+    QPointer<QWindow> m_displayWindow;
+    bool m_displayRefreshPending = false;
+#endif
 };
 
 #endif // MAINWINDOW_H

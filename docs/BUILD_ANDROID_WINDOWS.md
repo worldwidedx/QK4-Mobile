@@ -86,6 +86,21 @@ For multiple connected devices:
 .\build-android.cmd -Action Install -DeviceSerial <adb-serial>
 ```
 
+To test alongside the published app, with separate settings and no release
+signing credentials:
+
+```powershell
+.\build-android.cmd -Action Install -TestApp -DeviceSerial <adb-serial>
+```
+
+This debug-only option installs **QK4 Mobile Test** as
+`com.w9wdx.qk4phone.test`. Its packaging files stay under the ignored build
+directory in `android-build-test`; the regular app and its data remain intact.
+On first installation the test app starts with its own settings and requires
+its own radio profile. Updates retain existing test-app data. The test-only
+install permits a lower version code so earlier branch builds can replace
+later experiments without uninstalling the app.
+
 ## One-time migration from the former Android package
 
 The development package changed from `com.ai5qk.qk4phone` to

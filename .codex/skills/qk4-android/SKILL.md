@@ -28,7 +28,7 @@ description: Maintain and extend the QK4 Android ARM64 phone application, includ
   existing device-change rebuild path, and never add a hearing aid to the TX
   communication-device or microphone-selection paths unless a supported
   two-way endpoint is proven on hardware.
-- Until physical tablet validation is available, keep the compact phone layout
-  enabled for every screen size. The original tablet-selection branch is
-  intentionally commented in `src/ui/k4styles.cpp`; preserve it for later
-  restoration rather than deleting or redesigning it without user direction.
+- Preserve the issue #21 compact startup override for Android devices exposing
+  folding hardware and for the saved Layout preference. Keep existing v1.0.6
+  tablet selection for other devices. Automatic window-based switching is
+  separate work; physical phone/foldable/tablet validation remains required.
