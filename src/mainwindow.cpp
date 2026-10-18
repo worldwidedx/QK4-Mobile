@@ -98,6 +98,14 @@
 #include <QTimer>
 #include <QVector>
 #include <cmath>
+#if defined(Q_OS_ANDROID)
+#include <QJniObject>
+#include <qcoreapplication_platform.h>
+// True when a usable hardware (USB or Bluetooth) keyboard is attached, so
+// FREQ ENT can use the inline edit field instead of the on-screen numeric
+// keypad. Defined further down, near the other Android JNI helpers.
+static bool androidHasHardwareKeyboard();
+#endif
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
 #include <QPermissions>
 #endif
@@ -105,6 +113,11 @@
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
 // DOWN (zoom in): -4 kHz until 140, then -1 kHz until 5
+// Use the QK4 Mobile product name as the console header on every platform.
+static QString appTitleText() {
+    return QStringLiteral("QK4 Mobile");
+}
+
 static constexpr int SPAN_MIN = 5000;
 static constexpr int SPAN_MAX = 368000;
 static constexpr int SPAN_THRESHOLD_UP = 144000;   // Switch to 4kHz steps above this
@@ -664,7 +677,18 @@ MainWindow::MainWindow(QWidget *parent)
             m_bottomMenuBar->setFnActive(false);
         }
     });
+#ifdef Q_OS_IOS
+    // A long-press action (e.g. Hold DXLIST for Log) is emitted from the button's
+    // QTimer callback. Opening an InWindowDialog there starts a nested event loop
+    // inside a CoreFoundation timer callback, which Qt's iOS dispatcher does not
+    // support: the next nested dialog aborts on
+    // "m_blockedRunLoopTimer == m_runLoopTimer". Queue the action so it runs
+    // after the timer callback returns.
+    connect(m_fnPopup, &FnPopupWidget::functionTriggered, this, &MainWindow::onFnFunctionTriggered,
+            Qt::QueuedConnection);
+#else
     connect(m_fnPopup, &FnPopupWidget::functionTriggered, this, &MainWindow::onFnFunctionTriggered);
+#endif
 
     // Create macro configuration dialog (full-screen overlay)
     m_macroDialog = new MacroDialog(this);
@@ -1618,6 +1642,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Create notification popup for K4 error/status messages (ERxx:)
     m_notificationWidget = new NotificationWidget(this);
+
+    // A fresh install shows an idle console with nothing to say it is waiting
+    // for a radio; App Review read that as "failed to load any content".
+    m_noRadioHint = new QLabel("No radio configured.\nTap CONN to add your radio.", centralWidget());
+    m_noRadioHint->setAlignment(Qt::AlignCenter);
+    m_noRadioHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_noRadioHint->setStyleSheet(QString("QLabel { color: %1; background-color: rgba(0, 0, 0, 200);"
+                                         " border: 1px solid %2; border-radius: 8px; padding: 14px 22px;"
+                                         " font-size: %3px; font-weight: bold; }")
+                                     .arg(K4Styles::Colors::TextWhite, K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizePopup));
+    m_noRadioHint->hide();
+    connect(RadioSettings::instance(), &RadioSettings::radiosChanged, this, &MainWindow::updateNoRadioHint);
+    QTimer::singleShot(0, this, &MainWindow::updateNoRadioHint);
 
     // TcpClient signals
     connect(m_tcpClient, &TcpClient::stateChanged, this, &MainWindow::onStateChanged);
@@ -2958,9 +2996,10 @@ void MainWindow::showFeatureAdjustment(int featureValue) {
 
 void MainWindow::showAboutDialog() {
     showInWindowMessage(centralWidget(), "About QK4 Mobile",
-                        QString("<h2>QK4 Mobile for Android</h2>"
+                        QString("<h2>QK4 Mobile</h2>"
                                 "<p>Version %1</p>"
-                                "<p>Remote control application for Elecraft K4 radios.</p>"
+                                "<p>Remote control client for compatible radios.</p>"
+                                "<p>Independent open-source project. Not affiliated with or endorsed by Elecraft.</p>"
                                 "<p>By <a href='https://worldwidedx.com'>WorldwideDX.com</a></p>"
                                 "<p>Based on QK4 by Mike Garcia (KF5O).</p>"
                                 "<p>Licensed under GNU GPL v3.0 or later.</p>"
@@ -4208,9 +4247,25 @@ void MainWindow::setupUi() {
     // would give phone a new capability it never had; gate it to match.
     if (!K4Styles::isCompactLayout()) {
         connect(m_rightSidePanel, &RightSidePanel::freqEntClicked, this, [this]() {
-            auto *fd = m_vfoA->frequencyDisplay();
-            // Toggle: FREQ ENT opens the blue field, and pressing it again commits
-            // (sends the entered frequency), so the whole entry is touch-only.
+            // Respect B SET: when the Sub RX is targeted, FREQ ENT acts on VFO B.
+            const bool useB = m_radioState->bSetEnabled();
+
+            // Use the on-screen numeric keypad only when there is no hardware
+            // keyboard to type into the inline blue edit field. Android reports a
+            // usable USB/BT keyboard live; iOS is treated as touch-only.
+            bool useKeypadDialog = false;
+#if defined(Q_OS_ANDROID)
+            useKeypadDialog = !androidHasHardwareKeyboard();
+#elif defined(Q_OS_IOS)
+            useKeypadDialog = true;
+#endif
+            if (useKeypadDialog) {
+                showFrequencyEntry(useB);
+                return;
+            }
+            // Inline blue edit field: toggle open, and pressing FREQ ENT again
+            // commits (sends the entered frequency).
+            auto *fd = (useB ? m_vfoB : m_vfoA)->frequencyDisplay();
             if (fd->isEditing())
                 fd->commitEdit();
             else
@@ -4335,8 +4390,8 @@ void MainWindow::setupTopStatusBar(QWidget *parent) {
     layout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, 2, K4Styles::Dimensions::PaddingSmall, 2);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
-    // Elecraft K4 title
-    m_titleLabel = new QLabel("Elecraft K4", statusBar);
+    // Product title
+    m_titleLabel = new QLabel(appTitleText(), statusBar);
     m_titleLabel->setStyleSheet(
         QString("color: %1; font-weight: bold; font-size: %2px;")
             .arg(K4Styles::Colors::TextWhite)
@@ -5608,6 +5663,7 @@ void MainWindow::showRadioManager() {
             QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
         });
         connect(m_radioManager, &RadioManagerDialog::closeRequested, m_radioManager, &QWidget::hide);
+        connect(m_radioManager, &RadioManagerDialog::closeRequested, this, &MainWindow::updateNoRadioHint);
     }
 
     // Set the connected host so the manager can show "Disconnect" for the
@@ -5617,6 +5673,7 @@ void MainWindow::showRadioManager() {
     m_radioManager->show();
     m_radioManager->raise();
     m_radioManager->setFocus(Qt::OtherFocusReason);
+    updateNoRadioHint();
 }
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
@@ -5634,7 +5691,7 @@ void MainWindow::connectToRadio(const RadioEntry &radio) {
 
     m_currentRadio = radio;
     m_connectionState = TcpClient::Connecting;
-    m_titleLabel->setText("Elecraft K4 - " + radio.name);
+    m_titleLabel->setText(appTitleText() + " - " + radio.name);
 
     qDebug() << "Connecting to" << radio.host << ":" << radio.port << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)")
              << "encodeMode:" << radio.encodeMode << "streamingLatency:" << radio.streamingLatency;
@@ -5661,6 +5718,7 @@ void MainWindow::onDisconnectClicked() {
 void MainWindow::onStateChanged(TcpClient::ConnectionState state) {
     m_connectionState = state;
     updateConnectionState(state);
+    updateNoRadioHint();
 }
 
 void MainWindow::onError(const QString &error) {
@@ -5933,6 +5991,30 @@ void MainWindow::onBandwidthBChanged(int bw) {
     // Could update a bandwidth display if needed
 }
 
+#if defined(Q_OS_ANDROID)
+// True when a usable hardware keyboard (USB or Bluetooth) is attached. Reads
+// android.content.res.Configuration: `keyboard` is KEYBOARD_NOKEYS (1) when no
+// physical keyboard exists, and `hardKeyboardHidden` is HARDKEYBOARDHIDDEN_NO
+// (1) when the keyboard is present and usable. Both flip live as a USB/BT
+// keyboard is attached or removed.
+static bool androidHasHardwareKeyboard() {
+    QJniObject context = QNativeInterface::QAndroidApplication::context();
+    if (!context.isValid())
+        return false;
+    QJniObject resources =
+        context.callObjectMethod("getResources", "()Landroid/content/res/Resources;");
+    if (!resources.isValid())
+        return false;
+    QJniObject config =
+        resources.callObjectMethod("getConfiguration", "()Landroid/content/res/Configuration;");
+    if (!config.isValid())
+        return false;
+    const jint keyboard = config.getField<jint>("keyboard");               // NOKEYS = 1
+    const jint hardKeyboardHidden = config.getField<jint>("hardKeyboardHidden"); // NO = 1
+    return keyboard != 1 && hardKeyboardHidden == 1;
+}
+#endif
+
 void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
     switch (state) {
     case TcpClient::Disconnected:
@@ -5952,7 +6034,7 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         m_connectionStatusLabel->setText("K4");
         m_connectionStatusLabel->setStyleSheet(
             QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
-        m_titleLabel->setText("Elecraft K4");
+        m_titleLabel->setText(appTitleText());
         // Stop audio engine to prevent accessing invalid data
         if (m_audioEngine) {
             QMetaObject::invokeMethod(m_audioEngine, "stop", Qt::QueuedConnection);
@@ -7375,6 +7457,23 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     }
     if (m_ft8Screen && m_ft8Screen->isVisible()) m_ft8Screen->setGeometry(rect());
     updatePhoneTxInputShieldGeometry();
+    updateNoRadioHint();
+}
+
+void MainWindow::updateNoRadioHint() {
+    if (!m_noRadioHint || !centralWidget())
+        return;
+    const bool show = !m_tcpClient->isConnected() && RadioSettings::instance()->radios().isEmpty()
+                      && !(m_radioManager && m_radioManager->isVisible());
+    if (!show) {
+        m_noRadioHint->hide();
+        return;
+    }
+    m_noRadioHint->adjustSize();
+    const QRect area = centralWidget()->rect();
+    m_noRadioHint->move(area.center() - QPoint(m_noRadioHint->width() / 2, m_noRadioHint->height() / 2));
+    m_noRadioHint->show();
+    m_noRadioHint->raise();
 }
 
 void MainWindow::positionCompactBSetIndicator() {

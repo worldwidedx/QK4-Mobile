@@ -290,9 +290,11 @@ if(IOS)
     list(APPEND SOURCES
         src/ios/iosaudiosession.mm src/ios/iosaudiosession.h
         src/ios/iosorientation.mm src/ios/iosorientation.h
-        src/ios/iossecurecredentials.mm src/ios/iossecurecredentials.h)
+        src/ios/iossecurecredentials.mm src/ios/iossecurecredentials.h
+        src/ios/iosbluetoothmidi.mm src/ios/iosbluetoothmidi.h)
     set_source_files_properties(
         src/ios/iosaudiosession.mm src/ios/iosorientation.mm src/ios/iossecurecredentials.mm
+        src/ios/iosbluetoothmidi.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
 
@@ -430,9 +432,28 @@ elseif(IOS)
     # Qt for iOS is static and needs qt_add_executable for plugin import.
     # Build with the Xcode generator (qt-cmake defaults to it) and pick the
     # SDK at build time: cmake --build . -- -sdk iphonesimulator
+    # Apple's marketing version has exactly three numeric components, while
+    # CFBundleVersion has one to three. Keep Android's full version (including
+    # a point-release fourth component) separate from these iOS bundle values.
+    if(NOT QK4_VERSION_FULL MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        message(FATAL_ERROR "Cannot derive an iOS marketing version from '${QK4_VERSION_FULL}'.")
+    endif()
+    set(_qk4_ios_marketing_default "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+    set(QK4_IOS_MARKETING_VERSION "${_qk4_ios_marketing_default}" CACHE STRING
+        "Three-component iOS marketing version")
+    if(NOT QK4_IOS_MARKETING_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+        message(FATAL_ERROR "QK4_IOS_MARKETING_VERSION must contain exactly three numeric components.")
+    endif()
+    if(NOT DEFINED QK4_IOS_BUILD_NUMBER)
+        set(QK4_IOS_BUILD_NUMBER "${QK4_IOS_MARKETING_VERSION}")
+    endif()
+    if(NOT QK4_IOS_BUILD_NUMBER MATCHES "^[0-9]+(\\.[0-9]+)?(\\.[0-9]+)?$")
+        message(FATAL_ERROR "QK4_IOS_BUILD_NUMBER must contain one to three numeric components.")
+    endif()
+    # Pass a new QK4_IOS_BUILD_NUMBER for each TestFlight/App Store upload.
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
-    set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_VERSION_FULL})
-    set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
+    set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_IOS_BUILD_NUMBER})
+    set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_IOS_MARKETING_VERSION})
     # Bundle identifier. Defaults to the worldwideDX id used for the primary
     # App Store listing; forks and TestFlight builds signed by a different
     # Apple team override with -DQK4_IOS_BUNDLE_ID=your.reverse.dns.id
@@ -441,19 +462,32 @@ elseif(IOS)
     # App icon: compile the iOS asset catalog (AppIcon) into the bundle.
     set(QK4_IOS_ASSETS "${CMAKE_SOURCE_DIR}/resources/ios/Assets.xcassets")
     set_source_files_properties(${QK4_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION MACOSX_BUNDLE ${SOURCES} ${HEADERS} ${QK4_IOS_ASSETS})
+    # App privacy manifest. Static Qt's own PrivacyInfo.xcprivacy files are not
+    # bundled, so the app declares the required-reason APIs its binary uses.
+    set(QK4_IOS_PRIVACY_MANIFEST "${CMAKE_SOURCE_DIR}/resources/ios/PrivacyInfo.xcprivacy")
+    set_source_files_properties(${QK4_IOS_PRIVACY_MANIFEST} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    qt_add_executable(${PROJECT_NAME} MANUAL_FINALIZATION MACOSX_BUNDLE ${SOURCES} ${HEADERS}
+        ${QK4_IOS_ASSETS} ${QK4_IOS_PRIVACY_MANIFEST})
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist.ios.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${QK4_IOS_BUNDLE_ID}"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        # Sign only the application bundle. A global Xcode signing setting also
+        # marks static helper libraries as signable and makes Xcode demand a
+        # development team for targets such as qk4_ft8 and qk4_ft8_codec.
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "YES"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
         # Emit a dSYM so App Store Connect can symbolicate crash reports; the
         # CMake Xcode generator otherwise defaults to plain DWARF and archives
         # ship without one (ITMS "Upload Symbols Failed" warning).
         XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
     )
     # AVAudioSession (src/ios/iosaudiosession.mm) lives in AVFoundation.
-    target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework Security" "-framework UIKit")
+    # CoreAudioKit provides the standard Bluetooth MIDI browser
+    # (src/ios/iosbluetoothmidi.mm); BLE MIDI peripherals are not discoverable
+    # from CoreMIDI until the operator pairs one there.
+    target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework Security" "-framework UIKit" "-framework CoreAudioKit")
     # Static Qt auto-imports every Multimedia plugin. QK4 only uses
     # QAudioSink/QAudioSource/QMediaDevices, which live in QtMultimedia itself,
     # so drop the FFmpeg plugin and its five xcframeworks.
