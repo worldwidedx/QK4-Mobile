@@ -184,6 +184,7 @@ private slots:
     void onSubRxButtonRightClicked(int index);
 
 private:
+    QRect fullScreenOverlayRect() const;
     void setupMenuBar();
     void showSettings();
     void showAboutDialog();
@@ -213,6 +214,7 @@ private:
 #ifdef Q_OS_ANDROID
     void scheduleDisplayRefresh();
 #endif
+    void updateNoRadioHint();
     void openSstvScreen();
     void openLogbook(bool fromSstv = false);
     void openFt8Screen();
@@ -475,6 +477,9 @@ private:
 
     // Notification popup for K4 error/status messages (ERxx:)
     NotificationWidget *m_notificationWidget;
+
+    // Shown over the idle console when nothing is connected and no radio is saved.
+    QLabel *m_noRadioHint = nullptr;
 
     // Debounce timer for RX EQ slider changes
     QTimer *m_rxEqDebounceTimer;

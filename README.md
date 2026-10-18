@@ -354,6 +354,12 @@ The script discovers normal Qt and Android SDK locations. Any nonstandard locati
 Detailed setup and troubleshooting are in [docs/BUILD_ANDROID_WINDOWS.md](docs/BUILD_ANDROID_WINDOWS.md).
 For a transfer checklist, including what is intentionally *not* stored in Git, see [docs/PORTABILITY.md](docs/PORTABILITY.md).
 
+### Building for iPhone or iPad device testing
+
+Use the signing-enabled Xcode project workflow in
+[Build iOS for a physical device](docs/BUILD_IOS_DEVICE.md). The CI iOS project
+is intentionally unsigned and cannot be installed on a device.
+
 ### Building on macOS or Linux
 
 `build-android.sh` is the macOS/Linux counterpart to `build-android.ps1` — the
