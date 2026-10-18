@@ -15,6 +15,9 @@
 #endif
 #include "mainwindow.h"
 #include "ui/k4styles.h"
+#if defined(Q_OS_IOS)
+#include "ios/iosorientation.h"
+#endif
 
 // Filter out known benign Qt warnings on macOS
 // QSocketNotifier::Exception is not supported by kqueue (macOS's event system)
@@ -135,6 +138,11 @@ int main(int argc, char *argv[]) {
 
     MainWindow window;
 #if defined(Q_OS_IOS)
+    // Lock to landscape before the console is ever shown, per
+    // docs/ORIENTATION_POLICY.md -- the app must never launch into portrait.
+    // SSTV/FT8/logbook widen this via the same IosOrientation calls used from
+    // src/android/sstvorientation.cpp and narrow it back on exit.
+    IosOrientation::requestLandscape();
     window.showFullScreen();
 #elif defined(Q_OS_ANDROID)
     if (K4Styles::isCompactLayout()) {
