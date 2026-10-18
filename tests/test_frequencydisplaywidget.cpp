@@ -48,21 +48,23 @@ void TestFrequencyDisplayWidget::phoneDigitGestures() {
     QCOMPARE(digits[0][0].toInt(), 9);
     QVERIFY(!widget.isEditing());
     QVERIFY(changed.isEmpty());
-    QTest::qWait(600);
+    QTest::qWait(1000);
     QVERIFY(entry.isEmpty());
     QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
-    QTest::qWait(600);
+    // The hold timer is 550 ms; wait for the signal rather than a fixed 600 ms
+    // so a loaded CI runner cannot miss the deadline.
+    QVERIFY(entry.wait(5000));
     QTest::mouseRelease(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
     QCOMPARE(entry.size(), 1);
     entry.clear();
     QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
     QTest::mouseMove(&widget, QPoint(60, 15));
-    QTest::qWait(600);
+    QTest::qWait(1000);
     QTest::mouseRelease(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(60, 15));
     QVERIFY(entry.isEmpty());
     QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
     widget.hide();
-    QTest::qWait(600);
+    QTest::qWait(1000);
     QVERIFY(entry.isEmpty());
     QVERIFY(changed.isEmpty());
 }
