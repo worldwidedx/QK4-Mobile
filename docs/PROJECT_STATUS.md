@@ -37,6 +37,14 @@ passed. The Java stream-parser test previously passed, and the current Android
 ARM64 test APK packaged successfully. These checks use synthetic inputs;
 TinyMIDI, CTR2-MIDI, HaliKey, and K4 acceptance remain pending.
 
+On 2026-10-17, a controlled TinyMIDI built-in touch capture at 20 WPM showed
+that two of ten intended single-DIT taps lasted past the 120 ms repeat
+boundary. The MIDI stream contained no duplicate press events. A selectable
+TinyMIDI touch lookahead candidate now delays the first element while keeping
+held-paddle cadence; OFF remains the default and supports the external key
+jack. Its 20-30 WPM touch accuracy and feel require physical comparison by
+operators. No 30 WPM touch acceptance is recorded.
+
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
 The mobile panadapter's Average control could show a K4 value while its main

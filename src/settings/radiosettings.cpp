@@ -374,6 +374,15 @@ void RadioSettings::setMidiMappingProfile(int profile) {
     if (m_midiMappingProfile == profile) return;
     m_midiMappingProfile = profile;
     save();
+    emit midiMappingProfileChanged(profile);
+}
+int RadioSettings::tinyMidiTouchLookahead() const { return m_tinyMidiTouchLookahead; }
+void RadioSettings::setTinyMidiTouchLookahead(int milliseconds) {
+    milliseconds = milliseconds >= 60 ? 60 : milliseconds >= 40 ? 40 : 0;
+    if (m_tinyMidiTouchLookahead == milliseconds) return;
+    m_tinyMidiTouchLookahead = milliseconds;
+    save();
+    emit tinyMidiTouchLookaheadChanged(milliseconds);
 }
 int RadioSettings::midiDitStatus() const { return m_midiDitStatus; }
 int RadioSettings::midiDitData1() const { return m_midiDitData1; }
@@ -386,6 +395,7 @@ void RadioSettings::setMidiCustomMapping(int ditStatus, int ditData1, int dahSta
     m_midiDahData1 = qBound(0, dahData1, 127);
     m_midiMappingProfile = 2;
     save();
+    emit midiMappingProfileChanged(2);
 }
 
 int RadioSettings::cwMidiKeyingMode() const { return m_cwMidiKeyingMode; }
@@ -517,6 +527,9 @@ void RadioSettings::load() {
     m_cwKeyerSpeed = qBound(8, m_settings.value("halikey/cwSpeed", 20).toInt(), 40);
     m_cwPaddlesReversed = m_settings.value("halikey/paddlesReversed", false).toBool();
     m_midiMappingProfile = qBound(0, m_settings.value("halikey/midiProfile", 0).toInt(), 2);
+    const int touchLookahead = m_settings.value("halikey/touchLookaheadMs", 0).toInt();
+    m_tinyMidiTouchLookahead = touchLookahead == 40 || touchLookahead == 60
+            ? touchLookahead : 0;
     m_midiDitStatus = m_settings.value("halikey/midiDitStatus", 0x90).toInt();
     m_midiDitData1 = m_settings.value("halikey/midiDitData1", 20).toInt();
     m_midiDahStatus = m_settings.value("halikey/midiDahStatus", 0x90).toInt();
@@ -618,6 +631,7 @@ void RadioSettings::save() {
     m_settings.setValue("halikey/cwSpeed", m_cwKeyerSpeed);
     m_settings.setValue("halikey/paddlesReversed", m_cwPaddlesReversed);
     m_settings.setValue("halikey/midiProfile", m_midiMappingProfile);
+    m_settings.setValue("halikey/touchLookaheadMs", m_tinyMidiTouchLookahead);
     m_settings.setValue("halikey/midiDitStatus", m_midiDitStatus);
     m_settings.setValue("halikey/midiDitData1", m_midiDitData1);
     m_settings.setValue("halikey/midiDahStatus", m_midiDahStatus);

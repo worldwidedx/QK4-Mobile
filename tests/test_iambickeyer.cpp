@@ -64,6 +64,69 @@ private slots:
         QCOMPARE(elements.size(), 1);
     }
 
+    void tinyMidiTouchTapCanEndJustPastRepeatBoundary_data() {
+        QTest::addColumn<int>("wpm");
+        QTest::addColumn<int>("pressMs");
+        QTest::newRow("20-wpm-measured-tap") << 20 << 135;
+        QTest::newRow("30-wpm-late-tap") << 30 << 95;
+    }
+
+    void tinyMidiTouchTapCanEndJustPastRepeatBoundary() {
+        QFETCH(int, wpm);
+        QFETCH(int, pressMs);
+        IambicKeyer keyer;
+        keyer.setSpeed(wpm);
+        keyer.setMidiTouchLookahead(40);
+        QSignalSpy elements(&keyer, &IambicKeyer::elementStarted);
+
+        const qint64 pressed = monotonicNs();
+        keyer.setMidiDitPaddle(true, pressed);
+        // Model the 10 ms release debounce as well as the observed touch.
+        QTimer::singleShot(pressMs + 10, &keyer, [&keyer, pressed, pressMs]() {
+            keyer.setMidiDitPaddle(false, pressed + qint64(pressMs) * 1000000);
+        });
+        QTest::qWait(15);
+        QCOMPARE(elements.size(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(elements.size(), 1, 100);
+
+        // Both taps cross the ordinary repeat boundary. Lookahead lets their
+        // releases arrive before a second element sounds.
+        QTest::qWait(200);
+        QCOMPARE(elements.size(), 1);
+    }
+
+    void tinyMidiTouchHoldRepeatsAtSelectedSpeed() {
+        IambicKeyer keyer;
+        keyer.setSpeed(30);
+        keyer.setMidiTouchLookahead(40);
+        QSignalSpy elements(&keyer, &IambicKeyer::elementStarted);
+        QVector<qint64> starts;
+        connect(&keyer, &IambicKeyer::elementStarted, &keyer,
+                [&starts](bool) { starts.append(monotonicNs()); });
+
+        keyer.setMidiDitPaddle(true, monotonicNs());
+        QTimer::singleShot(230, &keyer, [&keyer]() {
+            keyer.setMidiDitPaddle(false, monotonicNs());
+        });
+        QTest::qWait(340);
+        QCOMPARE(elements.size(), 3);
+        QCOMPARE(starts.size(), 3);
+        for (int i = 1; i < starts.size(); ++i) {
+            const qint64 intervalMs = (starts[i] - starts[i - 1]) / 1000000;
+            QVERIFY2(intervalMs >= 65 && intervalMs <= 100,
+                     "A held 30-WPM DIT must keep an approximately 80-ms cadence");
+        }
+    }
+
+    void tinyMidiTouchAssistDoesNotDelayCtr2() {
+        IambicKeyer keyer;
+        keyer.setMidiTouchLookahead(40);
+        QSignalSpy elements(&keyer, &IambicKeyer::elementStarted);
+        keyer.setCtr2DitPaddle(true, monotonicNs());
+        QCOMPARE(elements.size(), 1);
+        keyer.setCtr2DitPaddle(false, monotonicNs());
+    }
+
     void delayedMidiBatchKeepsNextCharacterSeparate() {
         IambicKeyer keyer;
         keyer.setSpeed(30);

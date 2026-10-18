@@ -128,6 +128,8 @@ public:
     void setCwPaddlesReversed(bool reversed);
     int midiMappingProfile() const;
     void setMidiMappingProfile(int profile); // 0=TinyMIDI, 1=HaliKey MIDI, 2=Custom
+    int tinyMidiTouchLookahead() const; // 0, 40, or 60 ms; built-in touch only
+    void setTinyMidiTouchLookahead(int milliseconds);
     int midiDitStatus() const;
     int midiDitData1() const;
     int midiDahStatus() const;
@@ -179,6 +181,8 @@ signals:
     void cwPaddlesReversedChanged(bool reversed);
     void cwMidiKeyingModeChanged(int mode);
     void cwMidiStraightKeyInputChanged(int input);
+    void midiMappingProfileChanged(int profile);
+    void tinyMidiTouchLookaheadChanged(int milliseconds);
     void ctr2MidiPortNameChanged(const QString &portName);
     void ctr2MidiMappingChanged();
     void rxEqPresetsChanged();
@@ -211,6 +215,7 @@ private:
     int m_cwKeyerSpeed = 20;     // Default 20 WPM
     bool m_cwPaddlesReversed = false; // Normal: left=dit, right=dah
     int m_midiMappingProfile = 0;
+    int m_tinyMidiTouchLookahead = 0;
     int m_midiDitStatus = 0x90;
     int m_midiDitData1 = 20;
     int m_midiDahStatus = 0x90;

@@ -21,6 +21,7 @@ public:
     Q_INVOKABLE void setMode(Mode mode);
     Q_INVOKABLE void setReversed(bool reversed);
     Q_INVOKABLE void setSpeed(int wpm);
+    Q_INVOKABLE void setMidiTouchLookahead(int milliseconds);
     Q_INVOKABLE void stop();
     void setDitPaddle(bool pressed);
     void setDahPaddle(bool pressed);
@@ -43,11 +44,12 @@ private:
     void onTimerFired();
     void goIdle(qint64 boundaryNs);
     void setPaddle(bool dit, unsigned sourceBit, bool pressed, qint64 eventTimeNs);
-    struct PaddleEdge { qint64 timeNs; bool dit; bool pressed; };
+    struct PaddleEdge { qint64 timeNs; bool dit; bool pressed; unsigned sourceBit; };
     struct PaddleSnapshot { bool dit; bool dah; bool squeezed; bool ditPressed; bool dahPressed; };
-    struct PendingPress { qint64 timeNs = 0; bool dit = false; };
+    struct PendingPress { qint64 timeNs = 0; bool dit = false; unsigned sourceBit = 0; };
     PaddleSnapshot stateAt(qint64 boundaryNs) const;
     PendingPress nextPressAfter(qint64 boundaryNs) const;
+    bool releasedBetween(bool dit, qint64 afterNs, qint64 throughNs) const;
     static qint64 nowNs();
 
     QTimer *m_elementTimer = nullptr;
@@ -56,6 +58,8 @@ private:
     bool m_reversed = false;
     bool m_enabled = true;
     int m_ditMs = 60;
+    int m_midiTouchLookaheadMs = 0;
+    bool m_touchAssistedElement = false;
     qint64 m_nextDeadlineNs = 0;
     qint64 m_nextBoundaryNs = 0;
     qint64 m_elementStartNs = 0;

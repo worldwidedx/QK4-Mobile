@@ -2554,6 +2554,23 @@ MainWindow::MainWindow(QWidget *parent)
     QMetaObject::invokeMethod(m_iambicKeyer, "setMode", Qt::QueuedConnection,
                               Q_ARG(IambicKeyer::Mode, m_radioState->iambicMode() == 'B'
                                                            ? IambicKeyer::IambicB : IambicKeyer::IambicA));
+#ifdef Q_OS_ANDROID
+    const auto updateTouchLookahead = [this]() {
+        auto *settings = RadioSettings::instance();
+        const int milliseconds = settings->midiMappingProfile() == 0
+                && settings->cwMidiKeyingMode() == 0
+                ? settings->tinyMidiTouchLookahead() : 0;
+        QMetaObject::invokeMethod(m_iambicKeyer, "setMidiTouchLookahead",
+                                  Qt::QueuedConnection, Q_ARG(int, milliseconds));
+    };
+    updateTouchLookahead();
+    connect(RadioSettings::instance(), &RadioSettings::tinyMidiTouchLookaheadChanged,
+            this, updateTouchLookahead);
+    connect(RadioSettings::instance(), &RadioSettings::midiMappingProfileChanged,
+            this, updateTouchLookahead);
+    connect(RadioSettings::instance(), &RadioSettings::cwMidiKeyingModeChanged,
+            this, updateTouchLookahead);
+#endif
 
     // Local sidetone generator for CW keying (low-latency local audio feedback)
     // MUST be created BEFORE HaliKey signal connections that use it

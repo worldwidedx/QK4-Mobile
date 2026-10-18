@@ -44,6 +44,49 @@ needs operator validation. The same report says the K4 did not key, and the
 test app connected on 9205 but not 9204. Compare the test app's separate TLS
 profile with the production app's before diagnosing a network regression.
 
+## TinyMIDI built-in touch capture (2026-10-17)
+
+On the Samsung Galaxy S26 Ultra with the PR #27 test app, the owner sent ten
+intended separate DIT taps at 20 WPM, paused, then held the built-in TinyMIDI
+DIT touch pad. The raw Android callback trace contains one note 20 Note On and
+one Note Off per contact, with no duplicate Note On burst. The ten tap durations
+measured between Android callbacks were 60.6, 70.7, 40.4, 63.2, 87.5, 135.4,
+100.8, 31.8, 28.6, and 123.7 ms. Four later contacts in the trace lasted
+360.0, 405.8, 416.1, and 405.5 ms. These are callback intervals, not
+device-measured touch times. The operator was asked for two holds; the trace
+contains four, so do not infer four intentional holds without a new labeled run.
+
+At 20 WPM, a DIT is 60 ms and a continuously held DIT repeats at the 120 ms
+element boundary. Two of the ten intended quick taps remained down across that
+boundary, explaining unwanted second DITs without duplicate MIDI messages.
+The 10 ms release debounce does not alter the recorded release timestamp, but
+it can delay when the keyer receives the release edge. An intended 135 ms tap
+and the first 135 ms of an intentional hold present identical MIDI input until
+release. A one-element-per-touch rule would suppress held-paddle repeats and is
+therefore unsuitable. Any touch-specific first-repeat grace must be tested for
+both single-tap accuracy and held-DIT rhythm at 20 and 30 WPM before use as a
+default. The current MIDI mapping cannot distinguish TinyMIDI's built-in touch
+pad from a paddle connected to its external key input, so a touch-specific
+setting must leave the external input's normal behavior selectable.
+
+An experimental Android TinyMIDI touch control now offers OFF, 40 ms, and
+60 ms lookahead. It starts each touch-initiated sequence after that delay but
+keeps the selected WPM cadence for a held paddle. At a DIT/DAH boundary, only
+a release of the currently sounding paddle during the lookahead window can
+cancel a repeat; an opposite-paddle press is still evaluated at the original
+boundary. The control applies only to session 0's TinyMIDI paddle profile.
+OFF is the default and should be selected for TinyMIDI's external key jack.
+CTR2 and HaliKey paths retain their current timing. This is an unvalidated
+candidate, not a demonstrated 30 WPM touch solution.
+
+For acceptance, have an operator copy the same written test text with OFF,
+40 ms, and 60 ms at 20, 25, and 30 WPM using built-in touch. Include separate
+single-DIT taps, a held DIT, alternating paddles, and squeeze-heavy text.
+Measure wrong letters and the delay from touch to local sidetone. Use a physical
+key on TinyMIDI's external jack with OFF to confirm normal repeat behavior.
+Record the chosen setting with each trace; select the smallest delay that
+removes extra elements without making letter spacing or paddle feel worse.
+
 For the next radio test, use K4 CW/CW-R and TX TEST mode, confirm the app shows
 live radio state, then key a short pattern and check the K4's own TX/monitor
 indication separately from the phone sidetone. Record the test app's connection

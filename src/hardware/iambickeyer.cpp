@@ -36,6 +36,12 @@ void IambicKeyer::setSpeed(int wpm) {
         m_ditMs = 1200 / wpm;
 }
 
+void IambicKeyer::setMidiTouchLookahead(int milliseconds) {
+    m_midiTouchLookaheadMs = std::clamp(milliseconds, 0, 60);
+    if (m_state == Idle)
+        handlePaddleChange();
+}
+
 void IambicKeyer::setDitPaddle(bool pressed) {
     setPaddle(true, RouterSource, pressed, nowNs());
 }
@@ -81,7 +87,7 @@ void IambicKeyer::setPaddle(bool dit, unsigned sourceBit, bool pressed,
         std::lock_guard<std::mutex> lock(m_edgesMutex);
         if (!m_edges.empty() && eventTimeNs < m_edges.front().timeNs)
             eventTimeNs = m_edges.front().timeNs;
-        const PaddleEdge edge{eventTimeNs, dit, pressed};
+        const PaddleEdge edge{eventTimeNs, dit, pressed, sourceBit};
         const auto position = std::upper_bound(m_edges.begin(), m_edges.end(), eventTimeNs,
                 [](qint64 time, const PaddleEdge &item) { return time < item.timeNs; });
         m_edges.insert(position, edge);
@@ -128,9 +134,20 @@ IambicKeyer::PendingPress IambicKeyer::nextPressAfter(qint64 boundaryNs) const {
     std::lock_guard<std::mutex> lock(m_edgesMutex);
     for (const PaddleEdge &edge : m_edges) {
         if (edge.pressed && edge.timeNs > boundaryNs)
-            return {edge.timeNs, edge.dit};
+            return {edge.timeNs, edge.dit, edge.sourceBit};
     }
     return {};
+}
+
+bool IambicKeyer::releasedBetween(bool dit, qint64 afterNs, qint64 throughNs) const {
+    std::lock_guard<std::mutex> lock(m_edgesMutex);
+    for (const PaddleEdge &edge : m_edges) {
+        if (edge.timeNs > throughNs)
+            break;
+        if (edge.timeNs > afterNs && edge.dit == dit && !edge.pressed)
+            return true;
+    }
+    return false;
 }
 
 void IambicKeyer::handlePaddleChange() {
@@ -140,12 +157,18 @@ void IambicKeyer::handlePaddleChange() {
     if (!press.timeNs)
         return;
     const qint64 now = nowNs();
-    if (now < m_replayReadyNs) {
-        QTimer::singleShot(static_cast<int>((m_replayReadyNs - now + 999999)
+    const bool touchAssist = press.sourceBit == AndroidMidiSource
+            && m_midiTouchLookaheadMs > 0;
+    const qint64 touchReadyNs = touchAssist
+            ? press.timeNs + qint64(m_midiTouchLookaheadMs) * NanosecondsPerMillisecond : 0;
+    const qint64 readyNs = std::max(m_replayReadyNs, touchReadyNs);
+    if (now < readyNs) {
+        QTimer::singleShot(static_cast<int>((readyNs - now + 999999)
                                             / NanosecondsPerMillisecond),
                            this, &IambicKeyer::handlePaddleChange);
         return;
     }
+    m_touchAssistedElement = touchAssist;
     enterElement(press.dit == !m_reversed, press.timeNs);
 }
 
@@ -190,13 +213,16 @@ void IambicKeyer::onTimerFired() {
     const bool liveDit = m_reversed ? snapshot.dah : snapshot.dit;
     const bool liveDah = m_reversed ? snapshot.dit : snapshot.dah;
     const bool wasDit = m_state == PlayingDit;
+    const bool samePaddleReleasedInLookahead = m_touchAssistedElement
+            && releasedBetween(wasDit != m_reversed, boundary,
+                    boundary + qint64(m_midiTouchLookaheadMs) * NanosecondsPerMillisecond);
     // Remember a brief press of the opposite paddle, which cannot sound until
     // this element ends. A released re-press of the paddle already sounding
     // must not queue another element (for example, after contact bounce).
-    const bool dit = liveDit || (!wasDit && (m_reversed ? snapshot.dahPressed
-                                                         : snapshot.ditPressed));
-    const bool dah = liveDah || (wasDit && (m_reversed ? snapshot.ditPressed
-                                                       : snapshot.dahPressed));
+    const bool dit = (liveDit && !(wasDit && samePaddleReleasedInLookahead))
+            || (!wasDit && (m_reversed ? snapshot.dahPressed : snapshot.ditPressed));
+    const bool dah = (liveDah && !(!wasDit && samePaddleReleasedInLookahead))
+            || (wasDit && (m_reversed ? snapshot.ditPressed : snapshot.dahPressed));
 
     if (snapshot.squeezed && !liveDit && !liveDah) {
         if (m_mode == IambicB)
@@ -247,6 +273,7 @@ void IambicKeyer::stop() {
     m_dahSources.store(0);
     m_lastIdleBoundaryNs = 0;
     m_replayReadyNs = 0;
+    m_touchAssistedElement = false;
     std::lock_guard<std::mutex> lock(m_edgesMutex);
     m_edges.clear();
     m_historyBaseDit = false;

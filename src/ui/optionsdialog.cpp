@@ -1831,6 +1831,44 @@ QWidget *OptionsDialog::createCwKeyerPage() {
                                   .arg(K4Styles::Dimensions::FontSizeLarge));
     controlsLayout->addWidget(keyingHelp);
 
+#ifdef Q_OS_ANDROID
+    auto *touchAssistButton = new QPushButton(page);
+    touchAssistButton->setMinimumHeight(38);
+    auto *touchAssistHelp = new QLabel(
+        "Built-in TinyMIDI touch paddles: delay the first sound slightly so a "
+        "late finger release does not add a dit. A held paddle still repeats "
+        "at the selected CW speed. Select OFF for a paddle plugged into the key jack.", page);
+    touchAssistHelp->setWordWrap(true);
+    touchAssistHelp->setStyleSheet(QString("color:%1;font-size:%2px;font-style:italic;")
+                                      .arg(K4Styles::Colors::TextGray)
+                                      .arg(K4Styles::Dimensions::FontSizeLarge));
+    const auto updateTouchAssist = [touchAssistButton, touchAssistHelp]() {
+        auto *settings = RadioSettings::instance();
+        const bool available = settings->midiMappingProfile() == 0
+                && settings->cwMidiKeyingMode() == 0;
+        touchAssistButton->setVisible(available);
+        touchAssistHelp->setVisible(available);
+        const int delay = settings->tinyMidiTouchLookahead();
+        touchAssistButton->setText(delay == 0 ? "TINYMIDI TOUCH: OFF"
+                : QString("TINYMIDI TOUCH: %1 MS").arg(delay));
+        touchAssistButton->setStyleSheet(delay == 0 ? K4Styles::menuBarButton()
+                                                   : K4Styles::menuBarButtonActive());
+    };
+    connect(touchAssistButton, &QPushButton::clicked, this, [updateTouchAssist]() {
+        auto *settings = RadioSettings::instance();
+        const int current = settings->tinyMidiTouchLookahead();
+        settings->setTinyMidiTouchLookahead(current == 0 ? 40 : current == 40 ? 60 : 0);
+        updateTouchAssist();
+    });
+    connect(RadioSettings::instance(), &RadioSettings::midiMappingProfileChanged,
+            this, updateTouchAssist);
+    connect(RadioSettings::instance(), &RadioSettings::cwMidiKeyingModeChanged,
+            this, updateTouchAssist);
+    controlsLayout->addWidget(touchAssistButton);
+    controlsLayout->addWidget(touchAssistHelp);
+    updateTouchAssist();
+#endif
+
     const auto updateMidiProfileControls = [this, tinyMidiProfileButton, haliKeyProfileButton,
                                             customProfileButton]() {
         const int profile = m_midiMappingProfileCombo->currentData().toInt();
