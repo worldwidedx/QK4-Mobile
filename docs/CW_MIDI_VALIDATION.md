@@ -82,8 +82,9 @@ CTR2 and HaliKey paths retain their current timing. The timing control has
 preliminary owner feedback, but is not a demonstrated 30 WPM touch solution.
 
 With test build `f97f098` on the Samsung Galaxy S26 Ultra, the owner reported
-that 20 ms worked well for CQ at 20 WPM. A somewhat higher setting worked at
-25 WPM; the exact value was not recorded. The owner could not achieve accurate
+that 20 ms worked well for CQ at 20 WPM. Approximately 30-35 ms helped at
+25 WPM, although the owner found the capacitive touch very sensitive and
+difficult to use at that speed. The owner could not achieve accurate
 30 WPM with any tested value and noted that practice might change that result.
 This does not establish the device's maximum reliable speed because the owner
 does not send 30 WPM reliably. Treat 30 WPM on TinyMIDI's built-in capacitive

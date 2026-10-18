@@ -44,11 +44,13 @@ TinyMIDI touch lookahead candidate now delays the first element while keeping
 held-paddle cadence. Its Android control offers 0-100 ms in 5 ms steps;
 OFF (0 ms) remains the default and supports the external key jack. With
 test build `f97f098` on the Samsung Galaxy S26 Ultra, the owner reported that
-20 ms worked well for CQ at 20 WPM and a somewhat higher, unrecorded setting
-worked at 25 WPM. No setting gave the owner a reliable 30 WPM result. This is
-a preliminary operator report, not a scored copy test; the owner does not send
-30 WPM reliably, so a proficient operator must determine whether the device
-and app can reach that speed accurately. No 30 WPM touch acceptance is recorded.
+20 ms worked well for CQ at 20 WPM and approximately 30-35 ms helped at
+25 WPM, although the owner found the capacitive touch very sensitive and
+difficult at that speed. No setting gave the owner a reliable 30 WPM result.
+This is a preliminary operator report, not a scored copy test; the owner does
+not send 30 WPM reliably, so a proficient operator must determine whether the
+device and app can reach that speed accurately. No 30 WPM touch acceptance is
+recorded.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
