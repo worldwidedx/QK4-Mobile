@@ -116,6 +116,11 @@ static bool androidHasHardwareKeyboard();
 // K4 Span range: 5 kHz to 368 kHz
 // UP (zoom out): +1 kHz until 144, then +4 kHz until 368
 // DOWN (zoom in): -4 kHz until 140, then -1 kHz until 5
+// Use the QK4 Mobile product name as the console header on every platform.
+static QString appTitleText() {
+    return QStringLiteral("QK4 Mobile");
+}
+
 static constexpr int SPAN_MIN = 5000;
 static constexpr int SPAN_MAX = 368000;
 static constexpr int SPAN_THRESHOLD_UP = 144000;   // Switch to 4kHz steps above this
@@ -2994,9 +2999,10 @@ void MainWindow::showFeatureAdjustment(int featureValue) {
 
 void MainWindow::showAboutDialog() {
     showInWindowMessage(centralWidget(), "About QK4 Mobile",
-                        QString("<h2>QK4 Mobile for Android</h2>"
+                        QString("<h2>QK4 Mobile</h2>"
                                 "<p>Version %1</p>"
-                                "<p>Remote control application for Elecraft K4 radios.</p>"
+                                "<p>Remote control client for compatible radios.</p>"
+                                "<p>Independent open-source project. Not affiliated with or endorsed by Elecraft.</p>"
                                 "<p>By <a href='https://worldwidedx.com'>WorldwideDX.com</a></p>"
                                 "<p>Based on QK4 by Mike Garcia (KF5O).</p>"
                                 "<p>Licensed under GNU GPL v3.0 or later.</p>"
@@ -4387,8 +4393,8 @@ void MainWindow::setupTopStatusBar(QWidget *parent) {
     layout->setContentsMargins(K4Styles::Dimensions::PaddingSmall, 2, K4Styles::Dimensions::PaddingSmall, 2);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
-    // Elecraft K4 title
-    m_titleLabel = new QLabel("Elecraft K4", statusBar);
+    // Product title
+    m_titleLabel = new QLabel(appTitleText(), statusBar);
     m_titleLabel->setStyleSheet(
         QString("color: %1; font-weight: bold; font-size: %2px;")
             .arg(K4Styles::Colors::TextWhite)
@@ -5688,7 +5694,7 @@ void MainWindow::connectToRadio(const RadioEntry &radio) {
 
     m_currentRadio = radio;
     m_connectionState = TcpClient::Connecting;
-    m_titleLabel->setText("Elecraft K4 - " + radio.name);
+    m_titleLabel->setText(appTitleText() + " - " + radio.name);
 
     qDebug() << "Connecting to" << radio.host << ":" << radio.port << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)")
              << "encodeMode:" << radio.encodeMode << "streamingLatency:" << radio.streamingLatency;
@@ -6031,7 +6037,7 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         m_connectionStatusLabel->setText("K4");
         m_connectionStatusLabel->setStyleSheet(
             QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
-        m_titleLabel->setText("Elecraft K4");
+        m_titleLabel->setText(appTitleText());
         // Stop audio engine to prevent accessing invalid data
         if (m_audioEngine) {
             QMetaObject::invokeMethod(m_audioEngine, "stop", Qt::QueuedConnection);
