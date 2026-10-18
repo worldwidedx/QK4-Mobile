@@ -59,7 +59,13 @@ int InWindowDialog::exec() {
     fitToParent();
     m_result = Rejected;
     m_backHidKeyboard = false;
-    const QPointer<QWidget> previousFocus = QApplication::focusWidget();
+    // QApplication::focusWidget() is null while the window is not the active
+    // window (headless runners, a window still activating), which would lose
+    // the invoker. The window's own focus widget survives that.
+    QWidget *focused = QApplication::focusWidget();
+    if (!focused)
+        focused = parentWidget()->window()->focusWidget();
+    const QPointer<QWidget> previousFocus = focused;
     show();
     raise();
     setFocus(Qt::OtherFocusReason);
