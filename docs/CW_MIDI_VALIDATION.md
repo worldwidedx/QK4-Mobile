@@ -78,8 +78,18 @@ boundary. The control applies only to session 0's TinyMIDI paddle profile.
 OFF is the default, adds no touch lookahead, and should be selected for
 TinyMIDI's external key jack. The existing 10 ms release debounce remains
 active even when touch lookahead is OFF.
-CTR2 and HaliKey paths retain their current timing. This is an unvalidated
-candidate, not a demonstrated 30 WPM touch solution.
+CTR2 and HaliKey paths retain their current timing. The timing control has
+preliminary owner feedback, but is not a demonstrated 30 WPM touch solution.
+
+With test build `f97f098` on the Samsung Galaxy S26 Ultra, the owner reported
+that 20 ms worked well for CQ at 20 WPM. A somewhat higher setting worked at
+25 WPM; the exact value was not recorded. The owner could not achieve accurate
+30 WPM with any tested value and noted that practice might change that result.
+This does not establish the device's maximum reliable speed because the owner
+does not send 30 WPM reliably. Treat 30 WPM on TinyMIDI's built-in capacitive
+touch as a stretch target requiring a proficient operator and scored copied
+text. Do not generalize this report to TinyMIDI's external key jack, HaliKey,
+or CTR2.
 
 For acceptance, have an operator copy the same written test text with OFF,
 40 ms, 60 ms, and nearby 5 ms increments at 20, 25, and 30 WPM using built-in

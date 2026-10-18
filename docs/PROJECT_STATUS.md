@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-17 (HaliKey operator feedback)
+Last updated: 2026-10-17 (TinyMIDI touch operator feedback)
 
 ## Unreleased: CW MIDI edge accuracy candidate
 
@@ -42,9 +42,13 @@ that two of ten intended single-DIT taps lasted past the 120 ms repeat
 boundary. The MIDI stream contained no duplicate press events. A selectable
 TinyMIDI touch lookahead candidate now delays the first element while keeping
 held-paddle cadence. Its Android control offers 0-100 ms in 5 ms steps;
-OFF (0 ms) remains the default and supports the external key
-jack. Its 20-30 WPM touch accuracy and feel require physical comparison by
-operators. No 30 WPM touch acceptance is recorded.
+OFF (0 ms) remains the default and supports the external key jack. With
+test build `f97f098` on the Samsung Galaxy S26 Ultra, the owner reported that
+20 ms worked well for CQ at 20 WPM and a somewhat higher, unrecorded setting
+worked at 25 WPM. No setting gave the owner a reliable 30 WPM result. This is
+a preliminary operator report, not a scored copy test; the owner does not send
+30 WPM reliably, so a proficient operator must determine whether the device
+and app can reach that speed accurately. No 30 WPM touch acceptance is recorded.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
