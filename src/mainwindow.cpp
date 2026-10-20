@@ -7484,6 +7484,7 @@ void MainWindow::showEvent(QShowEvent *event) {
                 if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
                     qInfo() << "iOS console geometry: window" << size()
                             << "compact" << K4Styles::isCompactLayout()
+                            << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
                             << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
                             << "contents" << contentsRect()
                             << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
@@ -7491,6 +7492,7 @@ void MainWindow::showEvent(QShowEvent *event) {
         }
         qInfo() << "iOS console geometry: window" << size()
                 << "compact" << K4Styles::isCompactLayout()
+                << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
                 << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
                 << "contents" << contentsRect()
                 << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
@@ -7516,6 +7518,7 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
         qInfo() << "iOS console geometry: window" << size()
                 << "compact" << K4Styles::isCompactLayout()
+                << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
                 << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
                 << "contents" << contentsRect()
                 << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
