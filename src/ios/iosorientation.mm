@@ -66,6 +66,9 @@ bool activeSceneHasRegularSizeClasses() {
     if (!activeWindow)
         return false;
     UITraitCollection *traits = activeWindow.traitCollection;
+    if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
+        qInfo() << "iOS window size classes: horizontal" << traits.horizontalSizeClass
+                << "vertical" << traits.verticalSizeClass;
     return traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular
            && traits.verticalSizeClass == UIUserInterfaceSizeClassRegular;
 }
