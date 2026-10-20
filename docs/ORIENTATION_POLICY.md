@@ -29,6 +29,22 @@ Compact layout is a presentation choice, not an orientation lock. Using the
 compact layout must not override these per-module rules. A tablet orientation
 exception must not change Android-phone or iPhone behavior.
 
+### iPhone Duo layout
+
+Treat iPhone Duo as an iPhone for phone interaction behavior. Its folded outer
+display uses the compact iPhone console in landscape. Its unfolded inner
+display uses the regular, iPad-style console and may run in landscape or
+portrait; in portrait, reflow the console to use the available height instead
+of letterboxing a landscape surface. Re-evaluate layout when folding or
+unfolding changes the usable window or safe areas. Keep the live VFOs, meters,
+panadapter, PTT, and required controls reachable in each state.
+
+The portrait exception applies only to the unfolded inner display of iPhone
+Duo. The folded outer display remains landscape, and Android phones and other
+iPhones retain the phone orientation rules above. Do not infer an iPad
+orientation exception from this Duo rule. Duo simulator results are not
+physical device acceptance.
+
 ## Tablet requirements (Android tablet and iPad)
 
 | Screen or entry point | Required behavior on both tablet platforms |
@@ -105,6 +121,12 @@ instead of maintaining a second support-status list here.
   orientation requirements.
 - Record the device, OS version, tested commit, and results. Keep iPhone
   acceptance evidence separate from Android-phone acceptance evidence.
+
+For iPhone Duo layout work, also launch in both folded and unfolded states,
+fold and unfold while the app is open, and verify compact folded landscape,
+regular unfolded landscape, and regular unfolded portrait. Check window
+resizing, asymmetric safe areas, control reachability, and return behavior.
+Keep those results separate from acceptance on other iPhones.
 
 ## Acceptance checks for tablet layout and orientation work
 

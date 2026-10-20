@@ -1,6 +1,23 @@
 # Project status
 
-Last updated: 2026-10-16 (Fold open/close behavior clarification)
+Last updated: 2026-10-20 (iPhone Duo layout contract)
+
+## iPhone Duo layout
+
+The QK4 build launches on the iPhone Duo simulator under Xcode 27.1. The owner
+reports that the regular layout looks good on the unfolded inner display. The
+approved UX contract is compact landscape when folded and regular iPad-style
+presentation in either orientation when unfolded. The iOS orientation callback
+now permits main-console portrait only when the active iPhone window has an
+inner-display-sized usable surface, and the regular iOS window no longer has a
+desktop-sized minimum that would letterbox portrait. Runtime switching between
+the compact and regular presentations after folding or unfolding remains
+pending, as do Duo build and device acceptance checks. Simulator captures do
+not establish physical Duo acceptance. An opt-in
+`QK4_LOG_IOS_WINDOW_GEOMETRY` diagnostic reports the live Qt window size,
+safe-area margins, contents rect, and central-widget rect on iOS show, resize,
+and safe-area changes. Android phones and other iPhones are outside this
+layout change.
 
 ## Unreleased: compact console on folding Android devices (#21)
 
