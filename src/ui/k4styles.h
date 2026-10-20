@@ -363,9 +363,11 @@ inline int PaddingLarge = 15;           // Large padding (list items)
  * @param devicePixelRatio Screen DPR
  * @param physicalDiagonalInches Optional physical diagonal size in inches (0 if unknown)
  * @param forceCompact Force compact profile regardless of screen metrics or development overrides
+ * @param forceRegular Force regular profile for a platform-classified large window
  */
 void configureForScreen(const QSize &availableSize, qreal devicePixelRatio = 1.0,
-                        qreal physicalDiagonalInches = 0.0, bool forceCompact = false);
+                        qreal physicalDiagonalInches = 0.0, bool forceCompact = false,
+                        bool forceRegular = false);
 
 /**
  * @brief True when compact phone layout profile is active.

@@ -9,7 +9,9 @@ reports that the regular layout looks good on the unfolded inner display. The
 approved UX contract is compact landscape when folded and regular iPad-style
 presentation in either orientation when unfolded. The iOS orientation callback
 now permits main-console portrait only when the active iPhone window has an
-inner-display-sized usable surface, and the regular iOS window no longer has a
+inner-display-sized usable surface. Startup layout selection also recognizes
+that inner-display surface and chooses regular even if Qt reports a short edge
+below its usual large-screen threshold. The regular iOS window no longer has a
 desktop-sized minimum that would letterbox portrait. Runtime switching between
 the compact and regular presentations after folding or unfolding remains
 pending, as do Duo build and device acceptance checks. Simulator captures do
