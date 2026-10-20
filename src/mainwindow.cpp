@@ -3065,12 +3065,24 @@ QString MainWindow::requestText(const QString &title, const QString &label, cons
 
 void MainWindow::setupUi() {
     setWindowTitle("QK4 Mobile");
+#ifdef Q_OS_IOS
+    if (K4Styles::isCompactLayout() || IosOrientation::activeWindowHasRegularSizeClasses()) {
+        // A regular iOS window can become narrower or taller as Duo folds,
+        // unfolds, and rotates. Let the console use the current window bounds
+        // instead of enforcing a desktop-sized minimum.
+        setMinimumSize(0, 0);
+    } else {
+        setMinimumSize(1340, 840);
+        resize(1340, 840);
+    }
+#else
     if (K4Styles::isCompactLayout()) {
         setMinimumSize(0, 0);
     } else {
         setMinimumSize(1340, 840);
         resize(1340, 840); // Default to minimum size on launch
     }
+#endif
 
     // NOTE: Do NOT set WA_NativeWindow here!
     // Qt 6.10.1 bug on macOS Tahoe: WA_NativeWindow forces native window creation
@@ -7460,6 +7472,32 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
+#ifdef Q_OS_IOS
+    // Duo's folded display can reserve an asymmetric safe area around the
+    // camera. Log Qt's live window and safe-area geometry on demand so the
+    // compact layout can be tuned to the actual usable region, not a guessed
+    // device model or a hard-coded camera offset.
+    if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY")) {
+        if (QWindow *handle = windowHandle(); handle && m_iosGeometryWindow != handle) {
+            m_iosGeometryWindow = handle;
+            connect(handle, &QWindow::safeAreaMarginsChanged, this, [this](const QMargins &) {
+                if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
+                    qInfo() << "iOS console geometry: window" << size()
+                            << "compact" << K4Styles::isCompactLayout()
+                            << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
+                            << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
+                            << "contents" << contentsRect()
+                            << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
+            });
+        }
+        qInfo() << "iOS console geometry: window" << size()
+                << "compact" << K4Styles::isCompactLayout()
+                << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
+                << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
+                << "contents" << contentsRect()
+                << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
+    }
+#endif
 #ifdef Q_OS_ANDROID
     if (QWindow *handle = windowHandle(); handle && m_displayWindow != handle) {
         if (m_displayWindow)
@@ -7476,6 +7514,15 @@ void MainWindow::showEvent(QShowEvent *event) {
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
+#ifdef Q_OS_IOS
+    if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
+        qInfo() << "iOS console geometry: window" << size()
+                << "compact" << K4Styles::isCompactLayout()
+                << "regular-size-classes" << IosOrientation::activeWindowHasRegularSizeClasses()
+                << "safe-area" << (windowHandle() ? windowHandle()->safeAreaMargins() : QMargins())
+                << "contents" << contentsRect()
+                << "central" << (centralWidget() ? centralWidget()->geometry() : QRect());
+#endif
 #ifdef Q_OS_ANDROID
     scheduleDisplayRefresh();
 #endif

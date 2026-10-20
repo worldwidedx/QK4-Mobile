@@ -50,6 +50,29 @@ UIWindowScene *activeWindowScene() {
     return nil;
 }
 
+bool activeSceneHasRegularSizeClasses() {
+    UIWindowScene *scene = activeWindowScene();
+    if (!scene)
+        return false;
+    UIWindow *activeWindow = nil;
+    for (UIWindow *window in scene.windows) {
+        if (window.isKeyWindow) {
+            activeWindow = window;
+            break;
+        }
+    }
+    if (!activeWindow)
+        activeWindow = scene.windows.firstObject;
+    if (!activeWindow)
+        return false;
+    UITraitCollection *traits = activeWindow.traitCollection;
+    if (qEnvironmentVariableIsSet("QK4_LOG_IOS_WINDOW_GEOMETRY"))
+        qInfo() << "iOS window size classes: horizontal" << traits.horizontalSizeClass
+                << "vertical" << traits.verticalSizeClass;
+    return traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular
+           && traits.verticalSizeClass == UIUserInterfaceSizeClassRegular;
+}
+
 void applyOrientations(UIInterfaceOrientationMask mask) {
     g_allowedMask = mask;
 
@@ -91,6 +114,10 @@ void stopRadioLogbookObservation() {
     }
     g_initialRadioLogbookOrientation = UIDeviceOrientationUnknown;
 }
+}
+
+bool IosOrientation::activeWindowHasRegularSizeClasses() {
+    return activeSceneHasRegularSizeClasses();
 }
 
 // Adds the app-delegate hook iOS consults on every rotation attempt. Qt's own

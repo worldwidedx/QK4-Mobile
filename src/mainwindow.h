@@ -507,6 +507,9 @@ private:
     QPointer<QWindow> m_displayWindow;
     bool m_displayRefreshPending = false;
 #endif
+#ifdef Q_OS_IOS
+    QPointer<QWindow> m_iosGeometryWindow;
+#endif
 };
 
 #endif // MAINWINDOW_H

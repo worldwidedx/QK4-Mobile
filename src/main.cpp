@@ -123,11 +123,15 @@ int main(int argc, char *argv[]) {
     app.setOrganizationName("AI5QK");
     app.setOrganizationDomain("ai5qk.com");
 
-    // Choose once, before constructing widgets. Folding/resizing then keeps
-    // the compact console and the existing radio/audio session intact.
+    // Choose before constructing widgets. Android folding devices retain
+    // their compact presentation; regular iOS window traits select the
+    // regular layout even if Qt reports a smaller screen size.
     bool forceCompact = false;
+    bool forceRegular = false;
 #ifdef Q_OS_ANDROID
     forceCompact = AndroidDeviceInfo::hasFoldingHardware() || RadioSettings::instance()->alwaysCompactLayout();
+#elif defined(Q_OS_IOS)
+    forceRegular = IosOrientation::activeWindowHasRegularSizeClasses();
 #endif
     if (QScreen *screen = app.primaryScreen()) {
         qreal diagonalInches = 0.0;
@@ -137,9 +141,9 @@ int main(int argc, char *argv[]) {
             diagonalInches = diagonalMm / 25.4;
         }
         K4Styles::configureForScreen(screen->availableGeometry().size(), screen->devicePixelRatio(), diagonalInches,
-                                    forceCompact);
+                                    forceCompact, forceRegular);
     } else {
-        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0, forceCompact);
+        K4Styles::configureForScreen(QSize(1340, 840), 1.0, 0.0, forceCompact, forceRegular);
     }
 
     // Load embedded Inter font family

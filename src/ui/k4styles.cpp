@@ -197,7 +197,7 @@ void applyCompactDimensions() {
 namespace K4Styles {
 
 void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qreal physicalDiagonalInches,
-                        bool forceCompact) {
+                        bool forceCompact, bool forceRegular) {
     applyDefaultDimensions();
 
     // Large screens (iPad / Android tablet) get the regular desktop-like layout,
@@ -217,13 +217,14 @@ void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qrea
     Q_UNUSED(physicalDiagonalInches);
     const bool regular = (shortEdge > 700);
 #endif
-    bool useCompact = forceCompact || !regular;
+    bool useCompact = forceCompact || (!forceRegular && !regular);
 #else
     // Desktop dev builds keep the compact layout (unchanged).
     Q_UNUSED(availableSize);
     Q_UNUSED(devicePixelRatio);
     Q_UNUSED(physicalDiagonalInches);
     Q_UNUSED(forceCompact);
+    Q_UNUSED(forceRegular);
     bool useCompact = true;
 #endif
 
@@ -239,7 +240,7 @@ void configureForScreen(const QSize &availableSize, qreal devicePixelRatio, qrea
     // over a development-only request for the regular layout.
     if (forceCompact || (forceCompactEnvOk && forceCompactEnv > 0)) {
         useCompact = true;
-    } else if (forceRegularEnvOk && forceRegularEnv > 0) {
+    } else if (forceRegular || (forceRegularEnvOk && forceRegularEnv > 0)) {
         useCompact = false;
     }
 

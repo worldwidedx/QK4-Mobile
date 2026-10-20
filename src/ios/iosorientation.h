@@ -5,6 +5,7 @@ namespace IosOrientation {
 void requestLandscape();
 void requestPortrait();
 void allowPortraitAndLandscape();
+bool activeWindowHasRegularSizeClasses();
 void beginRadioLogbookRotation();
 void endRadioLogbookRotation();
 }

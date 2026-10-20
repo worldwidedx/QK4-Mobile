@@ -5,6 +5,16 @@ the [orientation policy](ORIENTATION_POLICY.md), which owns rotation and
 device/window classification rules. The established v1.0.5 phone workflows are
 the migration reference; approved focused changes may improve them.
 
+On iPhone Duo, use the compact iPhone layout in folded landscape and the regular
+iPad-style layout when unfolded. The unfolded inner display supports landscape
+and portrait, with the console reflowing to use the portrait window. Re-evaluate
+the presentation from the active window's size classes and usable bounds after
+fold/unfold resizes and safe-area changes. Do not infer it from device idiom,
+screen-size constants, or orientation. Preserve the phone interaction
+requirements in every state. The portrait exception and acceptance checks are
+in the [orientation policy](ORIENTATION_POLICY.md); they do not change Android
+phones or other iPhones.
+
 - Keep live VFO displays, meters, panadapter, and deliberate PTT immediately
   reachable in the radio console. Required controls must never be off-canvas.
 - Support touch without a mouse wheel, hover, physical keyboard, or right click.
