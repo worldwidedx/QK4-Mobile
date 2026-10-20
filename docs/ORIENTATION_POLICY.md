@@ -35,9 +35,11 @@ Treat iPhone Duo as an iPhone for phone interaction behavior. Its folded outer
 display uses the compact iPhone console in landscape. Its unfolded inner
 display uses the regular, iPad-style console and may run in landscape or
 portrait; in portrait, reflow the console to use the available height instead
-of letterboxing a landscape surface. Re-evaluate layout when folding or
-unfolding changes the usable window or safe areas. Keep the live VFOs, meters,
-panadapter, PTT, and required controls reachable in each state.
+of letterboxing a landscape surface. Select presentation from the active
+window's size classes and usable bounds, and re-evaluate it whenever the
+window changes. Do not infer layout from device idiom, a screen-size constant,
+or orientation. Keep the live VFOs, meters, panadapter, PTT, and required
+controls reachable in each state.
 
 The portrait exception applies only to the unfolded inner display of iPhone
 Duo. The folded outer display remains landscape, and Android phones and other

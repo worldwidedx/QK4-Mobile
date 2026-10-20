@@ -3066,10 +3066,10 @@ QString MainWindow::requestText(const QString &title, const QString &label, cons
 void MainWindow::setupUi() {
     setWindowTitle("QK4 Mobile");
 #ifdef Q_OS_IOS
-    if (K4Styles::isCompactLayout() || IosOrientation::isUnfoldedIPhoneDuo()) {
-        // Duo's unfolded inner display can be held in portrait. Let the
-        // console take that current window size instead of letterboxing its
-        // regular layout; keep the established regular iPad minimum intact.
+    if (K4Styles::isCompactLayout() || IosOrientation::activeWindowHasRegularSizeClasses()) {
+        // A regular iOS window can become narrower or taller as Duo folds,
+        // unfolds, and rotates. Let the console use the current window bounds
+        // instead of enforcing a desktop-sized minimum.
         setMinimumSize(0, 0);
     } else {
         setMinimumSize(1340, 840);

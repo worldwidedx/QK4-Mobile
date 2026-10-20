@@ -124,14 +124,14 @@ int main(int argc, char *argv[]) {
     app.setOrganizationDomain("ai5qk.com");
 
     // Choose before constructing widgets. Android folding devices retain
-    // their compact presentation; an unfolded iPhone Duo uses the regular
-    // presentation even if Qt reports a smaller logical short edge.
+    // their compact presentation; regular iOS window traits select the
+    // regular layout even if Qt reports a smaller screen size.
     bool forceCompact = false;
     bool forceRegular = false;
 #ifdef Q_OS_ANDROID
     forceCompact = AndroidDeviceInfo::hasFoldingHardware() || RadioSettings::instance()->alwaysCompactLayout();
 #elif defined(Q_OS_IOS)
-    forceRegular = IosOrientation::isUnfoldedIPhoneDuo();
+    forceRegular = IosOrientation::activeWindowHasRegularSizeClasses();
 #endif
     if (QScreen *screen = app.primaryScreen()) {
         qreal diagonalInches = 0.0;

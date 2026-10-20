@@ -50,20 +50,24 @@ UIWindowScene *activeWindowScene() {
     return nil;
 }
 
-bool activeSceneIsUnfoldedIPhoneDuo(UIWindow *candidateWindow = nil) {
-    // Duo remains an iPhone idiom in UIKit. Its inner display has a landscape
-    // short edge well above a phone cover display; use the current scene's
-    // logical screen bounds so this is based on the active display surface,
-    // not a model-name list or the app's cached launch geometry.
-    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone)
-        return false;
+bool activeSceneHasRegularSizeClasses() {
     UIWindowScene *scene = activeWindowScene();
-    if (!scene || !scene.screen)
+    if (!scene)
         return false;
-    CGSize bounds = candidateWindow.bounds.size;
-    if (!candidateWindow || bounds.width <= 0.0 || bounds.height <= 0.0)
-        bounds = scene.screen.bounds.size;
-    return MIN(bounds.width, bounds.height) > 700.0;
+    UIWindow *activeWindow = nil;
+    for (UIWindow *window in scene.windows) {
+        if (window.isKeyWindow) {
+            activeWindow = window;
+            break;
+        }
+    }
+    if (!activeWindow)
+        activeWindow = scene.windows.firstObject;
+    if (!activeWindow)
+        return false;
+    UITraitCollection *traits = activeWindow.traitCollection;
+    return traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular
+           && traits.verticalSizeClass == UIUserInterfaceSizeClassRegular;
 }
 
 void applyOrientations(UIInterfaceOrientationMask mask) {
@@ -109,8 +113,8 @@ void stopRadioLogbookObservation() {
 }
 }
 
-bool IosOrientation::isUnfoldedIPhoneDuo() {
-    return activeSceneIsUnfoldedIPhoneDuo();
+bool IosOrientation::activeWindowHasRegularSizeClasses() {
+    return activeSceneHasRegularSizeClasses();
 }
 
 // Adds the app-delegate hook iOS consults on every rotation attempt. Qt's own
@@ -126,12 +130,7 @@ bool IosOrientation::isUnfoldedIPhoneDuo() {
     supportedInterfaceOrientationsForWindow:(UIWindow *)window {
     Q_UNUSED(application)
     Q_UNUSED(window)
-    UIInterfaceOrientationMask mask = g_allowedMask;
-    // Main-console portrait is a Duo inner-display exception only. On folded
-    // Duo and every other iPhone the existing landscape lock still applies.
-    if (activeSceneIsUnfoldedIPhoneDuo(window) && mask == UIInterfaceOrientationMaskLandscape)
-        mask |= UIInterfaceOrientationMaskPortrait;
-    return mask;
+    return g_allowedMask;
 }
 @end
 
