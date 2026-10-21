@@ -1,6 +1,17 @@
 # Project status
 
-Last updated: 2026-10-16 (Fold open/close behavior clarification)
+Last updated: 2026-10-21 (v1.0.7 Android device acceptance clarification)
+
+## QK4 Mobile v1.0.7: Android device acceptance
+
+On 2026-10-21, the owner confirmed that the changes packaged for v1.0.7 had
+already been tested in all the test builds on the usual Samsung Galaxy S26
+Ultra. This records physical Android phone acceptance for the v1.0.7 behavior
+covered by those builds. The individual test-build identifiers and OS version
+were not supplied, and this confirmation does not establish that the final
+release-signed v1.0.7 APK was installed. The signed APK was built and its
+signature verified separately. The macOS CI iOS compile passed; physical
+iPhone/iPad acceptance is not recorded.
 
 ## Unreleased: compact console on folding Android devices (#21)
 
