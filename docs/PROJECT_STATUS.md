@@ -45,6 +45,11 @@ not supplied. Direct launch while unfolded, other module paths, other-phone
 regressions, and tablet acceptance remain pending. The synthetic test sizes are
 not measurements of the reported device.
 
+On 2026-10-20, the owner confirmed that a user physically tested PR #22 and
+reported it passing. This confirmation accepts the Fold behavior described
+above; it does not supply the missing build, OS, or broader device-matrix
+details. Record those separately when available.
+
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
 The mobile panadapter's Average control could show a K4 value while its main
