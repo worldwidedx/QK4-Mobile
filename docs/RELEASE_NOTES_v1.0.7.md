@@ -26,3 +26,16 @@ adds setup and control refinements shared with the iPhone and iPad builds.
 
 The console header and About screen use consistent QK4 Mobile branding on both
 platforms. A console with no saved radio explains how to get started.
+
+## Availability and validation
+
+This release provides an Android ARM64 APK (`com.w9wdx.qk4phone`, version code
+35). The owner confirmed that the v1.0.7 behavior was tested in the prior test
+builds on the usual Samsung Galaxy S26 Ultra. The release-signed APK was built
+and signature-verified separately, then installed as an update on that phone
+(Android 17). The device reports version 1.0.7, code 35; no separate radio test
+was run after this installation.
+
+The shared iOS source passed the unsigned macOS CI compile. A signed iPhone or
+iPad package is not included in this release, and physical iOS acceptance is
+not recorded.
