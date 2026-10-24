@@ -1131,7 +1131,7 @@ QWidget *OptionsDialog::createKpodPage() {
 
 void OptionsDialog::importK4MacroBackup() {
     const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("Import K4 macros"),
+        this, QStringLiteral("Select k4macros.json"),
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
         QStringLiteral("K4 macro backup (k4macros.json *.json);;All files (*)"));
     if (path.isEmpty())
@@ -1146,15 +1146,15 @@ void OptionsDialog::importK4MacroBackup() {
     }
     if (file.size() > 256 * 1024) {
         showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
-                            QStringLiteral("The selected file is too large to be a K4 macro backup."));
+                            QStringLiteral("The selected file is too large to be a k4macros.json."));
         return;
     }
     QString error;
     const QMap<QString, MacroEntry> imported = K4MacroBackup::parseJson(file.readAll(), &error);
     if (imported.isEmpty()) {
         showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
-                            error.isEmpty() ? QStringLiteral("The file contains no assigned macros.")
-                                            : QStringLiteral("This is not a K4 macro backup: %1").arg(error));
+                            error.isEmpty() ? QStringLiteral("k4macros.json contains no assigned macros.")
+                                            : QStringLiteral("This is not a valid k4macros.json: %1").arg(error));
         return;
     }
 
@@ -1169,7 +1169,7 @@ void OptionsDialog::importK4MacroBackup() {
 
     InWindowDialog confirm(this);
     auto *confirmLayout = new QVBoxLayout(confirm.contentWidget());
-    QString text = QStringLiteral("Import %1 macros from the K4 backup?").arg(imported.size());
+    QString text = QStringLiteral("Import %1 macros from k4macros.json?").arg(imported.size());
     if (!overwritten.isEmpty())
         text += QStringLiteral("\n\nThis replaces your existing: %1.").arg(overwritten.join(", "));
     auto *textLabel = new QLabel(text, confirm.contentWidget());
