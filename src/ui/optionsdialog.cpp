@@ -32,6 +32,7 @@
 #include <QApplication>
 #include <QSignalBlocker>
 #include <QPointer>
+#include <QSharedPointer>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QSaveFile>
@@ -225,9 +226,28 @@ void OptionsDialog::ensurePageCreated(int index) {
     case PageCtr2Midi:
         page = createCtr2MidiPage();
         break;
-    case PageKpod:
-        page = createKpodPage();
+    case PageKpod: {
+        // The macro list makes this page taller than the dialog; scroll by touch.
+        auto *scroll = new QScrollArea(this);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setStyleSheet(QString("QScrollArea { background: %1; border: none; }").arg(K4Styles::Colors::Background));
+        scroll->setWidget(createKpodPage());
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+        scroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(scroll->viewport(), QScroller::TouchGesture);
+        if (QScroller *scroller = QScroller::scroller(scroll->viewport())) {
+            QScrollerProperties properties = scroller->scrollerProperties();
+            properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
+            properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
+            scroller->setScrollerProperties(properties);
+        }
+#endif
+        page = scroll;
         break;
+    }
     case PageFnKeySetup:
         page = createFnKeySetupPage();
         break;
@@ -1017,6 +1037,72 @@ QWidget *OptionsDialog::createKpodPage() {
                                        .arg(K4Styles::Dimensions::FontSizeLarge));
     m_kpodHelpLabel->setWordWrap(true);
     layout->addWidget(m_kpodHelpLabel);
+
+    // Read-only view of the sixteen K-Pod button macros (8 buttons x tap/hold). The
+    // list updates when macros change, e.g. after an import.
+    auto *macrosTitle = new QLabel("Button macros", page);
+    macrosTitle->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                   .arg(K4Styles::Colors::TextWhite)
+                                   .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(macrosTitle);
+
+    auto *macroGridWidget = new QWidget(page);
+    auto *macroGrid = new QGridLayout(macroGridWidget);
+    macroGrid->setContentsMargins(0, 0, 0, 0);
+    macroGrid->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
+    macroGrid->setVerticalSpacing(K4Styles::Dimensions::PaddingSmall);
+    const QString macroHeaderStyle = QString("color: %1; font-size: %2px; font-weight: bold;")
+                                         .arg(K4Styles::Colors::TextGray)
+                                         .arg(K4Styles::Dimensions::FontSizeButton);
+    const QStringList macroHeaders = {"Button", "Name", "CAT Command"};
+    for (int column = 0; column < macroHeaders.size(); ++column) {
+        auto *header = new QLabel(macroHeaders[column], macroGridWidget);
+        header->setStyleSheet(macroHeaderStyle);
+        macroGrid->addWidget(header, 0, column);
+    }
+    struct MacroRowLabels {
+        QString functionId;
+        QLabel *name;
+        QLabel *command;
+    };
+    auto rows = QSharedPointer<QVector<MacroRowLabels>>::create();
+    const QString macroValueStyle = QString("color: %1; font-size: %2px;")
+                                        .arg(K4Styles::Colors::TextWhite)
+                                        .arg(K4Styles::Dimensions::FontSizeButton);
+    for (int button = 1; button <= 8; ++button) {
+        for (const char *kind : {"T", "H"}) {
+            const int row = (button - 1) * 2 + (kind[0] == 'T' ? 1 : 2);
+            const QString functionId = QString("K-pod.%1%2").arg(button).arg(kind);
+            auto *buttonLabel =
+                new QLabel(QString("%1 %2").arg(button).arg(kind[0] == 'T' ? "Tap" : "Hold"), macroGridWidget);
+            buttonLabel->setStyleSheet(macroValueStyle);
+            auto *nameLabel = new QLabel(macroGridWidget);
+            auto *commandLabel = new QLabel(macroGridWidget);
+            commandLabel->setWordWrap(true);
+            commandLabel->setTextInteractionFlags(Qt::NoTextInteraction);
+            macroGrid->addWidget(buttonLabel, row, 0, Qt::AlignTop);
+            macroGrid->addWidget(nameLabel, row, 1, Qt::AlignTop);
+            macroGrid->addWidget(commandLabel, row, 2, Qt::AlignTop);
+            rows->append({functionId, nameLabel, commandLabel});
+        }
+    }
+    macroGrid->setColumnStretch(2, 1);
+    layout->addWidget(macroGridWidget);
+
+    auto refreshMacros = [rows, macroValueStyle]() {
+        const QString emptyStyle = QString("color: %1; font-size: %2px; font-style: italic;")
+                                       .arg(K4Styles::Colors::TextGray)
+                                       .arg(K4Styles::Dimensions::FontSizeButton);
+        for (const MacroRowLabels &row : *rows) {
+            const MacroEntry entry = RadioSettings::instance()->macro(row.functionId);
+            row.name->setText(entry.label.isEmpty() ? QStringLiteral("-") : entry.label);
+            row.command->setText(entry.command.isEmpty() ? QStringLiteral("Not assigned") : entry.command);
+            row.name->setStyleSheet(entry.label.isEmpty() ? emptyStyle : macroValueStyle);
+            row.command->setStyleSheet(entry.command.isEmpty() ? emptyStyle : macroValueStyle);
+        }
+    };
+    refreshMacros();
+    connect(RadioSettings::instance(), &RadioSettings::macrosChanged, page, refreshMacros);
 
     // K-Pod buttons run the macros assigned to K-pod.<n>T / K-pod.<n>H. The K4
     // can export those (Fn, hold BACKUP, "PF Key and K-Pod Macros" -> k4macros.json).
