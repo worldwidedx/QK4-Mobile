@@ -180,8 +180,8 @@ void OptionsDialog::setupUi() {
 #ifdef Q_OS_ANDROID
     m_tabList->addItem("Layout");
     // The phone settings surface intentionally contains app information plus
-    // the independent CW Keyer and CTR2-MIDI device/setup roles.
-    for (Page hiddenPage : {PageAudioInput, PageAudioOutput, PageRigControl, PageKpod})
+    // the independent CW Keyer, CTR2-MIDI and K-Pod (USB host) device roles.
+    for (Page hiddenPage : {PageAudioInput, PageAudioOutput, PageRigControl})
         m_tabList->item(hiddenPage)->setHidden(true);
 #endif
     m_tabList->setCurrentRow(0);
