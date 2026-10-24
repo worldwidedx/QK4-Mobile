@@ -955,6 +955,25 @@ QWidget *OptionsDialog::createKpodPage() {
                                K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
+#ifdef Q_OS_IOS
+    // iOS cannot open the K-Pod's USB HID interface, so there is nothing to
+    // configure; show the page as unavailable.
+    auto *iosTitleLabel = new QLabel("K-Pod", page);
+    iosTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                     .arg(K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(iosTitleLabel);
+
+    auto *helpLabel = new QLabel("K-Pod USB HID control is not available on iOS in this build.", page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+    layout->addStretch();
+    return page;
+#endif
+
     // Status indicator
     auto *statusLayout = new QHBoxLayout();
     auto *statusLabel = new QLabel("Status:", page);
