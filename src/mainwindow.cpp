@@ -310,6 +310,21 @@ static int tuningStepToHz(int step) {
     return (step >= 0 && step <= 5) ? table[step] : 1000;
 }
 
+// Move |ticks| tuning steps from cur, snapping to the step grid the way the K4
+// does: from x.380 with a 100 Hz step, one up lands on x.400 (not x.480) and one
+// down on x.300. After the first step the frequency is on the grid, so the rest
+// are full steps. Only call with cur > 0.
+static qint64 snapTuneSteps(qint64 cur, int ticks, int stepHz) {
+    for (int i = qAbs(ticks); i > 0; --i) {
+        const qint64 base = (cur / stepHz) * stepHz;
+        if (ticks > 0)
+            cur = base + stepHz;
+        else
+            cur = (cur == base) ? base - stepHz : base;
+    }
+    return cur;
+}
+
 static int streamingLatencyToFrameSamples(int tier) {
     if (tier <= 0)
         return 240;
@@ -7986,7 +8001,7 @@ void MainWindow::onKpodEncoderRotated(int ticks) {
     {
         quint64 currentFreq = m_radioState->vfoA();
         int stepHz = tuningStepToHz(m_radioState->tuningStep());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), ticks, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
@@ -7998,7 +8013,7 @@ void MainWindow::onKpodEncoderRotated(int ticks) {
     {
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = tuningStepToHz(m_radioState->tuningStepB());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(ticks) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), ticks, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
