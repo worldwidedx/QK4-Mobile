@@ -4553,7 +4553,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
             return;
         quint64 currentFreq = m_radioState->vfoA();
         int stepHz = tuningStepToHz(m_radioState->tuningStep());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
@@ -5016,7 +5016,7 @@ void MainWindow::setupVfoSection(QWidget *parent) {
             return;
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = tuningStepToHz(m_radioState->tuningStepB());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
@@ -5339,7 +5339,7 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
             return;
         quint64 currentFreq = m_radioState->vfoA();
         int stepHz = m_phoneTuneStepAHz > 0 ? m_phoneTuneStepAHz : tuningStepToHz(m_radioState->tuningStep());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
@@ -5493,7 +5493,7 @@ void MainWindow::setupSpectrumPlaceholder(QWidget *parent) {
             return;
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = m_phoneTuneStepBHz > 0 ? m_phoneTuneStepBHz : tuningStepToHz(m_radioState->tuningStepB());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = snapTuneSteps(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
