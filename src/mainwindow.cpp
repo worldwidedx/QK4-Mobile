@@ -3599,10 +3599,9 @@ void MainWindow::setupUi() {
         connect(m_bottomMenuBar, &BottomMenuBar::tuneARequested, this, [this](int steps) {
             if (!m_tcpClient->isConnected())
                 return;
-            const qint64 next = static_cast<qint64>(m_radioState->vfoA()) +
-                                static_cast<qint64>(steps) *
-                                    (m_phoneTuneStepAHz > 0 ? m_phoneTuneStepAHz
-                                                            : tuningStepToHz(m_radioState->tuningStep()));
+            const qint64 next = snapTuneSteps(static_cast<qint64>(m_radioState->vfoA()), steps,
+                                              m_phoneTuneStepAHz > 0 ? m_phoneTuneStepAHz
+                                                                     : tuningStepToHz(m_radioState->tuningStep()));
             if (next > 0) {
                 const QString command = QString("FA%1;").arg(static_cast<quint64>(next));
                 m_tcpClient->sendCAT(command);
@@ -3612,10 +3611,9 @@ void MainWindow::setupUi() {
         connect(m_bottomMenuBar, &BottomMenuBar::tuneBRequested, this, [this](int steps) {
             if (!m_tcpClient->isConnected())
                 return;
-            const qint64 next = static_cast<qint64>(m_radioState->vfoB()) +
-                                static_cast<qint64>(steps) *
-                                    (m_phoneTuneStepBHz > 0 ? m_phoneTuneStepBHz
-                                                            : tuningStepToHz(m_radioState->tuningStepB()));
+            const qint64 next = snapTuneSteps(static_cast<qint64>(m_radioState->vfoB()), steps,
+                                              m_phoneTuneStepBHz > 0 ? m_phoneTuneStepBHz
+                                                                     : tuningStepToHz(m_radioState->tuningStepB()));
             if (next > 0) {
                 const QString command = QString("FB%1;").arg(static_cast<quint64>(next));
                 m_tcpClient->sendCAT(command);
