@@ -112,6 +112,7 @@ static bool androidHasHardwareKeyboard();
 #endif
 #ifdef Q_OS_IOS
 #include "ios/iosorientation.h"
+#include "ios/iosaudiosession.h"
 #endif
 
 // K4 Span range: 5 kHz to 368 kHz
@@ -357,7 +358,11 @@ static bool ensureMicrophonePermission(QWidget *parent) {
     }
 
     showInWindowMessage(parent, "Microphone Permission Required",
+#ifdef Q_OS_IOS
+                        "Microphone permission is currently denied. Enable it for QK4 Mobile in iOS Settings to transmit audio.");
+#else
                         "Microphone permission is currently denied. Enable it in Android Settings to transmit audio.");
+#endif
     return false;
 }
 #endif
@@ -7214,6 +7219,19 @@ void MainWindow::onPttPressed() {
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     if (!ensureMicrophonePermission(this)) {
+        return;
+    }
+#endif
+
+#ifdef Q_OS_IOS
+    // iOS needs an active play-and-record AVAudioSession before Qt creates
+    // QAudioSource. CW can enter TX without phone-mic audio, but voice modes
+    // need this capture route. Prepare the session before sending CAT PTT so
+    // the first voice packets have live microphone input. Android configures
+    // its own route in AudioEngine.
+    IosAudioSession::configureForVoice();
+    if (!IosAudioSession::activate()) {
+        showControlFeedback("Microphone audio could not be started");
         return;
     }
 #endif
