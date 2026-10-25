@@ -1,6 +1,21 @@
 # Project status
 
-Last updated: 2026-10-16 (Fold open/close behavior clarification)
+Last updated: 2026-10-21 (v1.0.7 Android device acceptance clarification)
+
+## QK4 Mobile v1.0.7: Android device acceptance
+
+On 2026-10-21, the owner confirmed that the changes packaged for v1.0.7 had
+already been tested in all the test builds on the usual Samsung Galaxy S26
+Ultra. This records physical Android phone acceptance for the v1.0.7 behavior
+covered by those builds. The individual test-build identifiers and OS version
+were not supplied, and this confirmation does not establish that the final
+release-signed v1.0.7 APK was tested during those earlier runs. Separately on
+2026-10-21, the release-signed APK built from commit `e03a31ec` (SHA-256
+`7f2f196bc04bebfda4fc0200eb84f4306e9e2f8dc8166ed3f4f38297194e0658`)
+was signature-verified and installed in place on the Samsung Galaxy S26 Ultra
+(Android 17). The device reports version 1.0.7, code 35. No new runtime/radio
+test was performed after that installation. The macOS CI iOS compile passed;
+physical iPhone/iPad acceptance is not recorded.
 
 ## Unreleased: compact console on folding Android devices (#21)
 
@@ -44,6 +59,11 @@ build identifier, connection/audio state, and number of transition cycles were
 not supplied. Direct launch while unfolded, other module paths, other-phone
 regressions, and tablet acceptance remain pending. The synthetic test sizes are
 not measurements of the reported device.
+
+On 2026-10-20, the owner confirmed that a user physically tested PR #22 and
+reported it passing. This confirmation accepts the Fold behavior described
+above; it does not supply the missing build, OS, or broader device-matrix
+details. Record those separately when available.
 
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
