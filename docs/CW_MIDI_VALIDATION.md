@@ -33,16 +33,21 @@ The stream parser and timestamped keyer address software delivery delays, but
 they do not establish a maximum usable WPM. Android callback timestamps are
 not necessarily measured contact times at the MIDI device. The HaliKey report
 did not identify whether the burst was heard in local sidetone, K4-returned
-audio, or both; physical acceptance and a short trace remain necessary.
+audio, or both; a trace would help characterize that earlier failure.
 
-The next HaliKey report says the new candidate no longer stacks characters
-and its local sidetone is usable to about 30 WPM. The remaining extra final
-dit is in the local sidetone, especially above 30 WPM. A focused regression
-test now covers a brief same-paddle re-press released before the element
-boundary; only an opposite-paddle press is remembered. This correction still
-needs operator validation. The same report says the K4 did not key, and the
-test app connected on 9205 but not 9204. Compare the test app's separate TLS
-profile with the production app's before diagnosing a network regression.
+An external operator physically tested an Android HaliKey PR candidate and
+reported successful sending at 30 WPM without character stacking. Its local
+sidetone was usable to about 30 WPM; an extra final dit remained, especially
+above 30 WPM. The exact test-build SHA and scored copy were not supplied. A
+focused regression test now covers a brief same-paddle re-press released
+before the element boundary; only an opposite-paddle press is remembered.
+This later correction still needs the HaliKey operator's validation. Preserve
+the reported 30 WPM behavior when changing shared keyer timing and recheck it
+on the same device and Android setup before accepting further changes.
+
+The operator later withdrew the report that the K4 did not key after realizing
+the rig was in TEST mode. The owner subsequently checked ports 9204 and 9205
+and reports that both work; the earlier 9204 failure was not reproduced.
 
 ## TinyMIDI built-in touch capture (2026-10-17)
 
@@ -101,11 +106,11 @@ key on TinyMIDI's external jack with OFF to confirm normal repeat behavior.
 Record the chosen setting with each trace; select the smallest delay that
 removes extra elements without making letter spacing or paddle feel worse.
 
-For the next radio test, use K4 CW/CW-R and TX TEST mode, confirm the app shows
-live radio state, then key a short pattern and check the K4's own TX/monitor
-indication separately from the phone sidetone. Record the test app's connection
-error verbatim, port, TLS setting, and whether its PSK identity/password match
-the working production profile. Do not include credentials in the report.
+For further radio tests, use K4 CW/CW-R, record whether TEST mode is enabled,
+confirm the app shows live radio state, then key a short pattern and check the
+K4's own TX/monitor indication separately from the phone sidetone. Do not
+infer a keying failure from absent RF output while TEST mode is enabled.
+Record the port and test-build identifier without recording credentials.
 
 ## Capture the device's unfiltered MIDI
 

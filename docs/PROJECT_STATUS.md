@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-17 (TinyMIDI touch operator feedback)
+Last updated: 2026-10-25 (HaliKey operator result and TEST-mode clarification)
 
 ## Unreleased: CW MIDI edge accuracy candidate
 
@@ -11,31 +11,33 @@ worse than QK4 Mobile 1.0.5. The report did not separate local sidetone from
 K4-returned audio. A new candidate retains MIDI callback timestamps, reads CW
 and CTR2 session events on the keyer thread, evaluates paddle history at each scheduled
 element boundary, replays delayed character gaps, and prevents zero-delay
-catch-up elements. The 10 ms paddle release debounce remains. These are
-source/build candidates; no 30 WPM or higher device acceptance has been
-recorded. TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed, and
-HaliKey fast-speed testing requires an external operator. All three devices
-use the shared boundary-aware keyer; physical acceptance remains separate. See the
+catch-up elements. The 10 ms paddle release debounce remains. An external
+operator has physically tested an Android HaliKey PR candidate and reports
+successful sending at 30 WPM. The exact test-build SHA and scored copy are not
+available; later shared-keyer changes still need a HaliKey regression check.
+TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed. All three devices
+use the shared boundary-aware keyer; device acceptance remains separate. See the
 [CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
 
-An external HaliKey operator subsequently reported that the current test app no
-longer stacks characters and that its local sidetone is usable to about 30 WPM.
-They still hear an extra final dit, especially above 30 WPM. A focused keyer
-regression test reproduced an extra element when a brief same-paddle re-press
-was released before the current element boundary; the candidate correction
-remembers only opposite-paddle presses. The operator has not yet tested that
-correction. The same report said the K4 was not keyed, and that the test app
-connected on port 9205 but failed on 9204 while the production app worked on
-9204. The error, test-app TLS profile, and radio command receipt are unknown.
+The HaliKey operator reported that the revised test app no longer stacks
+characters, its local sidetone is usable to about 30 WPM, and they successfully
+sent at 30 WPM on Android. They still heard an extra final dit, especially
+above 30 WPM. A focused keyer regression test reproduced an extra element
+when a brief same-paddle re-press was released before the current element
+boundary; the candidate correction remembers only opposite-paddle presses.
+The operator has not yet tested that correction. They later withdrew the
+report that the K4 did not key after realizing the rig was in TEST mode.
+The owner subsequently checked ports 9204 and 9205 and reports that both work;
+the earlier 9204 failure was not reproduced.
 The CW candidate did not change TCP/TLS, authentication, or radio-profile code.
-The test app has separate saved profiles, so connection settings need direct
-comparison before assigning a cause. Radio keying and TLS acceptance remain
-pending.
+Preserve the reported 30 WPM HaliKey result when changing the shared keyer:
+recheck the same setup at 30 WPM before accepting further timing changes.
 
 On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
 passed. The Java stream-parser test previously passed, and the current Android
 ARM64 test APK packaged successfully. These checks use synthetic inputs;
-TinyMIDI, CTR2-MIDI, HaliKey, and K4 acceptance remain pending.
+TinyMIDI and CTR2-MIDI acceptance, the HaliKey same-paddle correction and
+speeds above 30 WPM remain pending despite the physical HaliKey 30 WPM report.
 
 On 2026-10-17, a controlled TinyMIDI built-in touch capture at 20 WPM showed
 that two of ten intended single-DIT taps lasted past the 120 ms repeat
