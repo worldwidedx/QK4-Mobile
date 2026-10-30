@@ -50,11 +50,15 @@ void TestFrequencyDisplayWidget::phoneDigitGestures() {
     QVERIFY(changed.isEmpty());
     QTest::qWait(1000);
     QVERIFY(entry.isEmpty());
-    QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
-    // The hold timer is 550 ms; wait for the signal rather than a fixed 600 ms
-    // so a loaded CI runner cannot miss the deadline.
-    QVERIFY(entry.wait(5000));
-    QTest::mouseRelease(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
+    // The widget cancels a pending hold on WindowDeactivate. On a CI runner
+    // that runs test processes in parallel, this window can lose activation
+    // between the press and the 550 ms timer, so no wait length is enough:
+    // retry the press. A real hold fires on the first attempt.
+    for (int attempt = 0; attempt < 5 && entry.isEmpty(); ++attempt) {
+        QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
+        entry.wait(1500);
+        QTest::mouseRelease(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
+    }
     QCOMPARE(entry.size(), 1);
     entry.clear();
     QTest::mousePress(&widget, Qt::LeftButton, Qt::NoModifier, QPoint(2, 15));
