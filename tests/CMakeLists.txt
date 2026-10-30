@@ -171,7 +171,7 @@ qt_add_executable(test_frequencydisplaywidget
 )
 target_include_directories(test_frequencydisplaywidget PRIVATE ../src)
 target_link_libraries(test_frequencydisplaywidget PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
-add_test(NAME frequencydisplaywidget COMMAND test_frequencydisplaywidget)
+add_test(NAME frequencydisplaywidget COMMAND test_frequencydisplaywidget -o frequencydisplaywidget-results.txt,txt -o -,txt)
 
 qt_add_executable(test_sstvencoder
     test_sstvencoder.cpp
