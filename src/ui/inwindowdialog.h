@@ -19,6 +19,7 @@ public:
     enum DialogCode { Rejected = 0, Accepted = 1 };
 
     explicit InWindowDialog(QWidget *parent);
+    ~InWindowDialog() override;
 
     QWidget *contentWidget() const;
     void setPanelSize(const QSize &size);
