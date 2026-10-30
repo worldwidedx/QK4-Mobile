@@ -15,10 +15,39 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QTimer>
 
 namespace {
+
+// Qt's standard cut/copy/paste menu shows keyboard shortcuts, mnemonic
+// underlines and dark icons, and opens under the iOS keyboard. Show the same
+// actions as plain, finger-sized rows above the field. The menu inherits the
+// field's stylesheet, which supplies its colors. (Qt's own iOS edit bubble
+// relies on UIMenuController and does not appear on iOS 27.)
+void installTouchEditMenu(QLineEdit *edit) {
+#ifdef Q_OS_IOS
+    edit->setContextMenuPolicy(Qt::CustomContextMenu);
+    QObject::connect(edit, &QWidget::customContextMenuRequested, edit, [edit](const QPoint &) {
+        QMenu *menu = edit->createStandardContextMenu();
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        const auto actions = menu->actions();
+        for (QAction *action : actions) {
+            action->setShortcut(QKeySequence());
+            action->setIcon(QIcon());
+            action->setText(action->text().section(QLatin1Char('\t'), 0, 0).remove(QLatin1Char('&')));
+        }
+        // Above the field so the on-screen keyboard cannot cover it.
+        QPoint top = edit->mapToGlobal(QPoint(0, 0));
+        top.setY(qMax(0, top.y() - menu->sizeHint().height()));
+        menu->popup(top);
+    });
+#else
+    Q_UNUSED(edit);
+#endif
+}
 
 QSize radioManagerSelectorPanelSize(QWidget *parent, int preferredHeight) {
     const QSize available = parent ? parent->size() - QSize(24, 20) : QSize(560, 300);
@@ -190,6 +219,14 @@ void RadioManagerDialog::setupUi() {
 
     auto *scrollArea = new QScrollArea(this);
     scrollArea->setFrameShape(QFrame::NoFrame);
+    // A strong-focus scroll area takes focus when a touch falls on the page
+    // background, or when QScroller replays a delayed press. That pulls focus
+    // from the text field mid-tap: the selection is cleared and, on iOS, Qt's
+    // edit-menu tap recognizer is torn down while it still has a menu queued.
+#ifdef Q_OS_IOS
+    scrollArea->setFocusPolicy(Qt::NoFocus);
+    scrollArea->viewport()->setFocusPolicy(Qt::NoFocus);
+#endif
     // The Android app is landscape-first. Keep the compact page sized to the
     // viewport; scrolling is only a fallback for unusually small displays.
     scrollArea->setWidgetResizable(true);
@@ -305,10 +342,25 @@ void RadioManagerDialog::setupUi() {
                                     "  padding: %2px; "
                                     "  min-width: %3px; "
                                     "} "
-                                    "QLineEdit::placeholder { color: #6A6A6A; }")
+                                    "QLineEdit::placeholder { color: #6A6A6A; }"
+#ifdef Q_OS_IOS
+                                    " QMenu { background-color: %4; color: %5; border: 1px solid %6; } "
+                                    "QMenu::item { padding: 12px 32px; } "
+                                    "QMenu::item:selected { background-color: %6; } "
+                                    "QMenu::item:disabled { color: %7; } "
+                                    "QMenu::separator { height: 1px; background: %6; }"
+#endif
+                                    )
                                 .arg(K4Styles::Colors::DialogBorder)
                                 .arg(K4Styles::Dimensions::PaddingSmall)
-                                .arg(lineEditMinWidth);
+                                .arg(lineEditMinWidth)
+#ifdef Q_OS_IOS
+                                .arg(K4Styles::Colors::PopupBackground)
+                                .arg(K4Styles::Colors::TextWhite)
+                                .arg(K4Styles::Colors::DialogBorder)
+                                .arg(K4Styles::Colors::TextGray)
+#endif
+                                ;
 
     QString labelStyle = QString("QLabel { color: %1; font-size: %2px; }")
                              .arg(K4Styles::Colors::TextGray)
@@ -319,6 +371,7 @@ void RadioManagerDialog::setupUi() {
     nameLabel->setStyleSheet(labelStyle);
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setStyleSheet(lineEditStyle);
+    installTouchEditMenu(m_nameEdit);
     m_nameEdit->setInputMethodHints(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText);
     m_nameEdit->setPlaceholderText("Server Name");
     formLayout->addWidget(nameLabel, 0, 0);
@@ -329,6 +382,7 @@ void RadioManagerDialog::setupUi() {
     hostLabel->setStyleSheet(labelStyle);
     m_hostEdit = new QLineEdit(this);
     m_hostEdit->setStyleSheet(lineEditStyle);
+    installTouchEditMenu(m_hostEdit);
     m_hostEdit->setInputMethodHints(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText);
     m_hostEdit->setPlaceholderText("192.168.1.100");
     formLayout->addWidget(hostLabel, 1, 0);
@@ -339,6 +393,7 @@ void RadioManagerDialog::setupUi() {
     portLabel->setStyleSheet(labelStyle);
     m_portEdit = new QLineEdit(this);
     m_portEdit->setStyleSheet(lineEditStyle);
+    installTouchEditMenu(m_portEdit);
     m_portEdit->setInputMethodHints(Qt::ImhDigitsOnly);
     m_portEdit->setPlaceholderText("64242");
     m_portEdit->setMaximumWidth(80);
@@ -350,6 +405,7 @@ void RadioManagerDialog::setupUi() {
     passwordLabel->setStyleSheet(labelStyle);
     m_passwordEdit = new QLineEdit(this);
     m_passwordEdit->setStyleSheet(lineEditStyle);
+    installTouchEditMenu(m_passwordEdit);
     m_passwordEdit->setEchoMode(QLineEdit::Password);
     // Let the Android IME own Shift and case state. Password mode keeps text
     // hidden, while these hints only disable prediction and sentence casing.
@@ -376,6 +432,7 @@ void RadioManagerDialog::setupUi() {
     m_identityLabel->setStyleSheet(labelStyle);
     m_identityEdit = new QLineEdit(this);
     m_identityEdit->setStyleSheet(lineEditStyle);
+    installTouchEditMenu(m_identityEdit);
     m_identityEdit->setInputMethodHints(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText);
     m_identityEdit->setPlaceholderText("Identity (optional)");
     formLayout->addWidget(m_identityLabel, compact ? 3 : 4, compact ? 2 : 0);
