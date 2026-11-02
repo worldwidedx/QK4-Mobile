@@ -87,6 +87,13 @@ void enableNativeEditMenu(QAbstractScrollArea *area) {
     if (!area)
         return;
     QWidget *viewport = area->viewport();
+    // A strong-focus scroll area takes focus when a touch lands on its
+    // background or QScroller replays a delayed press. That pulls focus from
+    // the text field mid-tap: the selection is cleared and Qt's iOS edit-menu
+    // tap recognizer can be torn down while it still has a menu queued
+    // (crash in showEditMenu with a nil view on Qt 6.11.1).
+    area->setFocusPolicy(Qt::NoFocus);
+    viewport->setFocusPolicy(Qt::NoFocus);
     QScrollerProperties properties;
     if (QScroller *scroller = QScroller::scroller(viewport))
         properties = scroller->scrollerProperties();
