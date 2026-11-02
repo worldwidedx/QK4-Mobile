@@ -17,6 +17,8 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QTouchEvent>
+#include <functional>
 
 namespace {
 
@@ -197,12 +199,17 @@ void RadioManagerDialog::setupUi() {
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scrollArea->setStyleSheet(QString("QScrollArea { background-color: %1; border: none; }").arg(K4Styles::Colors::Background));
     scrollArea->viewport()->setAutoFillBackground(true);
-    scrollArea->viewport()->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    // Scoped by object name: an unscoped rule would also be inherited by the
+    // text fields' edit menus and turn them dark.
+    scrollArea->viewport()->setObjectName("radioManagerViewport");
+    scrollArea->viewport()->setStyleSheet(
+        QString("#radioManagerViewport { background-color: %1; }").arg(K4Styles::Colors::Background));
     dialogLayout->addWidget(scrollArea);
 
     auto *contentWidget = new QWidget(scrollArea);
     contentWidget->setObjectName("radioManagerContent");
-    contentWidget->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    contentWidget->setStyleSheet(
+        QString("#radioManagerContent { background-color: %1; }").arg(K4Styles::Colors::Background));
     scrollArea->setWidget(contentWidget);
     if (compact) {
 #ifndef Q_OS_IOS
@@ -305,7 +312,12 @@ void RadioManagerDialog::setupUi() {
                                     "  padding: %2px; "
                                     "  min-width: %3px; "
                                     "} "
-                                    "QLineEdit::placeholder { color: #6A6A6A; }")
+                                    "QLineEdit::placeholder { color: #6A6A6A; } "
+                                    // MainWindow's central widget has an unscoped background rule
+                                    // that the edit menu inherits; restore a light, readable menu.
+                                    "QMenu { background-color: #F4F4F4; color: #111111; } "
+                                    "QMenu::item:selected { background-color: #CFE8F5; color: #111111; } "
+                                    "QMenu::item:disabled { color: #8A8A8A; }")
                                 .arg(K4Styles::Colors::DialogBorder)
                                 .arg(K4Styles::Dimensions::PaddingSmall)
                                 .arg(lineEditMinWidth);
@@ -506,15 +518,89 @@ void RadioManagerDialog::setupUi() {
     }
 
     if (compact) {
-        scrollArea->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
-        QScroller::grabGesture(scrollArea->viewport(), QScroller::TouchGesture);
-        if (QScroller *scroller = QScroller::scroller(scrollArea->viewport())) {
-            QScrollerProperties properties = scroller->scrollerProperties();
-            properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
-            properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
-            scroller->setScrollerProperties(properties);
-        }
+        QWidget *viewport = scrollArea->viewport();
+        viewport->setAttribute(Qt::WA_AcceptTouchEvents);
+        auto grabScroller = [viewport]() {
+            QScroller::grabGesture(viewport, QScroller::TouchGesture);
+            if (QScroller *scroller = QScroller::scroller(viewport)) {
+                QScrollerProperties properties = scroller->scrollerProperties();
+                properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
+                properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
+                scroller->setScrollerProperties(properties);
+            }
+        };
+        grabScroller();
+#ifdef Q_OS_IOS
+        // QScroller swallows the touch and replays a synthetic mouse press to
+        // the text field. iOS only starts its edit-menu and selection handling
+        // from real touches, so a press that begins on a text field must bypass
+        // the scroller (#34). Drags that begin elsewhere still scroll.
+        class FieldTouchFilter : public QObject {
+        public:
+            FieldTouchFilter(QWidget *viewport, std::function<void()> regrab)
+                : QObject(viewport), m_viewport(viewport), m_regrab(std::move(regrab)) {}
+
+        protected:
+            bool eventFilter(QObject *, QEvent *event) override {
+                switch (event->type()) {
+                case QEvent::TouchBegin: {
+                    auto *touch = static_cast<QTouchEvent *>(event);
+                    if (touch->points().isEmpty())
+                        break;
+                    const QPoint pos = touch->points().first().position().toPoint();
+                    if (qobject_cast<QLineEdit *>(m_viewport->childAt(pos)) && !m_bypassed) {
+                        m_bypassed = true;
+                        QScroller::ungrabGesture(m_viewport);
+                    }
+                    break;
+                }
+                case QEvent::TouchEnd:
+                case QEvent::TouchCancel:
+                    if (m_bypassed) {
+                        m_bypassed = false;
+                        QTimer::singleShot(0, this, m_regrab);
+                    }
+                    break;
+                default:
+                    break;
+                }
+                return false;
+            }
+
+        private:
+            QWidget *m_viewport;
+            std::function<void()> m_regrab;
+            bool m_bypassed = false;
+        };
+        viewport->installEventFilter(new FieldTouchFilter(viewport, grabScroller));
+#endif
     }
+
+#ifdef Q_OS_IOS
+    // Double-tap selects the whole field (names, hosts and IPs contain
+    // separators, so Qt's word selection picks only a fragment).
+    {
+        class SelectAllOnDoubleTap : public QObject {
+        public:
+            using QObject::QObject;
+
+        protected:
+            bool eventFilter(QObject *watched, QEvent *event) override {
+                if (event->type() == QEvent::MouseButtonDblClick) {
+                    if (auto *edit = qobject_cast<QLineEdit *>(watched)) {
+                        edit->selectAll();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        };
+        auto *selectAllFilter = new SelectAllOnDoubleTap(this);
+        const auto edits = findChildren<QLineEdit *>();
+        for (QLineEdit *edit : edits)
+            edit->installEventFilter(selectAllFilter);
+    }
+#endif
 
     // Connections
     connect(m_connectButton, &QPushButton::clicked, this, &RadioManagerDialog::onConnectClicked);
