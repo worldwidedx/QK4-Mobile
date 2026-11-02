@@ -1,4 +1,5 @@
 #include "optionsdialog.h"
+#include "touchtextedit.h"
 #include "overlaybackhandler.h"
 #include "k4styles.h"
 #include "micmeterwidget.h"
@@ -428,6 +429,7 @@ QWidget *OptionsDialog::createFnKeySetupPage() {
         properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
         scroller->setScrollerProperties(properties);
     }
+    TouchTextEdit::enableNativeEditMenu(scroll);
 #endif
     return page;
 }

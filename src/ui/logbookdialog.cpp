@@ -1,4 +1,5 @@
 #include "logbookdialog.h"
+#include "touchtextedit.h"
 #include "inwindowdialog.h"
 #include "ft8/ft8types.h"
 #include "ft8/qrzlogbook.h"
@@ -122,6 +123,7 @@ void touchScroll(QAbstractScrollArea *area) {
     properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
     properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
     scroller->setScrollerProperties(properties);
+    TouchTextEdit::enableNativeEditMenu(area);
     QObject::connect(scroller, &QScroller::stateChanged, area, [area](QScroller::State state) {
         if (state == QScroller::Dragging || state == QScroller::Scrolling) {
             area->setProperty("logDragging", true);

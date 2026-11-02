@@ -33,7 +33,10 @@ protected:
             if (touch->points().isEmpty() || m_bypassed)
                 break;
             const QPoint pos = touch->points().first().position().toPoint();
-            if (qobject_cast<QLineEdit *>(m_viewport->childAt(pos))) {
+            if (auto *edit = qobject_cast<QLineEdit *>(m_viewport->childAt(pos))) {
+                // Fields are often created after the page is set up, so pick
+                // them up on first touch (the first tap precedes any double-click).
+                TouchTextEdit::selectAllOnDoubleTap(edit);
                 m_bypassed = true;
                 QScroller::ungrabGesture(m_viewport);
             }
@@ -88,9 +91,6 @@ void enableNativeEditMenu(QAbstractScrollArea *area) {
     if (QScroller *scroller = QScroller::scroller(viewport))
         properties = scroller->scrollerProperties();
     viewport->installEventFilter(new FieldTouchFilter(viewport, properties));
-    const auto edits = area->findChildren<QLineEdit *>();
-    for (QLineEdit *edit : edits)
-        selectAllOnDoubleTap(edit);
 #else
     Q_UNUSED(area);
 #endif
@@ -98,8 +98,10 @@ void enableNativeEditMenu(QAbstractScrollArea *area) {
 
 void selectAllOnDoubleTap(QLineEdit *edit) {
 #ifdef Q_OS_IOS
-    if (edit)
-        edit->installEventFilter(new SelectAllFilter(edit));
+    if (!edit || edit->property("qk4SelectAllOnDoubleTap").toBool())
+        return;
+    edit->setProperty("qk4SelectAllOnDoubleTap", true);
+    edit->installEventFilter(new SelectAllFilter(edit));
 #else
     Q_UNUSED(edit);
 #endif
