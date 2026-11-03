@@ -355,6 +355,7 @@ set(HEADERS
     src/models/radiostate.h
     src/models/menumodel.h
     src/ui/radiomanagerdialog.h
+    src/ui/touchtextedit.h
     src/ui/dualcontrolbutton.h
     src/ui/adjustoverlay.h
     src/ui/sidecontrolpanel.h
