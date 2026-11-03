@@ -93,6 +93,7 @@
 #include <QSlider>
 #include <algorithm>
 #include <QShowEvent>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QScreen>
 #include <QWindow>
@@ -112,6 +113,7 @@ static bool androidHasHardwareKeyboard();
 #endif
 #ifdef Q_OS_IOS
 #include "ios/iosorientation.h"
+#include "ios/iosaudiosession.h"
 #endif
 
 // K4 Span range: 5 kHz to 368 kHz
@@ -357,7 +359,11 @@ static bool ensureMicrophonePermission(QWidget *parent) {
     }
 
     showInWindowMessage(parent, "Microphone Permission Required",
+#ifdef Q_OS_IOS
+                        "Microphone permission is currently denied. Enable it for QK4 Mobile in iOS Settings to transmit audio.");
+#else
                         "Microphone permission is currently denied. Enable it in Android Settings to transmit audio.");
+#endif
     return false;
 }
 #endif
@@ -545,6 +551,12 @@ MainWindow::MainWindow(QWidget *parent)
             m_sstvScreen->flushDraft();
         if (state != Qt::ApplicationActive && (m_sstvTxActive || m_sstvTxStarting))
             stopSstvTransmission();
+#ifdef Q_OS_IOS
+        // A latched voice PTT must not outlive the foreground: the operator
+        // can no longer see TX ON or tap it off, and iOS stops our audio.
+        if (state != Qt::ApplicationActive && m_pttActive)
+            onPttReleased();
+#endif
         if (state != Qt::ApplicationActive)
             cancelDigitalCalibration();
         if (m_ft8Screen) {
@@ -552,6 +564,39 @@ MainWindow::MainWindow(QWidget *parent)
             refreshFt8Capture();
         }
     });
+
+#ifdef Q_OS_IOS
+    // Keep the TX ON button honest with the radio. Once the K4 has confirmed TX
+    // for a latched press, a later RX means the radio unkeyed itself (timeout,
+    // protection, front-panel PTT): drop the latch instead of showing TX ON
+    // while receiving.
+    connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool transmitting) {
+        if (!m_pttActive)
+            return;
+        if (transmitting) {
+            m_pttRadioConfirmed = true;
+            return;
+        }
+        if (m_pttRadioConfirmed) {
+            onPttReleased();
+            showControlFeedback("RECEIVE \u00B7 RADIO UNKEYED");
+        }
+    });
+#endif
+
+#ifdef Q_OS_IOS
+    // A call, Siri, an alarm or a lost audio device breaks the microphone
+    // stream while the K4 may still be keyed. Unkey and say why.
+    {
+        QPointer<MainWindow> guard(this);
+        IosAudioSession::setInterruptionHandler([guard]() {
+            if (!guard || !guard->m_pttActive)
+                return;
+            guard->onPttReleased();
+            guard->showControlFeedback("TRANSMIT RELEASED \u00B7 AUDIO INTERRUPTED");
+        });
+    }
+#endif
 
     // Phone replacement for hovering over RIT/XIT and rolling a mouse wheel.
     // A normal tap still toggles the label; a deliberate hold opens the
@@ -5763,6 +5808,16 @@ void MainWindow::onAuthenticated() {
     m_tcpClient->sendCAT(slCommand);
     m_radioState->parseCATCommand(slCommand);
 
+#ifdef Q_OS_IOS
+    // Open RX playback under the same active play-and-record session that PTT
+    // uses. Waiting for the first PTT press left RX silent until the operator
+    // had keyed once and released. Failure is logged and not fatal: RX may still
+    // work under the default session, and PTT retries the setup.
+    IosAudioSession::configureForVoice();
+    if (!IosAudioSession::activate())
+        qWarning() << "iOS audio session could not be activated for RX; audio may be silent";
+#endif
+
     // Start audio engine on its dedicated thread (BlockingQueued to get return value)
     bool audioStarted = false;
     QMetaObject::invokeMethod(m_audioEngine, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, audioStarted));
@@ -7214,6 +7269,31 @@ void MainWindow::onPttPressed() {
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     if (!ensureMicrophonePermission(this)) {
+#ifdef Q_OS_IOS
+        // The tap latched the button before permission was known; clear it so
+        // the next tap (after the operator answers the prompt) starts TX.
+        m_bottomMenuBar->setPttActive(false);
+#endif
+        return;
+    }
+#endif
+
+#ifdef Q_OS_IOS
+    // iOS needs an active play-and-record AVAudioSession before Qt creates
+    // QAudioSource. CW can enter TX without phone-mic audio, but voice modes
+    // need this capture route. Prepare the session before sending CAT PTT so
+    // the first voice packets have live microphone input. Android configures
+    // its own route in AudioEngine.
+    QElapsedTimer sessionTimer;
+    sessionTimer.start();
+    IosAudioSession::configureForVoice();
+    const bool sessionReady = IosAudioSession::activate();
+    qInfo() << "Phone PTT: audio session prepared in" << sessionTimer.elapsed() << "ms, ok =" << sessionReady;
+    if (!sessionReady) {
+        // The button latched on the tap; clear it so the next tap tries again
+        // instead of sending a release for a transmit that never started.
+        m_bottomMenuBar->setPttActive(false);
+        showControlFeedback("Microphone audio could not be started");
         return;
     }
 #endif
@@ -7228,6 +7308,19 @@ void MainWindow::onPttPressed() {
     QMetaObject::invokeMethod(m_audioEngine, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, true));
     m_bottomMenuBar->setPttActive(true);
     setPhoneTxInputShieldActive(true);
+#ifdef Q_OS_IOS
+    // If the K4 never reports TX, do not leave TX ON latched over a receiving
+    // radio. The serial keeps a late check from touching a newer press.
+    m_pttRadioConfirmed = m_radioState->isTransmitting();
+    const quint32 serial = ++m_pttPressSerial;
+    QTimer::singleShot(3000, this, [this, serial]() {
+        if (serial != m_pttPressSerial || !m_pttActive || m_pttRadioConfirmed
+            || m_radioState->isTransmitting() || !m_tcpClient->isConnected())
+            return;
+        onPttReleased();
+        showControlFeedback("RADIO DID NOT KEY \u00B7 TAP TX / RX TO RETRY");
+    });
+#endif
     qDebug() << "Phone PTT enabled - K4 TX command and microphone stream active";
 }
 
@@ -7238,6 +7331,7 @@ void MainWindow::onPttReleased() {
     if (m_tcpClient && m_tcpClient->isConnected())
         m_tcpClient->sendCAT("RX;");
     m_pttActive = false;
+    m_pttRadioConfirmed = false;
     QMetaObject::invokeMethod(m_audioEngine, "setPttActive", Qt::QueuedConnection, Q_ARG(bool, false));
     m_bottomMenuBar->setPttActive(false);
     setPhoneTxInputShieldActive(false);
