@@ -7,6 +7,7 @@ add_library(qk4_ft8 STATIC
     ft8transmitter.cpp ft8transmitter.h ft8radiomode.h
     ft8snr.cpp ft8snr.h
     ../ui/logbookdialog.cpp ../ui/logbookdialog.h
+    ../ui/touchtextedit.cpp ../ui/touchtextedit.h
     ../ui/ft8screen.cpp ../ui/ft8screen.h ../ui/ft8waterfall.cpp ../ui/ft8waterfall.h
     ../dsp/panadapter_rhi.cpp ../dsp/panadapter_rhi.h)
 target_include_directories(qk4_ft8 PUBLIC ${CMAKE_CURRENT_LIST_DIR}/..)

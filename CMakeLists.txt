@@ -227,7 +227,6 @@ set(SOURCES
     src/models/radiostate.cpp
     src/models/menumodel.cpp
     src/ui/radiomanagerdialog.cpp
-    src/ui/touchtextedit.cpp
     src/ui/dualcontrolbutton.cpp
     src/ui/adjustoverlay.cpp
     src/ui/sidecontrolpanel.cpp
