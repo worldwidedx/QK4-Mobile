@@ -70,6 +70,7 @@ private slots:
     void onMicDeviceChanged(int index);
     void onMicGainChanged(int value);
     void updateKpodStatus();
+    void importK4MacroBackup();
     void updateCwKeyerStatus();
     void onCwKeyerConnectClicked();
     void onCwKeyerRefreshClicked();

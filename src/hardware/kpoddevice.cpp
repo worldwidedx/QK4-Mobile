@@ -1,7 +1,246 @@
 #include "kpoddevice.h"
 #include <QDebug>
 
-#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+void KpodDevice::processResponse(const unsigned char *buffer) {
+    // KPOD Protocol (from spec):
+    // - buffer[0] = cmd: 'u' (0x75) if new event, 0 if no event
+    // - buffer[1-2] = ticks: signed 16-bit encoder count (little-endian)
+    // - buffer[3] = controls: button/tap-hold/rocker state (ONLY valid when cmd='u')
+    // - buffer[4-7] = spare
+
+    unsigned char cmd = buffer[0];
+
+    // Protocol: cmd='u' means new event, cmd=0 means no event
+    // However, if we have a pending button press and see cmd=0, that's a release
+    if (cmd != 'u') {
+        // Check for implicit button release (button was pressed, now no event)
+        if (m_lastButtonState != 0) {
+            if (!m_holdEmitted) {
+                emit buttonTapped(m_lastButtonState);
+            }
+            m_lastButtonState = 0;
+            m_holdEmitted = false;
+        }
+        return;
+    }
+
+    // Extract encoder ticks (signed int16, little-endian)
+    qint16 encoderTicks = static_cast<qint16>(buffer[1] | (buffer[2] << 8));
+
+    // Extract controls byte (now guaranteed to be valid since cmd == 'u')
+    quint8 controls = buffer[3];
+
+    // Parse controls byte:
+    // bit 7: unused
+    // bit 6-5: Rocker (00=center/VFO B, 01=right/RIT-XIT, 10=left/VFO A, 11=error)
+    // bit 4: Tap/Hold (0=tap, 1=hold)
+    // bit 3-0: Button (0x01=btn1, 0x02=btn2, ..., 0x08=btn8)
+    quint8 buttonNum = controls & 0x0F;
+    bool isHold = (controls >> 4) & 0x01;
+    RockerPosition rocker = static_cast<RockerPosition>((controls >> 5) & 0x03);
+
+    // Emit encoder signal if there was rotation
+    if (encoderTicks != 0) {
+        emit encoderRotated(encoderTicks);
+    }
+
+    // Button state machine:
+    // - KPOD sends hold=false initially, then hold=true after hold threshold
+    // - If hold becomes true while pressed, emit buttonHeld
+    // - If released while hold=false, emit buttonTapped
+    if (buttonNum != 0 && m_lastButtonState == 0) {
+        // Button just pressed - start tracking
+        m_lastButtonState = buttonNum;
+        m_holdEmitted = false;
+        if (isHold) {
+            // Already a hold at first press (unusual but handle it)
+            emit buttonHeld(buttonNum);
+            m_holdEmitted = true;
+        }
+    } else if (buttonNum != 0 && m_lastButtonState != 0) {
+        // Button still pressed - check if hold flag became true
+        if (isHold && !m_holdEmitted) {
+            emit buttonHeld(m_lastButtonState);
+            m_holdEmitted = true;
+        }
+    } else if (buttonNum == 0 && m_lastButtonState != 0) {
+        // Button released - emit tap only if it wasn't a hold
+        if (!m_holdEmitted) {
+            emit buttonTapped(m_lastButtonState);
+        }
+        m_lastButtonState = 0;
+        m_holdEmitted = false;
+    }
+
+    // Rocker position - update on change (rocker=3 is error state)
+    if (rocker != m_lastRockerPosition && rocker != 3) {
+        m_lastRockerPosition = rocker;
+        emit rockerPositionChanged(rocker);
+    }
+}
+
+#if defined(Q_OS_ANDROID)
+
+#include <QJniObject>
+#include <QtCore/qcoreapplication_platform.h>
+
+// Android has no hidapi/libusb. The USB host work lives in AndroidKpod.java,
+// which polls the device on its own thread; this class drains the replies and
+// feeds them to the same decoder the desktop build uses.
+namespace {
+constexpr const char *kJavaClass = "com/w9wdx/qk4phone/AndroidKpod";
+const char *kContextSig = "(Landroid/content/Context;)";
+
+QJniObject androidContext() {
+    return QNativeInterface::QAndroidApplication::context();
+}
+
+int kpodUsbState() {
+    return QJniObject::callStaticMethod<jint>(kJavaClass, "state",
+                                              (QByteArray(kContextSig) + "I").constData(),
+                                              androidContext().object());
+}
+} // namespace
+
+KpodDevice::KpodDevice(QObject *parent)
+    : QObject(parent), m_hidDevice(nullptr), m_pollTimer(new QTimer(this)), m_lastRockerPosition(RockerCenter) {
+    m_deviceInfo = detectDevice();
+    m_pollTimer->setInterval(POLL_INTERVAL_MS / 2);
+    connect(m_pollTimer, &QTimer::timeout, this, &KpodDevice::poll);
+    setupHotplugMonitoring();
+}
+
+KpodDevice::~KpodDevice() {
+    stopPolling();
+    teardownHotplugMonitoring();
+}
+
+bool KpodDevice::isDetected() const {
+    return m_deviceInfo.detected;
+}
+
+KpodDeviceInfo KpodDevice::deviceInfo() const {
+    return m_deviceInfo;
+}
+
+bool KpodDevice::startPolling() {
+    if (m_pollTimer->isActive())
+        return true;
+    if (!openDevice()) {
+        emit pollError("Failed to open KPOD device");
+        return false;
+    }
+    m_lastRockerPosition = RockerCenter;
+    m_lastButtonState = 0;
+    m_holdEmitted = false;
+    m_pollTimer->start();
+    emit deviceConnected();
+    return true;
+}
+
+void KpodDevice::stopPolling() {
+    const bool wasPolling = m_pollTimer->isActive();
+    m_pollTimer->stop();
+    if (wasPolling)
+        closeDevice();
+}
+
+bool KpodDevice::isPolling() const {
+    return m_pollTimer->isActive();
+}
+
+KpodDevice::RockerPosition KpodDevice::rockerPosition() const {
+    return m_lastRockerPosition;
+}
+
+bool KpodDevice::openDevice() {
+    return QJniObject::callStaticMethod<jboolean>(kJavaClass, "start",
+                                                  (QByteArray(kContextSig) + "Z").constData(),
+                                                  androidContext().object());
+}
+
+void KpodDevice::closeDevice() {
+    QJniObject::callStaticMethod<void>(kJavaClass, "stop", "()V");
+    emit deviceDisconnected();
+}
+
+void KpodDevice::poll() {
+    for (int count = 0; count < 32; ++count) {
+        const jlong event = QJniObject::callStaticMethod<jlong>(kJavaClass, "pollEvent", "()J");
+        if (event < 0)
+            break;
+        const unsigned char buffer[8] = {static_cast<unsigned char>(event & 0xff),
+                                         static_cast<unsigned char>((event >> 8) & 0xff),
+                                         static_cast<unsigned char>((event >> 16) & 0xff),
+                                         static_cast<unsigned char>((event >> 24) & 0xff),
+                                         0, 0, 0, 0};
+        processResponse(buffer);
+    }
+    if (!QJniObject::callStaticMethod<jboolean>(kJavaClass, "isOpen", "()Z")) {
+        stopPolling();
+        emit pollError("Lost connection to KPOD");
+    }
+}
+
+KpodDeviceInfo KpodDevice::detectDevice() {
+    KpodDeviceInfo info;
+    if (kpodUsbState() != 2)
+        return info;
+
+    const QJniObject packed = QJniObject::callStaticObjectMethod(
+        kJavaClass, "info", (QByteArray(kContextSig) + "Ljava/lang/String;").constData(),
+        androidContext().object());
+    const QStringList fields = packed.isValid() ? packed.toString().split('\t') : QStringList();
+    if (fields.size() < 4)
+        return info;
+
+    info.detected = true;
+    info.vendorId = VENDOR_ID;
+    info.productId = PRODUCT_ID;
+    info.productName = fields[0];
+    info.manufacturer = fields[1];
+    info.firmwareVersion = fields[2];
+    info.deviceId = fields[3];
+    return info;
+}
+
+void KpodDevice::setupHotplugMonitoring() {
+    m_presenceTimer = new QTimer(this);
+    m_presenceTimer->setInterval(PRESENCE_CHECK_INTERVAL_MS);
+    connect(m_presenceTimer, &QTimer::timeout, this, &KpodDevice::checkDevicePresence);
+    m_presenceTimer->start();
+}
+
+void KpodDevice::teardownHotplugMonitoring() {
+    if (m_presenceTimer) {
+        m_presenceTimer->stop();
+        delete m_presenceTimer;
+        m_presenceTimer = nullptr;
+    }
+}
+
+void KpodDevice::checkDevicePresence() {
+    const bool nowDetected = kpodUsbState() == 2;
+    if (!m_deviceInfo.detected && nowDetected)
+        onDeviceArrived();
+    else if (m_deviceInfo.detected && !nowDetected)
+        onDeviceRemoved();
+}
+
+void KpodDevice::onDeviceArrived() {
+    m_deviceInfo = detectDevice();
+    if (m_deviceInfo.detected)
+        emit deviceConnected();
+}
+
+void KpodDevice::onDeviceRemoved() {
+    m_pollTimer->stop();
+    QJniObject::callStaticMethod<void>(kJavaClass, "stop", "()V");
+    m_deviceInfo.detected = false;
+    emit deviceDisconnected();
+}
+
+#elif defined(Q_OS_IOS)
 
 KpodDevice::KpodDevice(QObject *parent)
     : QObject(parent), m_hidDevice(nullptr), m_pollTimer(new QTimer(this)), m_lastRockerPosition(RockerCenter) {
@@ -22,7 +261,7 @@ KpodDeviceInfo KpodDevice::deviceInfo() const {
 }
 
 bool KpodDevice::startPolling() {
-    emit pollError("K-Pod is not supported on Android builds.");
+    emit pollError("K-Pod is not supported on iOS builds.");
     return false;
 }
 
@@ -47,8 +286,6 @@ bool KpodDevice::openDevice() {
 void KpodDevice::closeDevice() {}
 
 void KpodDevice::poll() {}
-
-void KpodDevice::processResponse(const unsigned char *) {}
 
 KpodDeviceInfo KpodDevice::detectDevice() {
     return KpodDeviceInfo{};
@@ -254,84 +491,6 @@ void KpodDevice::poll() {
         processResponse(buffer);
     }
     // readResult == 0 means no data available (normal for non-blocking)
-}
-
-void KpodDevice::processResponse(const unsigned char *buffer) {
-    // KPOD Protocol (from spec):
-    // - buffer[0] = cmd: 'u' (0x75) if new event, 0 if no event
-    // - buffer[1-2] = ticks: signed 16-bit encoder count (little-endian)
-    // - buffer[3] = controls: button/tap-hold/rocker state (ONLY valid when cmd='u')
-    // - buffer[4-7] = spare
-
-    unsigned char cmd = buffer[0];
-
-    // Protocol: cmd='u' means new event, cmd=0 means no event
-    // However, if we have a pending button press and see cmd=0, that's a release
-    if (cmd != 'u') {
-        // Check for implicit button release (button was pressed, now no event)
-        if (m_lastButtonState != 0) {
-            if (!m_holdEmitted) {
-                emit buttonTapped(m_lastButtonState);
-            }
-            m_lastButtonState = 0;
-            m_holdEmitted = false;
-        }
-        return;
-    }
-
-    // Extract encoder ticks (signed int16, little-endian)
-    qint16 encoderTicks = static_cast<qint16>(buffer[1] | (buffer[2] << 8));
-
-    // Extract controls byte (now guaranteed to be valid since cmd == 'u')
-    quint8 controls = buffer[3];
-
-    // Parse controls byte:
-    // bit 7: unused
-    // bit 6-5: Rocker (00=center/VFO B, 01=right/RIT-XIT, 10=left/VFO A, 11=error)
-    // bit 4: Tap/Hold (0=tap, 1=hold)
-    // bit 3-0: Button (0x01=btn1, 0x02=btn2, ..., 0x08=btn8)
-    quint8 buttonNum = controls & 0x0F;
-    bool isHold = (controls >> 4) & 0x01;
-    RockerPosition rocker = static_cast<RockerPosition>((controls >> 5) & 0x03);
-
-    // Emit encoder signal if there was rotation
-    if (encoderTicks != 0) {
-        emit encoderRotated(encoderTicks);
-    }
-
-    // Button state machine:
-    // - KPOD sends hold=false initially, then hold=true after hold threshold
-    // - If hold becomes true while pressed, emit buttonHeld
-    // - If released while hold=false, emit buttonTapped
-    if (buttonNum != 0 && m_lastButtonState == 0) {
-        // Button just pressed - start tracking
-        m_lastButtonState = buttonNum;
-        m_holdEmitted = false;
-        if (isHold) {
-            // Already a hold at first press (unusual but handle it)
-            emit buttonHeld(buttonNum);
-            m_holdEmitted = true;
-        }
-    } else if (buttonNum != 0 && m_lastButtonState != 0) {
-        // Button still pressed - check if hold flag became true
-        if (isHold && !m_holdEmitted) {
-            emit buttonHeld(m_lastButtonState);
-            m_holdEmitted = true;
-        }
-    } else if (buttonNum == 0 && m_lastButtonState != 0) {
-        // Button released - emit tap only if it wasn't a hold
-        if (!m_holdEmitted) {
-            emit buttonTapped(m_lastButtonState);
-        }
-        m_lastButtonState = 0;
-        m_holdEmitted = false;
-    }
-
-    // Rocker position - update on change (rocker=3 is error state)
-    if (rocker != m_lastRockerPosition && rocker != 3) {
-        m_lastRockerPosition = rocker;
-        emit rockerPositionChanged(rocker);
-    }
 }
 
 KpodDeviceInfo KpodDevice::detectDevice() {

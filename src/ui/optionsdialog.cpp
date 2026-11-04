@@ -12,6 +12,7 @@
 #include "../hardware/ctr2mididevice.h"
 #include "../settings/fnkeymemory.h"
 #include "../settings/radiosettings.h"
+#include "../settings/k4macrobackup.h"
 #include "../network/catserver.h"
 #include "../audio/audioengine.h"
 #include <QVBoxLayout>
@@ -31,6 +32,7 @@
 #include <QApplication>
 #include <QSignalBlocker>
 #include <QPointer>
+#include <QSharedPointer>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QSaveFile>
@@ -180,8 +182,8 @@ void OptionsDialog::setupUi() {
 #ifdef Q_OS_ANDROID
     m_tabList->addItem("Layout");
     // The phone settings surface intentionally contains app information plus
-    // the independent CW Keyer and CTR2-MIDI device/setup roles.
-    for (Page hiddenPage : {PageAudioInput, PageAudioOutput, PageRigControl, PageKpod})
+    // the independent CW Keyer, CTR2-MIDI and K-Pod (USB host) device roles.
+    for (Page hiddenPage : {PageAudioInput, PageAudioOutput, PageRigControl})
         m_tabList->item(hiddenPage)->setHidden(true);
 #endif
     m_tabList->setCurrentRow(0);
@@ -224,9 +226,28 @@ void OptionsDialog::ensurePageCreated(int index) {
     case PageCtr2Midi:
         page = createCtr2MidiPage();
         break;
-    case PageKpod:
-        page = createKpodPage();
+    case PageKpod: {
+        // The macro list makes this page taller than the dialog; scroll by touch.
+        auto *scroll = new QScrollArea(this);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setStyleSheet(QString("QScrollArea { background: %1; border: none; }").arg(K4Styles::Colors::Background));
+        scroll->setWidget(createKpodPage());
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+        scroll->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
+        QScroller::grabGesture(scroll->viewport(), QScroller::TouchGesture);
+        if (QScroller *scroller = QScroller::scroller(scroll->viewport())) {
+            QScrollerProperties properties = scroller->scrollerProperties();
+            properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
+            properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
+            scroller->setScrollerProperties(properties);
+        }
+#endif
+        page = scroll;
         break;
+    }
     case PageFnKeySetup:
         page = createFnKeySetupPage();
         break;
@@ -934,14 +955,16 @@ QWidget *OptionsDialog::createKpodPage() {
                                K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
     layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
 
-#ifdef Q_OS_ANDROID
-    auto *androidTitleLabel = new QLabel("K-Pod", page);
-    androidTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
-                                         .arg(K4Styles::Colors::AccentAmber)
-                                         .arg(K4Styles::Dimensions::FontSizeTitle));
-    layout->addWidget(androidTitleLabel);
+#ifdef Q_OS_IOS
+    // iOS cannot open the K-Pod's USB HID interface, so there is nothing to
+    // configure; show the page as unavailable.
+    auto *iosTitleLabel = new QLabel("K-Pod", page);
+    iosTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                     .arg(K4Styles::Colors::AccentAmber)
+                                     .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(iosTitleLabel);
 
-    auto *helpLabel = new QLabel("K-Pod USB HID control is not available on Android in this build.", page);
+    auto *helpLabel = new QLabel("K-Pod USB HID control is not available on iOS in this build.", page);
     helpLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
                                  .arg(K4Styles::Colors::TextGray)
                                  .arg(K4Styles::Dimensions::FontSizeButton));
@@ -1034,12 +1057,163 @@ QWidget *OptionsDialog::createKpodPage() {
     m_kpodHelpLabel->setWordWrap(true);
     layout->addWidget(m_kpodHelpLabel);
 
+    // Read-only view of the sixteen K-Pod button macros (8 buttons x tap/hold). The
+    // list updates when macros change, e.g. after an import.
+    auto *macrosTitle = new QLabel("Button macros", page);
+    macrosTitle->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                   .arg(K4Styles::Colors::TextWhite)
+                                   .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(macrosTitle);
+
+    auto *macroGridWidget = new QWidget(page);
+    auto *macroGrid = new QGridLayout(macroGridWidget);
+    macroGrid->setContentsMargins(0, 0, 0, 0);
+    macroGrid->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
+    macroGrid->setVerticalSpacing(K4Styles::Dimensions::PaddingSmall);
+    const QString macroHeaderStyle = QString("color: %1; font-size: %2px; font-weight: bold;")
+                                         .arg(K4Styles::Colors::TextGray)
+                                         .arg(K4Styles::Dimensions::FontSizeButton);
+    const QStringList macroHeaders = {"Button", "Name", "CAT Command"};
+    for (int column = 0; column < macroHeaders.size(); ++column) {
+        auto *header = new QLabel(macroHeaders[column], macroGridWidget);
+        header->setStyleSheet(macroHeaderStyle);
+        macroGrid->addWidget(header, 0, column);
+    }
+    struct MacroRowLabels {
+        QString functionId;
+        QLabel *name;
+        QLabel *command;
+    };
+    auto rows = QSharedPointer<QVector<MacroRowLabels>>::create();
+    const QString macroValueStyle = QString("color: %1; font-size: %2px;")
+                                        .arg(K4Styles::Colors::TextWhite)
+                                        .arg(K4Styles::Dimensions::FontSizeButton);
+    for (int button = 1; button <= 8; ++button) {
+        for (const char *kind : {"T", "H"}) {
+            const int row = (button - 1) * 2 + (kind[0] == 'T' ? 1 : 2);
+            const QString functionId = QString("K-pod.%1%2").arg(button).arg(kind);
+            auto *buttonLabel =
+                new QLabel(QString("%1 %2").arg(button).arg(kind[0] == 'T' ? "Tap" : "Hold"), macroGridWidget);
+            buttonLabel->setStyleSheet(macroValueStyle);
+            auto *nameLabel = new QLabel(macroGridWidget);
+            auto *commandLabel = new QLabel(macroGridWidget);
+            commandLabel->setWordWrap(true);
+            commandLabel->setTextInteractionFlags(Qt::NoTextInteraction);
+            macroGrid->addWidget(buttonLabel, row, 0, Qt::AlignTop);
+            macroGrid->addWidget(nameLabel, row, 1, Qt::AlignTop);
+            macroGrid->addWidget(commandLabel, row, 2, Qt::AlignTop);
+            rows->append({functionId, nameLabel, commandLabel});
+        }
+    }
+    macroGrid->setColumnStretch(2, 1);
+    layout->addWidget(macroGridWidget);
+
+    auto refreshMacros = [rows, macroValueStyle]() {
+        const QString emptyStyle = QString("color: %1; font-size: %2px; font-style: italic;")
+                                       .arg(K4Styles::Colors::TextGray)
+                                       .arg(K4Styles::Dimensions::FontSizeButton);
+        for (const MacroRowLabels &row : *rows) {
+            const MacroEntry entry = RadioSettings::instance()->macro(row.functionId);
+            row.name->setText(entry.label.isEmpty() ? QStringLiteral("-") : entry.label);
+            row.command->setText(entry.command.isEmpty() ? QStringLiteral("Not assigned") : entry.command);
+            row.name->setStyleSheet(entry.label.isEmpty() ? emptyStyle : macroValueStyle);
+            row.command->setStyleSheet(entry.command.isEmpty() ? emptyStyle : macroValueStyle);
+        }
+    };
+    refreshMacros();
+    connect(RadioSettings::instance(), &RadioSettings::macrosChanged, page, refreshMacros);
+
+    // K-Pod buttons run the macros assigned to K-pod.<n>T / K-pod.<n>H. The K4
+    // can export those (Fn, hold BACKUP, "PF Key and K-Pod Macros" -> k4macros.json).
+    auto *importHelp = new QLabel("K-Pod buttons run macros. Import them from the k4macros.json that the "
+                                  "K4 writes to a USB drive when you make a backup.",
+                                  page);
+    importHelp->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                  .arg(K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Dimensions::FontSizeButton));
+    importHelp->setWordWrap(true);
+    layout->addWidget(importHelp);
+
+    auto *importButton = new QPushButton("Import from K4 Backup...", page);
+    importButton->setStyleSheet(K4Styles::menuBarButton());
+    importButton->setMinimumHeight(K4Styles::Dimensions::ButtonHeightLarge);
+    connect(importButton, &QPushButton::clicked, this, [this]() { importK4MacroBackup(); });
+    layout->addWidget(importButton);
+
     layout->addStretch();
 
     // Initialize with current status
     updateKpodStatus();
 
     return page;
+}
+
+void OptionsDialog::importK4MacroBackup() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Select k4macros.json"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        QStringLiteral("K4 macro backup (k4macros.json *.json);;All files (*)"));
+    if (path.isEmpty())
+        return;
+
+    // Android's document picker may return a content URI, which QFile handles.
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
+                            QStringLiteral("The selected file could not be opened."));
+        return;
+    }
+    if (file.size() > 256 * 1024) {
+        showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
+                            QStringLiteral("The selected file is too large to be a k4macros.json."));
+        return;
+    }
+    QString error;
+    const QMap<QString, MacroEntry> imported = K4MacroBackup::parseJson(file.readAll(), &error);
+    if (imported.isEmpty()) {
+        showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
+                            error.isEmpty() ? QStringLiteral("k4macros.json contains no assigned macros.")
+                                            : QStringLiteral("This is not a valid k4macros.json: %1").arg(error));
+        return;
+    }
+
+    // Name every macro that would be overwritten; slots not in the file stay untouched.
+    const QMap<QString, MacroEntry> current = RadioSettings::instance()->macros();
+    QStringList overwritten;
+    for (auto it = imported.cbegin(); it != imported.cend(); ++it) {
+        const MacroEntry existing = current.value(it.key());
+        if (!existing.isEmpty() && !(existing == it.value()))
+            overwritten << it.key();
+    }
+
+    InWindowDialog confirm(this);
+    auto *confirmLayout = new QVBoxLayout(confirm.contentWidget());
+    QString text = QStringLiteral("Import %1 macros from k4macros.json?").arg(imported.size());
+    if (!overwritten.isEmpty())
+        text += QStringLiteral("\n\nThis replaces your existing: %1.").arg(overwritten.join(", "));
+    auto *textLabel = new QLabel(text, confirm.contentWidget());
+    textLabel->setWordWrap(true);
+    textLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextWhite)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    confirmLayout->addWidget(textLabel);
+    auto *buttons = new QHBoxLayout();
+    auto *noButton = new QPushButton("Cancel", confirm.contentWidget());
+    auto *yesButton = new QPushButton("Import", confirm.contentWidget());
+    for (QPushButton *button : {noButton, yesButton}) {
+        button->setStyleSheet(K4Styles::menuBarButton());
+        button->setMinimumHeight(K4Styles::Dimensions::ButtonHeightLarge);
+        buttons->addWidget(button);
+    }
+    confirmLayout->addLayout(buttons);
+    connect(noButton, &QPushButton::clicked, &confirm, &InWindowDialog::reject);
+    connect(yesButton, &QPushButton::clicked, &confirm, &InWindowDialog::accept);
+    if (confirm.exec() != InWindowDialog::Accepted)
+        return;
+
+    const int written = RadioSettings::instance()->setMacros(imported);
+    showInWindowMessage(this, QStringLiteral("K4 Macro Import"),
+                        QStringLiteral("Imported %1 macros.").arg(written));
 }
 
 void OptionsDialog::updateKpodStatus() {

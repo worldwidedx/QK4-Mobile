@@ -211,3 +211,9 @@ set_tests_properties(${digital_codec_test} layoutselection overlayback logbook q
         "PATH=path_list_prepend:${compiler_runtime_dir}"
         "QT_QPA_PLATFORM=set:offscreen"
 )
+
+qt_add_executable(test_k4macrobackup test_k4macrobackup.cpp
+    ../src/settings/k4macrobackup.cpp ../src/settings/k4macrobackup.h)
+target_include_directories(test_k4macrobackup PRIVATE ../src)
+target_link_libraries(test_k4macrobackup PRIVATE Qt6::Core Qt6::Widgets Qt6::Test)
+add_test(NAME k4macrobackup COMMAND test_k4macrobackup -o k4macrobackup-results.txt,txt -o -,txt)
