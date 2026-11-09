@@ -96,6 +96,7 @@ add_test(NAME digitaltx COMMAND test_digitaltx -o digitaltx-results.txt,txt -o -
 qt_add_executable(test_digitalui test_digitalui.cpp
     ../src/ui/digitalaudiosetupdialog.cpp ../src/ui/digitalaudiosetupdialog.h
     ../src/ui/inwindowdialog.cpp ../src/ui/k4styles.cpp
+    ../src/ui/touchtextedit.cpp ../src/ui/touchtextedit.h
     ../src/ui/sstvscreen.cpp ../src/ui/sstvcomposercanvas.cpp
     ../src/sstv/sstvencoder.cpp ../src/sstv/sstvmoderegistry.cpp ../src/sstv/sstvstorage.cpp
     ../src/android/sstvmedia.cpp)
