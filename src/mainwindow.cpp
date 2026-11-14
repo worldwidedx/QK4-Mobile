@@ -20,6 +20,7 @@
 #include "ui/filterindicatorwidget.h"
 #include "ui/k4styles.h"
 #include "ui/inwindowdialog.h"
+#include "ui/accessibilityteardown.h"
 #include "ui/digitalaudiosetupdialog.h"
 #include "ui/inwindowpopup.h"
 #include "ui/antennacfgpopup.h"
@@ -2921,6 +2922,12 @@ MainWindow::~MainWindow() {
         disconnect(m_kpa1500Client, nullptr, this, nullptr);
         m_kpa1500Client->disconnectFromHost();
     }
+
+    // MainWindow is destroyed only when main() returns. On iOS with VoiceOver
+    // (or another assistive client) active, Qt 6.11.1 would otherwise crash
+    // reporting each destroyed button while ~QWidget tears down the console.
+    // See issue #42 and accessibilityteardown.h.
+    suspendAccessibilityForShutdown();
 }
 
 void MainWindow::setupMenuBar() {
