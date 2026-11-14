@@ -2923,10 +2923,11 @@ MainWindow::~MainWindow() {
         m_kpa1500Client->disconnectFromHost();
     }
 
-    // Last step before ~QWidget deletes the console's children: on iOS with
-    // VoiceOver (or another assistive client) active, Qt 6.11.1 would
-    // otherwise crash reporting each destroyed button. See issue #42.
-    releaseAccessibilityInterfaces(this);
+    // MainWindow is destroyed only when main() returns. On iOS with VoiceOver
+    // (or another assistive client) active, Qt 6.11.1 would otherwise crash
+    // reporting each destroyed button while ~QWidget tears down the console.
+    // See issue #42 and accessibilityteardown.h.
+    suspendAccessibilityForShutdown();
 }
 
 void MainWindow::setupMenuBar() {
