@@ -590,6 +590,18 @@ MainWindow::MainWindow(QWidget *parent)
     connect(RadioSettings::instance(), &RadioSettings::iosBluetoothReceiveOnlyChanged, this,
             [](bool receiveOnly) { IosAudioSession::setBluetoothReceiveOnly(receiveOnly); });
 
+    // A headset connected or removed leaves Qt's playback and capture streams
+    // on the old route, silent. Rebuild them on the audio thread once the burst
+    // of route notifications has settled.
+    {
+        auto *routeDebounce = new QTimer(this);
+        routeDebounce->setSingleShot(true);
+        routeDebounce->setInterval(400);
+        connect(routeDebounce, &QTimer::timeout, this,
+                [this]() { QMetaObject::invokeMethod(m_audioEngine, "rebuildForRouteChange", Qt::QueuedConnection); });
+        IosAudioSession::setRouteChangeHandler([routeDebounce]() { routeDebounce->start(); });
+    }
+
     // A call, Siri, an alarm or a lost audio device breaks the microphone
     // stream while the K4 may still be keyed. Unkey and say why.
     {

@@ -11,6 +11,7 @@
 
 namespace {
 std::function<void()> g_interruptionHandler;
+std::function<void()> g_routeChangeHandler;
 bool g_receiveOnly = false;
 bool g_configured = false;
 
@@ -40,6 +41,13 @@ void logRoute(const char *when) {
     qInfo().noquote() << "IosAudioSession: route" << when << "input" << describe(route.inputs) << "output"
                       << describe(route.outputs) << "category" << QString::fromNSString(session.category) << "mode"
                       << QString::fromNSString(session.mode) << "sampleRate" << session.sampleRate;
+}
+
+void notifyRouteChange() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_routeChangeHandler)
+            g_routeChangeHandler();
+    });
 }
 
 // Notifications can arrive on any thread; the handler touches Qt widgets.
@@ -109,6 +117,11 @@ void notifyInterruption() {
     NSNumber *reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
     qInfo() << "IosAudioSession: audio route changed, reason" << (reason ? int(reason.unsignedIntegerValue) : -1);
     logRoute("after change");
+    // A headset appeared or went away: the streams Qt opened are still bound
+    // to the old route and fall silent.
+    if (reason && (reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+                   reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable))
+        notifyRouteChange();
     // The device in use went away (headset unplugged, Bluetooth lost): the
     // microphone stream is no longer what the operator expects to transmit.
     if (reason && reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
@@ -178,6 +191,10 @@ void IosAudioSession::configureForVoice() {
                        << (error ? QString::fromNSString(error.localizedDescription) : QString());
         }
     }
+}
+
+void IosAudioSession::setRouteChangeHandler(std::function<void()> handler) {
+    g_routeChangeHandler = std::move(handler);
 }
 
 void IosAudioSession::setBluetoothReceiveOnly(bool receiveOnly) {

@@ -30,6 +30,11 @@ public:
     void enqueueAudio(const QByteArray &pcmData);
     Q_INVOKABLE void flushQueue();
 
+    // iOS: the audio route changed (headset connected or removed). Qt keeps
+    // the playback and capture streams on the old route, so playback goes
+    // silent; rebuild both against the new route. No-op elsewhere.
+    Q_INVOKABLE void rebuildForRouteChange();
+
     // The microphone is opened once and then remains open while connected.
     // PTT controls only the packet send gate; reopening the Android audio
     // backend for each press creates gaps that make the K4 leave TX.
