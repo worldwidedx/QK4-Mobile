@@ -135,24 +135,28 @@ void IosAudioSession::configureForVoice() {
 
     // playAndRecord so the mic can be captured while RX plays. defaultToSpeaker
     // keeps RX on the loudspeaker (playAndRecord otherwise routes to the
-    // earpiece). Only A2DP is allowed for Bluetooth: it is output-only, so the
-    // built-in mic stays at 48 kHz and matches AudioEngine's input format.
-    // HFP (allowBluetooth) would drop the hardware to 8/16 kHz narrowband and
-    // can make QAudioSource's 48 kHz format check fail; add it later as a
-    // deliberate choice.
+    // earpiece). Voice-chat mode applies Apple's echo cancellation and noise
+    // suppression, and with HFP allowed a Bluetooth headset (AirPods) is used
+    // for both the microphone and RX audio instead of the far-away built-in
+    // mic. HFP is narrowband (typically 16-24 kHz); amateur voice audio is
+    // 2-3 kHz wide, so nothing is lost. A2DP stays allowed for output-only
+    // Bluetooth devices. In this mode the hardware rate follows the headset,
+    // so AudioEngine's 48 kHz mic format is converted by Qt.
     const AVAudioSessionCategoryOptions options =
-        AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+        AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothHFP |
+        AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+    const AVAudioSessionMode mode = AVAudioSessionModeVoiceChat;
 
     // This runs on every PTT press, on the main thread, while RX audio plays.
     // Re-applying an unchanged category or sample rate can still reconfigure
     // the route and stall the press, so only touch what actually differs.
     const bool categoryCurrent = [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]
-                                 && session.categoryOptions == options;
+                                 && [session.mode isEqualToString:mode] && session.categoryOptions == options;
     NSError *error = nil;
     if (!categoryCurrent) {
         g_lastOwnSessionWorkMs = nowMs();
         if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
-                             mode:AVAudioSessionModeDefault
+                             mode:mode
                           options:options
                             error:&error]) {
             qWarning() << "IosAudioSession: setCategory failed:"
