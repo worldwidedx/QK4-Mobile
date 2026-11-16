@@ -5,6 +5,7 @@
 
 #include <QDebug>
 #include <QString>
+#include <QStringList>
 
 #include <utility>
 
@@ -19,6 +20,24 @@ qint64 g_lastOwnSessionWorkMs = 0;
 
 qint64 nowMs() {
     return static_cast<qint64>([NSDate timeIntervalSinceReferenceDate] * 1000.0);
+}
+
+// One line naming the active input/output port types (BuiltInMic,
+// BluetoothA2DP, BluetoothHFP, ...) plus the session's category, mode and rate.
+// Port types only, not device names, so logs can be shared. This answers "which
+// microphone is the radio transmit audio actually coming from?".
+void logRoute(const char *when) {
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    auto describe = [](NSArray<AVAudioSessionPortDescription *> *ports) {
+        QStringList types;
+        for (AVAudioSessionPortDescription *port in ports)
+            types << QString::fromNSString(port.portType);
+        return types.isEmpty() ? QStringLiteral("none") : types.join(QLatin1Char(','));
+    };
+    AVAudioSessionRouteDescription *route = session.currentRoute;
+    qInfo().noquote() << "IosAudioSession: route" << when << "input" << describe(route.inputs) << "output"
+                      << describe(route.outputs) << "category" << QString::fromNSString(session.category) << "mode"
+                      << QString::fromNSString(session.mode) << "sampleRate" << session.sampleRate;
 }
 
 // Notifications can arrive on any thread; the handler touches Qt widgets.
@@ -87,6 +106,7 @@ void notifyInterruption() {
 - (void)handleRouteChange:(NSNotification *)note {
     NSNumber *reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
     qInfo() << "IosAudioSession: audio route changed, reason" << (reason ? int(reason.unsignedIntegerValue) : -1);
+    logRoute("after change");
     // The device in use went away (headset unplugged, Bluetooth lost): the
     // microphone stream is no longer what the operator expects to transmit.
     if (reason && reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
@@ -161,6 +181,7 @@ bool IosAudioSession::activate() {
         AVAudioSession *session = [AVAudioSession sharedInstance];
         qInfo() << "IosAudioSession: active, sampleRate" << session.sampleRate
                 << "inputs" << (session.isInputAvailable ? "available" : "none");
+        logRoute("on activate");
     }
     return ok;
 }
