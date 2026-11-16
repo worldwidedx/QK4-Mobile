@@ -17,6 +17,12 @@ namespace IosAudioSession {
 // first call. Logs (does not throw) on failure.
 void configureForVoice();
 
+// Choose the Bluetooth behavior. Default (false): voice-chat mode with the
+// headset microphone (HFP) so the headset carries both RX and TX. True: RX
+// through output-only A2DP at full bandwidth; transmit then uses the built-in
+// microphone. If the session is already configured the change is applied now.
+void setBluetoothReceiveOnly(bool receiveOnly);
+
 // Activate the session. Returns false and logs the underlying error on failure.
 bool activate();
 

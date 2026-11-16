@@ -11,6 +11,8 @@
 
 namespace {
 std::function<void()> g_interruptionHandler;
+bool g_receiveOnly = false;
+bool g_configured = false;
 
 // Route changes that our own category/activation calls cause arrive moments
 // later. Ignore a "device lost" within this window of our own session work so
@@ -142,10 +144,14 @@ void IosAudioSession::configureForVoice() {
     // 2-3 kHz wide, so nothing is lost. A2DP stays allowed for output-only
     // Bluetooth devices. In this mode the hardware rate follows the headset,
     // so AudioEngine's 48 kHz mic format is converted by Qt.
+    // Receive-only (user option): A2DP carries RX at full bandwidth, and the
+    // built-in microphone transmits (A2DP has no microphone).
     const AVAudioSessionCategoryOptions options =
-        AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothHFP |
-        AVAudioSessionCategoryOptionAllowBluetoothA2DP;
-    const AVAudioSessionMode mode = AVAudioSessionModeVoiceChat;
+        g_receiveOnly ? (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP)
+                      : (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothHFP |
+                         AVAudioSessionCategoryOptionAllowBluetoothA2DP);
+    const AVAudioSessionMode mode = g_receiveOnly ? AVAudioSessionModeDefault : AVAudioSessionModeVoiceChat;
+    g_configured = true;
 
     // This runs on every PTT press, on the main thread, while RX audio plays.
     // Re-applying an unchanged category or sample rate can still reconfigure
@@ -172,6 +178,14 @@ void IosAudioSession::configureForVoice() {
                        << (error ? QString::fromNSString(error.localizedDescription) : QString());
         }
     }
+}
+
+void IosAudioSession::setBluetoothReceiveOnly(bool receiveOnly) {
+    if (g_receiveOnly == receiveOnly)
+        return;
+    g_receiveOnly = receiveOnly;
+    if (g_configured)
+        configureForVoice();
 }
 
 bool IosAudioSession::activate() {

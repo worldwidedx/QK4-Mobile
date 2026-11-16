@@ -585,6 +585,11 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
 
 #ifdef Q_OS_IOS
+    // Bluetooth receive-only option (Options > Audio Output): RX over A2DP.
+    IosAudioSession::setBluetoothReceiveOnly(RadioSettings::instance()->iosBluetoothReceiveOnly());
+    connect(RadioSettings::instance(), &RadioSettings::iosBluetoothReceiveOnlyChanged, this,
+            [](bool receiveOnly) { IosAudioSession::setBluetoothReceiveOnly(receiveOnly); });
+
     // A call, Siri, an alarm or a lost audio device breaks the microphone
     // stream while the K4 may still be keyed. Unkey and say why.
     {

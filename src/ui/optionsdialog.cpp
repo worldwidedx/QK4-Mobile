@@ -1416,6 +1416,34 @@ QWidget *OptionsDialog::createAudioOutputPage() {
 
     layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
 
+#ifdef Q_OS_IOS
+    // Default: a Bluetooth headset carries both RX and TX through its own mic
+    // (phone-call profile, plenty for voice). This option keeps RX on the
+    // full-bandwidth music profile instead, which has no microphone.
+    auto *rxOnlyCheck = new QCheckBox("Bluetooth receive-only (high-quality RX)", page);
+    rxOnlyCheck->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                       "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                   .arg(K4Styles::Colors::TextWhite)
+                                   .arg(K4Styles::Dimensions::FontSizePopup)
+                                   .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                   .arg(K4Styles::Dimensions::CheckboxSize));
+    rxOnlyCheck->setChecked(RadioSettings::instance()->iosBluetoothReceiveOnly());
+    connect(rxOnlyCheck, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setIosBluetoothReceiveOnly(checked); });
+    layout->addWidget(rxOnlyCheck);
+
+    auto *rxOnlyHelp = new QLabel("Receive through Bluetooth at full audio quality. Bluetooth cannot carry a "
+                                  "microphone in this mode, so you transmit with this device's built-in "
+                                  "microphone. Leave off to use a Bluetooth headset for both receive and transmit.",
+                                  page);
+    rxOnlyHelp->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                  .arg(K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Dimensions::FontSizeLarge));
+    rxOnlyHelp->setWordWrap(true);
+    layout->addWidget(rxOnlyHelp);
+    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+#endif
+
     // Help text
     auto *helpLabel = new QLabel("Select the audio output device for radio receive audio. "
                                  "Volume is controlled by the MAIN and SUB sliders on the side panel.",
