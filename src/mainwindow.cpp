@@ -585,11 +585,6 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
 
 #ifdef Q_OS_IOS
-    // Bluetooth receive-only option (Options > Audio Output): RX over A2DP.
-    IosAudioSession::setBluetoothReceiveOnly(RadioSettings::instance()->iosBluetoothReceiveOnly());
-    connect(RadioSettings::instance(), &RadioSettings::iosBluetoothReceiveOnlyChanged, this,
-            [](bool receiveOnly) { IosAudioSession::setBluetoothReceiveOnly(receiveOnly); });
-
     // A headset connected or removed leaves Qt's playback and capture streams
     // on the old route, silent. Rebuild them on the audio thread once the burst
     // of route notifications has settled.

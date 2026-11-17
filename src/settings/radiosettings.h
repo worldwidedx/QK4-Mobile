@@ -99,12 +99,6 @@ public:
     QString speakerDevice() const;
     void setSpeakerDevice(const QString &deviceId);
 
-    // iOS only: receive through Bluetooth A2DP (full-bandwidth, output-only)
-    // instead of the voice-chat headset route. Transmit then uses the device's
-    // built-in microphone. Default off.
-    bool iosBluetoothReceiveOnly() const;
-    void setIosBluetoothReceiveOnly(bool enabled);
-
     // Mobile GEN/SWL band-bank local frequency memory. This is intentionally
     // independent of the K4's amateur-band stack and CAT state.
     quint64 swlBandFrequency(const QString &bandName, quint64 fallbackHz) const;
@@ -179,7 +173,6 @@ signals:
     void micGainChanged(int value);
     void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);
-    void iosBluetoothReceiveOnlyChanged(bool enabled);
     void catServerEnabledChanged(bool enabled);
     void catServerPortChanged(quint16 port);
     void macrosChanged();

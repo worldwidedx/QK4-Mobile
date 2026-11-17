@@ -215,18 +215,6 @@ void RadioSettings::setSpeakerDevice(const QString &deviceId) {
     }
 }
 
-bool RadioSettings::iosBluetoothReceiveOnly() const {
-    return m_settings.value("audio/iosBluetoothReceiveOnly", false).toBool();
-}
-
-void RadioSettings::setIosBluetoothReceiveOnly(bool enabled) {
-    if (iosBluetoothReceiveOnly() != enabled) {
-        m_settings.setValue("audio/iosBluetoothReceiveOnly", enabled);
-        m_settings.sync();
-        emit iosBluetoothReceiveOnlyChanged(enabled);
-    }
-}
-
 quint64 RadioSettings::swlBandFrequency(const QString &bandName, quint64 fallbackHz) const {
     bool ok = false;
     quint64 frequencyHz = m_settings.value(QString("swlBandMemory/%1").arg(bandName)).toULongLong(&ok);
