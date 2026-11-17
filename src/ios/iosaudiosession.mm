@@ -117,11 +117,15 @@ void notifyInterruption() {
     NSNumber *reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
     qInfo() << "IosAudioSession: audio route changed, reason" << (reason ? int(reason.unsignedIntegerValue) : -1);
     logRoute("after change");
-    // A headset appeared or went away: the streams Qt opened are still bound
-    // to the old route and fall silent.
+    // A headset appeared or went away: re-pick the session mode for it, then
+    // have the app rebuild the streams Qt opened, still bound to the old route.
     if (reason && (reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
-                   reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable))
+                   reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            IosAudioSession::configureForVoice();
+        });
         notifyRouteChange();
+    }
     // The device in use went away (headset unplugged, Bluetooth lost): the
     // microphone stream is no longer what the operator expects to transmit.
     if (reason && reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
@@ -163,7 +167,19 @@ void IosAudioSession::configureForVoice() {
         g_receiveOnly ? (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP)
                       : (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothHFP |
                          AVAudioSessionCategoryOptionAllowBluetoothA2DP);
-    const AVAudioSessionMode mode = g_receiveOnly ? AVAudioSessionModeDefault : AVAudioSessionModeVoiceChat;
+    // Voice-chat mode only while a Bluetooth headset (HFP) is available: it
+    // brings echo cancellation and noise suppression for the headset mic. On
+    // the loudspeaker it played RX silently (device-verified), so with no
+    // headset use the default mode with the built-in mic and speaker.
+    bool headsetAvailable = false;
+    for (AVAudioSessionPortDescription *input in session.availableInputs) {
+        if ([input.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
+            headsetAvailable = true;
+            break;
+        }
+    }
+    const AVAudioSessionMode mode =
+        (!g_receiveOnly && headsetAvailable) ? AVAudioSessionModeVoiceChat : AVAudioSessionModeDefault;
     g_configured = true;
 
     // This runs on every PTT press, on the main thread, while RX audio plays.
