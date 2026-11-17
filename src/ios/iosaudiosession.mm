@@ -21,6 +21,11 @@ bool g_configured = false;
 constexpr qint64 kSelfRouteChangeGraceMs = 1500;
 qint64 g_lastOwnSessionWorkMs = 0;
 
+// AVAudioSessionCategoryOptionAllowBluetoothHFP is the new name for
+// AllowBluetooth (same value, 0x4); older SDKs, such as the CI toolchain's,
+// only declare the old name, which newer SDKs deprecate.
+constexpr AVAudioSessionCategoryOptions kOptionAllowBluetoothHFP = static_cast<AVAudioSessionCategoryOptions>(0x4);
+
 qint64 nowMs() {
     return static_cast<qint64>([NSDate timeIntervalSinceReferenceDate] * 1000.0);
 }
@@ -165,7 +170,7 @@ void IosAudioSession::configureForVoice() {
     // built-in microphone transmits (A2DP has no microphone).
     const AVAudioSessionCategoryOptions options =
         g_receiveOnly ? (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP)
-                      : (AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothHFP |
+                      : (AVAudioSessionCategoryOptionDefaultToSpeaker | kOptionAllowBluetoothHFP |
                          AVAudioSessionCategoryOptionAllowBluetoothA2DP);
     // Voice-chat mode only while a Bluetooth headset (HFP) is available: it
     // brings echo cancellation and noise suppression for the headset mic. On
