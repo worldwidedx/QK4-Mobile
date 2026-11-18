@@ -1,4 +1,5 @@
 #include "logbookdialog.h"
+#include "touchtextedit.h"
 #include "inwindowdialog.h"
 #include "ft8/ft8types.h"
 #include "ft8/qrzlogbook.h"
@@ -122,6 +123,7 @@ void touchScroll(QAbstractScrollArea *area) {
     properties.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
     properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
     scroller->setScrollerProperties(properties);
+    TouchTextEdit::enableNativeEditMenu(area);
     QObject::connect(scroller, &QScroller::stateChanged, area, [area](QScroller::State state) {
         if (state == QScroller::Dragging || state == QScroller::Scrolling) {
             area->setProperty("logDragging", true);
@@ -262,8 +264,13 @@ void qrzSetup(QWidget *parent, QrzLogbook *qrz) {
     keyRow->addWidget(key, 1);
     keyRow->addWidget(showKey);
     s.fields->addLayout(keyRow);
+#ifdef Q_OS_IOS
+    s.fields->addWidget(label("The API key is stored in the iOS Keychain on this device. "
+        "Existing and imported contacts can be selected in the log and sent manually.", s.body));
+#else
     s.fields->addWidget(label("The API key is encrypted on this phone with Android Keystore. "
         "Existing and imported contacts can be selected in the log and sent manually.", s.body));
+#endif
     s.fields->addStretch();
     // Outside the scroll area: toggling cannot accidentally occur during a drag.
     auto *automatic = new QCheckBox("Auto-send new contacts to QRZ", s.dialog.contentWidget());

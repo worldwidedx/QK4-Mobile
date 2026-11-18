@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  App privacy manifest for the iOS bundle.
+
+  Qt for iOS is linked statically, so the PrivacyInfo.xcprivacy files shipped
+  inside the Qt frameworks never reach the app bundle; the app has to declare
+  the required-reason APIs its own binary references:
+
+  - UserDefaults (CA92.1): QSettings stores preferences through CFPreferences /
+    NSUserDefaults, read and written only by this app.
+  - FileTimestamp (C617.1): QFileInfo/QDir stat() files inside the app
+    container (logbook, SSTV images, CTR2 mappings).
+  - FileTimestamp (3B52.1): the same calls on files the user picks through the
+    document picker (ADIF import/export, SSTV images, CTR2 mapping files).
+  - SystemBootTime (35F9.1): QElapsedTimer/QDeadlineTimer use
+    mach_absolute_time() to measure elapsed time and drive timers.
+
+  No tracking and no data collection: QK4 Mobile talks only to the radio the
+  operator configures, and QRZ uploads go to the operator's own QRZ account.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+                <string>3B52.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

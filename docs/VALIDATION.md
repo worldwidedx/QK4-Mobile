@@ -42,6 +42,7 @@ builds alone do not authorize either.
 - iOS compile (once platform sources are integrated):
   `scripts/ci/build-ios.sh`, with matching Qt host/iOS kits on macOS. It builds
   an unsigned ARM64 device target; it is not an install or TestFlight upload.
+  For local signed device testing, use [Build iOS for a physical device](BUILD_IOS_DEVICE.md).
 - Policy checks: `scripts/ci/check-policy.ps1`.
 
 CI deliberately does not use signing secrets or contact a radio. It proves

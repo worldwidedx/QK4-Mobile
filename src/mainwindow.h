@@ -66,6 +66,7 @@ class VfoRowWidget;
 class SidetoneGenerator;
 class RadioManagerDialog;
 class QResizeEvent;
+class QWindow;
 class QImage;
 class SstvScreen;
 class SstvDecoder;
@@ -183,6 +184,7 @@ private slots:
     void onSubRxButtonRightClicked(int index);
 
 private:
+    QRect fullScreenOverlayRect() const;
     void setupMenuBar();
     void showSettings();
     void showAboutDialog();
@@ -209,6 +211,10 @@ private:
     void setPhoneTxInputShieldActive(bool active);
     void updatePhoneTxInputShieldGeometry();
     void positionCompactBSetIndicator();
+#ifdef Q_OS_ANDROID
+    void scheduleDisplayRefresh();
+#endif
+    void updateNoRadioHint();
     void openSstvScreen();
     void openLogbook(bool fromSstv = false);
     void openFt8Screen();
@@ -259,6 +265,10 @@ private:
 
     // PTT state
     bool m_pttActive = false;
+    // iOS: the K4 has reported TX for the current latched press, and a counter
+    // that lets a stale "did the radio key?" check ignore a newer press.
+    bool m_pttRadioConfirmed = false;
+    quint32 m_pttPressSerial = 0;
     int m_phoneTuneStepAHz = -1;
     int m_phoneTuneStepBHz = -1;
     QString m_pendingControlFeedback;
@@ -472,6 +482,9 @@ private:
     // Notification popup for K4 error/status messages (ERxx:)
     NotificationWidget *m_notificationWidget;
 
+    // Shown over the idle console when nothing is connected and no radio is saved.
+    QLabel *m_noRadioHint = nullptr;
+
     // Debounce timer for RX EQ slider changes
     QTimer *m_rxEqDebounceTimer;
 
@@ -494,6 +507,10 @@ private:
 
     WheelAccumulator m_ritWheelAccumulator;
     bool m_closingTransientMenus = false;
+#ifdef Q_OS_ANDROID
+    QPointer<QWindow> m_displayWindow;
+    bool m_displayRefreshPending = false;
+#endif
 };
 
 #endif // MAINWINDOW_H

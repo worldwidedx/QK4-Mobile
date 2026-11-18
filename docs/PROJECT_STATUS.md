@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-10-25 (HaliKey operator result and TEST-mode clarification)
+Last updated: 2026-11-17 (CW MIDI candidate merge)
 
 ## Unreleased: CW MIDI edge accuracy candidate
 
@@ -54,6 +54,69 @@ not send 30 WPM reliably, so a proficient operator must determine whether the
 device and app can reach that speed accurately. No 30 WPM touch acceptance is
 recorded.
 
+## QK4 Mobile v1.0.7: Android device acceptance
+
+On 2026-10-21, the owner confirmed that the changes packaged for v1.0.7 had
+already been tested in all the test builds on the usual Samsung Galaxy S26
+Ultra. This records physical Android phone acceptance for the v1.0.7 behavior
+covered by those builds. The individual test-build identifiers and OS version
+were not supplied, and this confirmation does not establish that the final
+release-signed v1.0.7 APK was tested during those earlier runs. Separately on
+2026-10-21, the release-signed APK built from commit `e03a31ec` (SHA-256
+`7f2f196bc04bebfda4fc0200eb84f4306e9e2f8dc8166ed3f4f38297194e0658`)
+was signature-verified and installed in place on the Samsung Galaxy S26 Ultra
+(Android 17). The device reports version 1.0.7, code 35. No new runtime/radio
+test was performed after that installation. The macOS CI iOS compile passed;
+physical iPhone/iPad acceptance is not recorded.
+
+## Unreleased: compact console on folding Android devices (#21)
+
+The proposed correction checks Android's hinge-angle hardware feature and sensor
+presence before constructing the console. A positive result forces compact mode
+on both the cover and inner displays, regardless of screen diagonal. This is a
+capability check, not a hinge-angle subscription or a model-name list. Devices
+that expose neither signal can use **Settings > Layout > Always use compact
+layout**. That preference saves locally and takes effect after restarting QK4
+Mobile; changing it does not rebuild the live console or affect a radio session.
+
+The existing v1.0.6 tablet heuristic remains for other devices. Earlier statements
+that all Android displays still force compact mode were stale. Automatic
+window-based layout switching is deferred. No CAT, audio, transmit,
+per-module orientation, or iOS device-selection behavior is intentionally changed.
+
+On 2026-10-04, all 17 native suites passed through `test-windows.cmd -Action Test`,
+including synthetic Android layout-policy, preference persistence, and
+settings-page fit checks. Android ARM64 debug APK packaging passed through
+`build-android.cmd -Action Apk`, and the separate **QK4 Mobile Test** package was
+installed on a Samsung Galaxy S26 Ultra. This was not physical Fold acceptance.
+
+On 2026-10-06, a Fold tester reported a repeatable blank cover screen after
+closing the device while QK4 Mobile is connected on the inner display; the
+application remains running and connected. Cold-launch layout selection does not
+establish live display continuity. The PR now rebuilds mini-pan GPU resources
+when Qt replaces its rendering context and requests a fresh window and RHI
+composition on Android activation, exposure, display change, and resize. The
+updated ARM64 separate-test APK packaged successfully, and all 18 native suites
+passed on Windows. Neither check reproduces a physical display transfer.
+
+On 2026-10-16, the owner clarified the Samsung Fold 8 Ultra tester's result:
+starting QK4 Mobile with the Fold closed shows the normal console, opening it
+transitions to the correctly scaled unfolded view, and closing it from that view
+closes the app, which the owner considers the expected behavior. The earlier
+summary incorrectly claimed that closing preserved a visible cover-screen
+session. The tester's confirmation establishes the observed closed-start and
+closed-to-open display behavior and the expected app close on folding shut; it
+does not establish inner-to-cover session continuity. Android/One UI version,
+build identifier, connection/audio state, and number of transition cycles were
+not supplied. Direct launch while unfolded, other module paths, other-phone
+regressions, and tablet acceptance remain pending. The synthetic test sizes are
+not measurements of the reported device.
+
+On 2026-10-20, the owner confirmed that a user physically tested PR #22 and
+reported it passing. This confirmation accepts the Fold behavior described
+above; it does not supply the missing build, OS, or broader device-matrix
+details. Record those separately when available.
+
 ## QK4 Mobile v1.0.6.1: panadapter Average follows the K4
 
 The mobile panadapter's Average control could show a K4 value while its main
@@ -99,8 +162,8 @@ has never tested that device. This documentation update performed no device test
 | Device class / configuration | Recorded evidence | Validation still required |
 |---|---|---|
 | Android phone: Samsung Galaxy S26 Ultra | Existing status entries document landscape radio operation, SSTV portrait/landscape use, FT8/FT4 phone acceptance, and logbook layout checks. | A consolidated orientation run with OS version and exact commit, every logbook entry/exit path, physical sensor turns, keyboard/inset behavior, and background/resume. Historical layout captures alone do not complete this checklist. |
-| Other Android phones, including foldables | No complete orientation acceptance record in this document. | Phone policy, device classification, usable-space changes, and all claimed window configurations on named physical devices. |
-| Android tablet | Production Android uses the compact fallback. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
+| Other Android phones, including foldables | A Samsung Fold 8 Ultra tester reported a repeatable blank cover screen after closing during a live connection on the earlier PR build. On 2026-10-16 the owner clarified that the latest build starts normally while closed, scales correctly when opened, and closes the app when folded shut from the open view; the owner considers that close behavior expected. OS/build and connection/audio details were not supplied. | Direct launch unfolded; connection/audio behavior across the observed transitions; phone policy, device classification, usable-space changes, and claimed window configurations on named physical devices. |
+| Android tablet | v1.0.6 selects regular layout for large screens. PRs #2/#3/#5/#6/#7 report physical Samsung tablet checks on contributor branches; see the [migration inventory](MOBILE_MIGRATION.md). | Consolidate exact model/OS/build and regular/compact results. Reconcile fullscreen reports; verify enabled orientations, phone regressions, and claimed window support. |
 | iPhone | The Android phone requirements also apply to iPhone; no completed iPhone orientation acceptance record here. | Physical iPhone acceptance for all policy rows, with safe areas, keyboard, and app lifecycle checks. |
 | iPad | PR #4 reports an iPad simulator build/launch; no physical iPad acceptance is recorded. | Physical regular/compact layout checks and enabled orientations; separately validate any claimed multitasking/window configurations. |
 
@@ -761,6 +824,32 @@ the compact layout; broader device validation is still required.
   CAT command because it maps the application's local waterfall LUT.
 
 ## Known boundaries / next validation
+
+### CTR2-MIDI on iOS
+
+Branch `feat/ctr2-midi-ios` (ported from QK4-Android's unmerged `fix/ctr2-midi-ios-coremidi`). `Ctr2MidiDevice` previously had a real
+implementation only under `Q_OS_ANDROID`; every other platform fell through to
+a stub that enumerated nothing, so SCAN on iPhone and iPad could never find an
+attached controller. The non-Android branch is now implemented with RtMidi over
+CoreMIDI, and the CTR2 setup page gained a BLUETOOTH button that presents
+Apple's pairing browser, because CoreMIDI does not expose an unpaired BLE MIDI
+peripheral. See `docs/CTR2_MIDI_SCOPE.md` for the transport boundary.
+
+Validated over USB on both an iPhone 17 Pro and an iPad Pro 13-inch (M5): the
+controller is discovered, connects, and the tuning knob tracks proportionally.
+
+Validated over Bluetooth LE on the iPad: pairing through the CoreAudioKit
+browser succeeds, the pairing sheet is usable on iPad, the selector then lists
+the controller as `CTR2_C0F8 (BLE)`, and the transport label is correct.
+
+Still to validate:
+
+- Bluetooth LE on iPhone. The code path is identical to the iPad one that was
+  validated, but it has not been run there.
+- A controller reachable over USB and BLE at the same time produces two
+  distinct selector entries rather than one displacing the other.
+- Desktop builds now compile the same non-Android branch, which was previously
+  a stub. No desktop CTR2 testing has been done.
 
 ### Next-build enhancements
 

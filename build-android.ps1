@@ -247,7 +247,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($TestApp) {
-    # Reuse the native library with a separate package identity and data directory.
+    # Reuse the tested native library with a separate package identity and
+    # private data directory. Never replace the operator's published app.
     $testSource = Join-Path $buildDir "android-test-source"
     New-Item -ItemType Directory -Force -Path $testSource | Out-Null
     Copy-Item -Path (Join-Path $projectDir "android\*") -Destination $testSource -Recurse -Force
@@ -349,7 +350,8 @@ if ($Action -eq "Install") {
     }
     $adbArgs += @("install", "-r")
     if ($TestApp) {
-        # Debug test builds may have a lower version code than a previous test.
+        # Branch test builds can have lower codes than a previous test build.
+        # Android permits this for debuggable packages; retain existing data.
         $adbArgs += "-d"
     }
     $adbArgs += $apk.FullName

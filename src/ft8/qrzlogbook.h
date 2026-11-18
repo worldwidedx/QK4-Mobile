@@ -10,13 +10,13 @@ struct QrzKeyStore {
     std::function<QString(QString *)> read;
     std::function<bool(const QString &, QString *)> write;
     std::function<bool(QString *)> clear;
-    static QrzKeyStore android();
+    static QrzKeyStore platform();
 };
 class QrzLogbook : public QObject {
     Q_OBJECT
 public:
     explicit QrzLogbook(const QString &path, QObject *parent = nullptr,
-                        QNetworkAccessManager *network = nullptr, QrzKeyStore keys = QrzKeyStore::android());
+                        QNetworkAccessManager *network = nullptr, QrzKeyStore keys = QrzKeyStore::platform());
     static QrzLogbook *instance();
     static void start(const QString &path, QObject *parent);
     QString callsign() const { return m_call; }

@@ -1,4 +1,5 @@
 #include "ft8screen.h"
+#include "touchtextedit.h"
 #include "logbookdialog.h"
 #include "ft8/ft8transmitter.h"
 #include "ft8waterfall.h"
@@ -155,6 +156,7 @@ void touchScroll(QAbstractScrollArea *area) {
     p.setScrollMetric(QScrollerProperties::MousePressEventDelay, 0.25);
     p.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
     scroller->setScrollerProperties(p);
+    TouchTextEdit::enableNativeEditMenu(area);
     QObject::connect(scroller, &QScroller::stateChanged, area, [area](QScroller::State s) {
         if (s == QScroller::Dragging || s == QScroller::Scrolling) {
             area->setProperty("ft8Dragging", true);

@@ -91,18 +91,25 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
     if (message.size() < 3)
         return;
 
-    unsigned char status = message[0] & 0xF0; // Strip channel nibble
+    const unsigned char rawStatus = message[0];
+    unsigned char status = rawStatus & 0xF0; // Strip channel nibble
     unsigned char note = message[1];
     unsigned char velocity = message[2];
 
-    bool pressed = false;
-    if (status == 0x90 && velocity > 0) {
-        pressed = true; // Note On
-    } else if (status == 0x80 || (status == 0x90 && velocity == 0)) {
-        pressed = false; // Note Off
-    } else {
+    if (status != 0x80 && status != 0x90 && status != 0xB0)
+        return;
+    const bool pressed = (status == 0x90 || status == 0xB0) && velocity > 0;
+    emit rawMidiMessage(rawStatus, note, velocity, pressed);
+
+#ifdef Q_OS_IOS
+    // iOS applies the selected MIDI profile (TinyMIDI / HaliKey / custom learn)
+    // in HalikeyDevice, as Android does, so the CW Keyer page's profile controls
+    // take effect. Desktop keeps the fixed HaliKey note map below.
+    Q_UNUSED(deltaTime)
+    return;
+#else
+    if (status == 0xB0)
         return; // Not a note event
-    }
 
     switch (note) {
     case NOTE_LEFT_PADDLE:
@@ -114,4 +121,5 @@ void HaliKeyMidiWorker::handleMidiMessage(double deltaTime, const std::vector<un
     default:
         break; // Ignore PTT (Note 31), straight key (Note 30), and unknown notes
     }
+#endif
 }

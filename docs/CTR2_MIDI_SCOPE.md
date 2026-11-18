@@ -29,7 +29,22 @@ works instead of reducing every encoder report to one tuning step.
 ## Discovery and persistence
 
 - Add a built-in CTR2-MIDI profile.
-- Discover CTR2-MIDI over both Bluetooth LE MIDI and USB MIDI.
+- Discover CTR2-MIDI over both Bluetooth LE MIDI and USB MIDI on Android and
+  iOS. The two platforms reach BLE differently. Android scans for the
+  peripheral directly. iOS cannot: CoreMIDI does not expose an unpaired BLE
+  MIDI peripheral, so the CTR2 setup page offers a BLUETOOTH button that
+  presents Apple's standard browser (`CABTMIDICentralViewController` from
+  CoreAudioKit, with `NSBluetoothAlwaysUsageDescription` in the iOS
+  Info.plist). Once paired, iOS publishes the peripheral as an ordinary
+  CoreMIDI source and the normal RtMidi enumeration finds it, so nothing
+  downstream of discovery differs between transports.
+- Desktop builds remain USB MIDI only; they have no pairing browser.
+- Over USB the controller reports only its module identity, seen on iOS as
+  `XIO_ESP32S3`, because that is what the firmware publishes. The setup page
+  adds CTR2 branding for display and appends the transport (`USB`, `BLE`,
+  `Network`) when the CoreMIDI driver identifies it, leaving an entry
+  unlabeled rather than guessing. Over BLE the advertised name already
+  carries the branding, for example `CTR2_C0F8`.
 - Recognize normal CTR2 BLE names such as `CTR2_####` and accommodate the USB
   ESP32-S3/XIAO identity exposed by Android.
 - Remember the selected transport and physical-device identity.

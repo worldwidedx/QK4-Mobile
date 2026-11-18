@@ -64,6 +64,10 @@ public:
     int lastSelectedIndex() const;
     void setLastSelectedIndex(int index);
 
+    // Local presentation preference, applied at the next application launch.
+    bool alwaysCompactLayout() const;
+    void setAlwaysCompactLayout(bool enabled);
+
     bool kpodEnabled() const;
     void setKpodEnabled(bool enabled);
 

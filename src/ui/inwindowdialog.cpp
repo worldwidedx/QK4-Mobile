@@ -2,6 +2,8 @@
 
 #include "k4styles.h"
 
+#include <QAccessible>
+#include <QAbstractButton>
 #include <QApplication>
 #include <QEventLoop>
 #include <QEvent>
@@ -14,6 +16,21 @@
 #include <QPointer>
 #include <QVBoxLayout>
 #include <QWindow>
+
+// Qt 6.11.1 sends the accessibility "destroyed" event from ~QWidget, after
+// ~QAbstractButton has already run. The iOS bridge answers it by calling
+// QAccessibleButton::role(), which reads the dead button's private data and
+// crashes (SIGSEGV at 0x8) once an assistive client has touched the button.
+// Dropping a button's cached interface first means no event is sent for it.
+InWindowDialog::~InWindowDialog() {
+    if (!QAccessible::isActive())
+        return;
+    const auto buttons = findChildren<QAbstractButton *>();
+    for (QAbstractButton *button : buttons) {
+        if (QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(button))
+            QAccessible::deleteAccessibleInterface(QAccessible::uniqueId(iface));
+    }
+}
 
 InWindowDialog::InWindowDialog(QWidget *parent)
     : QWidget(parent) {
@@ -59,7 +76,13 @@ int InWindowDialog::exec() {
     fitToParent();
     m_result = Rejected;
     m_backHidKeyboard = false;
-    const QPointer<QWidget> previousFocus = QApplication::focusWidget();
+    // QApplication::focusWidget() is null while the window is not the active
+    // window (headless runners, a window still activating), which would lose
+    // the invoker. The window's own focus widget survives that.
+    QWidget *focused = QApplication::focusWidget();
+    if (!focused)
+        focused = parentWidget()->window()->focusWidget();
+    const QPointer<QWidget> previousFocus = focused;
     show();
     raise();
     setFocus(Qt::OtherFocusReason);

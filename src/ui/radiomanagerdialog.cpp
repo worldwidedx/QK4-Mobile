@@ -1,4 +1,5 @@
 #include "radiomanagerdialog.h"
+#include "touchtextedit.h"
 #include "inwindowdialog.h"
 #include "overlaybackhandler.h"
 #include "k4styles.h"
@@ -113,7 +114,7 @@ protected:
         }
         const int initial = qBound(0, currentIndex(), count() - 1);
         list->setCurrentRow(initial);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         list->viewport()->setAttribute(Qt::WA_AcceptTouchEvents);
         QScroller::grabGesture(list->viewport(), QScroller::TouchGesture);
 #endif
@@ -197,15 +198,26 @@ void RadioManagerDialog::setupUi() {
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scrollArea->setStyleSheet(QString("QScrollArea { background-color: %1; border: none; }").arg(K4Styles::Colors::Background));
     scrollArea->viewport()->setAutoFillBackground(true);
-    scrollArea->viewport()->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    // Scoped by object name: an unscoped rule would also be inherited by the
+    // text fields' edit menus and turn them dark.
+    scrollArea->viewport()->setObjectName("radioManagerViewport");
+    scrollArea->viewport()->setStyleSheet(
+        QString("#radioManagerViewport { background-color: %1; }").arg(K4Styles::Colors::Background));
     dialogLayout->addWidget(scrollArea);
 
     auto *contentWidget = new QWidget(scrollArea);
     contentWidget->setObjectName("radioManagerContent");
-    contentWidget->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+    contentWidget->setStyleSheet(
+        QString("#radioManagerContent { background-color: %1; }").arg(K4Styles::Colors::Background));
     scrollArea->setWidget(contentWidget);
     if (compact) {
+#ifndef Q_OS_IOS
         contentWidget->setMinimumWidth(qMax(300, width() - 20));
+#endif
+        // iOS: availableGeometry() is the whole screen, but this overlay sits in
+        // the safe-area central widget (iPhone landscape: 874pt screen, 750pt
+        // safe). A width taken from the screen pushed CLOSE off the right edge,
+        // so let the resizable scroll area track the real viewport instead.
         contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     }
 
@@ -299,7 +311,12 @@ void RadioManagerDialog::setupUi() {
                                     "  padding: %2px; "
                                     "  min-width: %3px; "
                                     "} "
-                                    "QLineEdit::placeholder { color: #6A6A6A; }")
+                                    "QLineEdit::placeholder { color: #6A6A6A; } "
+                                    // MainWindow's central widget has an unscoped background rule
+                                    // that the edit menu inherits; restore a light, readable menu.
+                                    "QMenu { background-color: #F4F4F4; color: #111111; } "
+                                    "QMenu::item:selected { background-color: #CFE8F5; color: #111111; } "
+                                    "QMenu::item:disabled { color: #8A8A8A; }")
                                 .arg(K4Styles::Colors::DialogBorder)
                                 .arg(K4Styles::Dimensions::PaddingSmall)
                                 .arg(lineEditMinWidth);
@@ -508,6 +525,8 @@ void RadioManagerDialog::setupUi() {
             properties.setScrollMetric(QScrollerProperties::DragStartDistance, 0.0015);
             scroller->setScrollerProperties(properties);
         }
+        // Keep iOS's native edit menu working for the text fields (#34).
+        TouchTextEdit::enableNativeEditMenu(scrollArea);
     }
 
     // Connections

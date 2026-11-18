@@ -46,6 +46,7 @@ private:
     void populateMidiDevices();
     void updateConnectionStatus();
     void scanMidiDevices();
+    void showBluetoothPairing();
     void toggleConnection();
     void updateButtonBinding(ButtonRow *row);
     void setDirty(bool dirty = true);
@@ -69,6 +70,7 @@ private:
     QLabel *m_connectionStatus = nullptr;
     QComboBox *m_deviceSelector = nullptr;
     QPushButton *m_scanButton = nullptr;
+    QPushButton *m_bluetoothButton = nullptr;
     QPushButton *m_connectButton = nullptr;
     QLineEdit *m_nameEdit = nullptr;
     QCheckBox *m_cwEnabled = nullptr;

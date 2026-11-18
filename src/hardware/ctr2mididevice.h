@@ -13,6 +13,12 @@ class QThread;
 class AndroidCtr2MidiPump;
 #endif
 
+#ifndef Q_OS_ANDROID
+#include <memory>
+#include <vector>
+class RtMidiIn;
+#endif
+
 // Raw MIDI connection dedicated to the CTR2-MIDI setup role. The proven CW
 // HalikeyDevice remains independent and continues to own Android MIDI session
 // zero; this class owns session one.
@@ -50,6 +56,12 @@ private:
     void deliverMidiEvent(int event);
     void configurePump();
     AndroidCtr2MidiPump *m_androidPump = nullptr;
+#else
+    static void midiCallback(double deltaTime, std::vector<unsigned char> *message, void *userData);
+    void handleMidiMessage(const std::vector<unsigned char> &message);
+
+    std::unique_ptr<RtMidiIn> m_midiIn;
+    QString m_statusMessage;
 #endif
     MidiMapping::DeviceMapping m_mapping;
     QString m_portName;
