@@ -256,6 +256,9 @@ if ($TestApp) {
     $manifest = Get-Content -LiteralPath $manifestPath -Raw
     $manifest = $manifest.Replace('package="com.w9wdx.qk4phone"', 'package="com.w9wdx.qk4phone.test"')
     $manifest = $manifest.Replace('android:label="QK4 Mobile"', 'android:label="QK4 Mobile Test"')
+    if ($manifest -notmatch 'package="com\.w9wdx\.qk4phone\.test"') {
+        throw "Test app package identity was not set in the Android manifest."
+    }
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($manifestPath, $manifest, $utf8NoBom)
     $testDeployment = Get-Content -LiteralPath $deploymentSettings -Raw | ConvertFrom-Json

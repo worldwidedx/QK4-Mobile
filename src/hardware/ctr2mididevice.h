@@ -5,6 +5,13 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include "midimapping.h"
+
+class IambicKeyer;
+class QThread;
+#ifdef Q_OS_ANDROID
+class AndroidCtr2MidiPump;
+#endif
 
 #ifndef Q_OS_ANDROID
 #include <memory>
@@ -30,6 +37,12 @@ public:
 
     static QStringList availableMidiDevices();
     static void startMidiScan();
+    void setMapping(const MidiMapping::DeviceMapping &mapping);
+    bool isPaddleEvent(int status, int data1) const;
+#ifdef Q_OS_ANDROID
+    void attachKeyer(IambicKeyer *keyer, QThread *keyerThread);
+    void detachKeyer();
+#endif
 
 signals:
     void connected();
@@ -38,17 +51,22 @@ signals:
     void rawMidiEvent(int status, int data1, int data2);
 
 private:
-#ifndef Q_OS_ANDROID
+#ifdef Q_OS_ANDROID
+    friend class AndroidCtr2MidiPump;
+    void deliverMidiEvent(int event);
+    void configurePump();
+    AndroidCtr2MidiPump *m_androidPump = nullptr;
+#else
     static void midiCallback(double deltaTime, std::vector<unsigned char> *message, void *userData);
     void handleMidiMessage(const std::vector<unsigned char> &message);
 
     std::unique_ptr<RtMidiIn> m_midiIn;
     QString m_statusMessage;
 #endif
+    MidiMapping::DeviceMapping m_mapping;
     QString m_portName;
     bool m_connected = false;
     int m_androidConnectionState = 0;
-    QTimer *m_eventPollTimer = nullptr;
     QTimer *m_connectionPollTimer = nullptr;
     static constexpr int AndroidSession = 1;
 };

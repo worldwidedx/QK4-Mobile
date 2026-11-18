@@ -100,6 +100,8 @@ On first installation the test app starts with its own settings and requires
 its own radio profile. Updates retain existing test-app data. The test-only
 install permits a lower version code so earlier branch builds can replace
 later experiments without uninstalling the app.
+To build the APK without installing it, use
+`.\build-android.cmd -Action Apk -TestApp`.
 
 ## One-time migration from the former Android package
 
