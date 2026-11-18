@@ -1,9 +1,8 @@
 #include "inwindowdialog.h"
 
+#include "accessibilityteardown.h"
 #include "k4styles.h"
 
-#include <QAccessible>
-#include <QAbstractButton>
 #include <QApplication>
 #include <QEventLoop>
 #include <QEvent>
@@ -17,19 +16,10 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
-// Qt 6.11.1 sends the accessibility "destroyed" event from ~QWidget, after
-// ~QAbstractButton has already run. The iOS bridge answers it by calling
-// QAccessibleButton::role(), which reads the dead button's private data and
-// crashes (SIGSEGV at 0x8) once an assistive client has touched the button.
-// Dropping a button's cached interface first means no event is sent for it.
+// See accessibilityteardown.h: avoids the Qt 6.11.1 iOS accessibility crash
+// when the dialog's buttons are destroyed.
 InWindowDialog::~InWindowDialog() {
-    if (!QAccessible::isActive())
-        return;
-    const auto buttons = findChildren<QAbstractButton *>();
-    for (QAbstractButton *button : buttons) {
-        if (QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(button))
-            QAccessible::deleteAccessibleInterface(QAccessible::uniqueId(iface));
-    }
+    releaseAccessibilityInterfaces(this);
 }
 
 InWindowDialog::InWindowDialog(QWidget *parent)
