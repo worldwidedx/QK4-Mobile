@@ -432,10 +432,6 @@ private:
     // again drives the phone renderer and popup.
     int m_phoneWaterfallHeight = 50;
     bool m_phoneWaterfallHeightAdjusted = false;
-    float m_autoRefLevelA = 0.0f;
-    float m_autoRefLevelB = 0.0f;
-    bool m_autoRefLevelAValid = false;
-    bool m_autoRefLevelBValid = false;
     int m_currentBandNum = -1;  // Current band number for VFO A (BN command)
     int m_currentBandNumB = -1; // Current band number for VFO B (BN$ command)
 

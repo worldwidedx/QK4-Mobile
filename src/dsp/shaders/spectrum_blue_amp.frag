@@ -72,12 +72,9 @@ void main() {
     // Add glow (additive blending for bright halo effect)
     finalColor += glowColor.rgb * glow;
 
-    // Alpha: fill alpha where filled, glow alpha where glowing
-    float finalAlpha = max(0.9 * fillMask, glow * glowColor.a);
-
-    // Bottom fade - gentle transition at noise floor
+    // Fade the fill near the bottom without hiding the measured trace edge.
     float bottomFade = 1.0 - smoothstep(0.88, 0.98, currentY);
-    finalAlpha *= max(bottomFade, 0.1);
+    float finalAlpha = max(0.9 * fillMask * max(bottomFade, 0.1), glow * glowColor.a);
 
     // Clamp to prevent over-saturation
     finalColor = clamp(finalColor, 0.0, 1.0);

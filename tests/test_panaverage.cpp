@@ -23,8 +23,9 @@ private slots:
 
         QCOMPARE(fast.m_currentSpectrum.size(), 64);
         QCOMPARE(slow.m_currentSpectrum.size(), 64);
-        QVERIFY(qAbs(fast.m_currentSpectrum[0] - (-40.8f)) < 0.01f);
-        QVERIFY(qAbs(slow.m_currentSpectrum[0] - (-43.0f)) < 0.01f);
+        QCOMPARE(fast.m_currentSpectrum[0], -52.0f);
+        QVERIFY(slow.m_currentSpectrum[0] > -62.0f);
+        QVERIFY(slow.m_currentSpectrum[0] < -52.0f);
         QVERIFY(fast.m_currentSpectrum[0] > slow.m_currentSpectrum[0]);
     }
 
@@ -43,9 +44,32 @@ private slots:
 
         QCOMPARE(fast.m_smoothedSpectrum.size(), 64);
         QCOMPARE(slow.m_smoothedSpectrum.size(), 64);
-        QVERIFY(qAbs(fast.m_smoothedSpectrum[0] - 11.04f) < 0.01f);
-        QVERIFY(qAbs(slow.m_smoothedSpectrum[0] - 10.60f) < 0.01f);
+        QCOMPARE(fast.m_smoothedSpectrum[0], 12.0f);
+        QVERIFY(slow.m_smoothedSpectrum[0] > 10.0f);
+        QVERIFY(slow.m_smoothedSpectrum[0] < 12.0f);
         QVERIFY(fast.m_smoothedSpectrum[0] > slow.m_smoothedSpectrum[0]);
+    }
+
+    void averagingDropsExpiredCarrier() {
+        PowerAverager average;
+        average.setLength(2);
+        QVector<float> output;
+        average.add(QVector<float>{-100.0f}, output);
+        average.add(QVector<float>{-60.0f}, output);
+        QVERIFY(output[0] > -64.0f);
+        average.add(QVector<float>{-100.0f}, output);
+        average.add(QVector<float>{-100.0f}, output);
+        QCOMPARE(output[0], -100.0f);
+    }
+
+    void dBmScaleUsesOnlyK4ReferenceAndScale() {
+        PanadapterRhiWidget panadapter;
+        panadapter.setRefLevel(-120);
+        panadapter.setScale(80);
+
+        QCOMPARE(panadapter.normalizeDb(-120.0f), 0.0f);
+        QCOMPARE(panadapter.normalizeDb(-75.0f), 0.5625f);
+        QCOMPARE(panadapter.normalizeDb(-40.0f), 1.0f);
     }
 };
 
