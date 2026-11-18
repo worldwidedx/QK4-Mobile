@@ -33,6 +33,18 @@ The CW candidate did not change TCP/TLS, authentication, or radio-profile code.
 Preserve the reported 30 WPM HaliKey result when changing the shared keyer:
 recheck the same setup at 30 WPM before accepting further timing changes.
 
+On 2026-11-17, the PR branch incorporated current `main`, including its CTR2
+desktop/iOS MIDI support and existing Test app packaging. The timestamped keyer
+is now Android-only; desktop and iOS retain their previous paddle latch.
+Android pending MIDI edges are retained until their element boundary is
+processed, covering delayed batches within Java's 10-second timestamp window.
+Focused native tests for the Android path, a six-second delayed batch, and the
+legacy desktop/iOS behavior passed. The Android ARM64 Test APK packaged
+successfully (SHA-256
+`12d5ddd8125f56261e1f2c30c9135e947ee55098d00faadef5384f5915709256`);
+it was not installed. The current merged build still needs CI and physical
+HaliKey 30 WPM regression validation. TinyMIDI touch control remains in PR #27.
+
 On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
 passed. The Java stream-parser test previously passed, and the current Android
 ARM64 test APK packaged successfully. These checks use synthetic inputs;

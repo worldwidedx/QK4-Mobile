@@ -3,13 +3,17 @@
 
 #include <QObject>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <atomic>
 #include <deque>
 #include <mutex>
 
-// Element-timed iambic A/B keyer adapted from current upstream QK4. Physical
-// paddle edges are atomic so brief opposite-paddle taps survive until the next
-// legal element boundary.
+// Android uses timestamped MIDI history; other platforms retain the
+// upstream-derived physical-paddle latch until they have device validation.
+#if defined(Q_OS_ANDROID) || defined(QK4_TEST_ANDROID_KEYER)
+#define QK4_TIMESTAMPED_ANDROID_KEYER
+#endif
+
 class IambicKeyer : public QObject {
     Q_OBJECT
 public:
@@ -21,16 +25,20 @@ public:
     Q_INVOKABLE void setMode(Mode mode);
     Q_INVOKABLE void setReversed(bool reversed);
     Q_INVOKABLE void setSpeed(int wpm);
+#ifdef QK4_TIMESTAMPED_ANDROID_KEYER
     Q_INVOKABLE void setMidiTouchLookahead(int milliseconds);
+#endif
     Q_INVOKABLE void stop();
     void setDitPaddle(bool pressed);
     void setDahPaddle(bool pressed);
+#ifdef QK4_TIMESTAMPED_ANDROID_KEYER
     // Session 0 Android MIDI edges arrive on the keyer thread. Their source
     // time is retained so a late batch cannot change an earlier boundary.
     void setMidiDitPaddle(bool pressed, qint64 eventTimeNs);
     void setMidiDahPaddle(bool pressed, qint64 eventTimeNs);
     void setCtr2DitPaddle(bool pressed, qint64 eventTimeNs);
     void setCtr2DahPaddle(bool pressed, qint64 eventTimeNs);
+#endif
 
 signals:
     void elementStarted(bool isDit);
@@ -40,8 +48,8 @@ signals:
 private:
     enum State { Idle, PlayingDit, PlayingDah };
     void handlePaddleChange();
+#ifdef QK4_TIMESTAMPED_ANDROID_KEYER
     void enterElement(bool isDit, qint64 idlePressNs = 0);
-    void onTimerFired();
     void goIdle(qint64 boundaryNs);
     void setPaddle(bool dit, unsigned sourceBit, bool pressed, qint64 eventTimeNs);
     struct PaddleEdge { qint64 timeNs; bool dit; bool pressed; unsigned sourceBit; };
@@ -50,7 +58,15 @@ private:
     PaddleSnapshot stateAt(qint64 boundaryNs) const;
     PendingPress nextPressAfter(qint64 boundaryNs) const;
     bool releasedBetween(bool dit, qint64 afterNs, qint64 throughNs) const;
+    void pruneThrough(qint64 boundaryNs);
     static qint64 nowNs();
+#else
+    void enterElement(bool isDit);
+    void goIdle();
+    bool ditDown() const;
+    bool dahDown() const;
+#endif
+    void onTimerFired();
 
     QTimer *m_elementTimer = nullptr;
     State m_state = Idle;
@@ -58,6 +74,7 @@ private:
     bool m_reversed = false;
     bool m_enabled = true;
     int m_ditMs = 60;
+#ifdef QK4_TIMESTAMPED_ANDROID_KEYER
     int m_midiTouchLookaheadMs = 0;
     bool m_touchAssistedElement = false;
     qint64 m_nextDeadlineNs = 0;
@@ -69,8 +86,19 @@ private:
     std::atomic<unsigned> m_dahSources{0};
     mutable std::mutex m_edgesMutex;
     std::deque<PaddleEdge> m_edges;
+    qint64 m_processedThroughNs = 0; // Guarded by m_edgesMutex.
     bool m_historyBaseDit = false;
     bool m_historyBaseDah = false;
+#else
+    QElapsedTimer m_clock;
+    QElapsedTimer m_idleSince;
+    qint64 m_nextDeadlineNs = 0;
+    bool m_squeezed = false;
+    std::atomic<bool> m_physDit{false};
+    std::atomic<bool> m_physDah{false};
+    std::atomic<bool> m_ditLatch{false};
+    std::atomic<bool> m_dahLatch{false};
+#endif
 };
 
 #endif

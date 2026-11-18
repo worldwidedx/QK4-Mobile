@@ -1,5 +1,6 @@
 #include "iambickeyer.h"
 
+#ifdef QK4_TIMESTAMPED_ANDROID_KEYER
 #include <QThread>
 #include <algorithm>
 #include <chrono>
@@ -85,18 +86,14 @@ void IambicKeyer::setPaddle(bool dit, unsigned sourceBit, bool pressed,
 
     {
         std::lock_guard<std::mutex> lock(m_edgesMutex);
-        if (!m_edges.empty() && eventTimeNs < m_edges.front().timeNs)
-            eventTimeNs = m_edges.front().timeNs;
+        // Preserve out-of-order timestamps among pending edges. Only move an
+        // edge forward if its original boundary has already been processed.
+        if (eventTimeNs <= m_processedThroughNs)
+            eventTimeNs = m_processedThroughNs + 1;
         const PaddleEdge edge{eventTimeNs, dit, pressed, sourceBit};
         const auto position = std::upper_bound(m_edges.begin(), m_edges.end(), eventTimeNs,
                 [](qint64 time, const PaddleEdge &item) { return time < item.timeNs; });
         m_edges.insert(position, edge);
-        while (m_edges.size() > 256 || (!m_edges.empty()
-                && m_edges.front().timeNs < now - 5LL * 1000000000)) {
-            const PaddleEdge oldest = m_edges.front();
-            (oldest.dit ? m_historyBaseDit : m_historyBaseDah) = oldest.pressed;
-            m_edges.pop_front();
-        }
     }
     if (QThread::currentThread() == thread())
         handlePaddleChange();
@@ -148,6 +145,19 @@ bool IambicKeyer::releasedBetween(bool dit, qint64 afterNs, qint64 throughNs) co
             return true;
     }
     return false;
+}
+
+void IambicKeyer::pruneThrough(qint64 boundaryNs) {
+    std::lock_guard<std::mutex> lock(m_edgesMutex);
+    // Java accepts MIDI timestamps up to 10 seconds old. An arrival-age or
+    // fixed-count limit here could discard an edge before delayed playback
+    // reaches its boundary, so retire only history already evaluated.
+    while (!m_edges.empty() && m_edges.front().timeNs <= boundaryNs) {
+        const PaddleEdge oldest = m_edges.front();
+        (oldest.dit ? m_historyBaseDit : m_historyBaseDah) = oldest.pressed;
+        m_edges.pop_front();
+    }
+    m_processedThroughNs = std::max(m_processedThroughNs, boundaryNs);
 }
 
 void IambicKeyer::handlePaddleChange() {
@@ -244,6 +254,7 @@ void IambicKeyer::onTimerFired() {
     } else {
         goIdle(boundary);
     }
+    pruneThrough(boundary);
 }
 
 void IambicKeyer::goIdle(qint64 boundaryNs) {
@@ -276,6 +287,154 @@ void IambicKeyer::stop() {
     m_touchAssistedElement = false;
     std::lock_guard<std::mutex> lock(m_edgesMutex);
     m_edges.clear();
+    m_processedThroughNs = 0;
     m_historyBaseDit = false;
     m_historyBaseDah = false;
 }
+
+#else
+IambicKeyer::IambicKeyer(QObject *parent) : QObject(parent) {
+    m_elementTimer = new QTimer(this);
+    m_elementTimer->setSingleShot(true);
+    m_elementTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_elementTimer, &QTimer::timeout, this, &IambicKeyer::onTimerFired);
+    m_clock.start();
+}
+
+void IambicKeyer::setEnabled(bool enabled) {
+    m_enabled = enabled;
+    if (!enabled)
+        stop();
+}
+
+void IambicKeyer::setMode(Mode mode) { m_mode = mode; }
+void IambicKeyer::setReversed(bool reversed) { m_reversed = reversed; }
+void IambicKeyer::setSpeed(int wpm) {
+    if (wpm > 0)
+        m_ditMs = 1200 / wpm;
+}
+
+void IambicKeyer::setDitPaddle(bool pressed) {
+    m_physDit.store(pressed, std::memory_order_release);
+    if (pressed)
+        m_ditLatch.store(true, std::memory_order_release);
+    QMetaObject::invokeMethod(this, &IambicKeyer::handlePaddleChange, Qt::QueuedConnection);
+}
+
+void IambicKeyer::setDahPaddle(bool pressed) {
+    m_physDah.store(pressed, std::memory_order_release);
+    if (pressed)
+        m_dahLatch.store(true, std::memory_order_release);
+    QMetaObject::invokeMethod(this, &IambicKeyer::handlePaddleChange, Qt::QueuedConnection);
+}
+
+bool IambicKeyer::ditDown() const {
+    const bool dit = m_physDit.load(std::memory_order_acquire);
+    const bool dah = m_physDah.load(std::memory_order_acquire);
+    return m_reversed ? dah : dit;
+}
+
+bool IambicKeyer::dahDown() const {
+    const bool dit = m_physDit.load(std::memory_order_acquire);
+    const bool dah = m_physDah.load(std::memory_order_acquire);
+    return m_reversed ? dit : dah;
+}
+
+void IambicKeyer::handlePaddleChange() {
+    if (!m_enabled)
+        return;
+    const bool dit = ditDown() || (m_reversed ? m_dahLatch.load() : m_ditLatch.load());
+    const bool dah = dahDown() || (m_reversed ? m_ditLatch.load() : m_dahLatch.load());
+    if (m_state != Idle && dit && dah)
+        m_squeezed = true;
+    if (m_state == Idle) {
+        if (dit && !dah)
+            enterElement(true);
+        else if (dah && !dit)
+            enterElement(false);
+        else if (dit && dah)
+            enterElement(true);
+    }
+}
+
+void IambicKeyer::enterElement(bool isDit) {
+    const bool fromIdle = m_state == Idle;
+    if (fromIdle && m_idleSince.isValid()) {
+        const int elapsed = static_cast<int>(m_idleSince.elapsed());
+        if (elapsed <= 2000)
+            emit restartAfterPause(elapsed);
+    }
+    m_state = isDit ? PlayingDit : PlayingDah;
+    m_squeezed = false;
+    if (isDit != m_reversed)
+        m_ditLatch.store(false, std::memory_order_release);
+    else
+        m_dahLatch.store(false, std::memory_order_release);
+    if (ditDown() && dahDown())
+        m_squeezed = true;
+
+    const int intervalMs = isDit ? m_ditMs * 2 : m_ditMs * 4;
+    const qint64 now = m_clock.nsecsElapsed();
+    const qint64 intervalNs = qint64(intervalMs) * 1000000;
+    m_nextDeadlineNs = fromIdle ? now + intervalNs : m_nextDeadlineNs + intervalNs;
+    qint64 remaining = m_nextDeadlineNs - now;
+    if (remaining < 0) {
+        m_nextDeadlineNs = now;
+        remaining = 0;
+    }
+    m_elementTimer->start(static_cast<int>((remaining + 500000) / 1000000));
+    emit elementStarted(isDit);
+}
+
+void IambicKeyer::onTimerFired() {
+    const bool liveDit = ditDown();
+    const bool liveDah = dahDown();
+    const bool latchDit = m_reversed ? m_dahLatch.load() : m_ditLatch.load();
+    const bool latchDah = m_reversed ? m_ditLatch.load() : m_dahLatch.load();
+    const bool dit = liveDit || latchDit;
+    const bool dah = liveDah || latchDah;
+    const bool wasDit = m_state == PlayingDit;
+
+    if (m_squeezed && !liveDit && !liveDah) {
+        if (m_mode == IambicB)
+            enterElement(!wasDit);
+        else
+            goIdle();
+    } else if (dit && dah) {
+        enterElement(!wasDit);
+    } else if (wasDit && dah) {
+        enterElement(false);
+    } else if (!wasDit && dit) {
+        enterElement(true);
+    } else if (wasDit && dit) {
+        enterElement(true);
+    } else if (!wasDit && dah) {
+        enterElement(false);
+    } else if (m_squeezed && m_mode == IambicB) {
+        enterElement(!wasDit);
+    } else {
+        goIdle();
+    }
+}
+
+void IambicKeyer::goIdle() {
+    m_state = Idle;
+    m_elementTimer->stop();
+    m_squeezed = false;
+    m_ditLatch.store(false);
+    m_dahLatch.store(false);
+    m_idleSince.start();
+    emit characterSpace();
+}
+
+void IambicKeyer::stop() {
+    m_state = Idle;
+    m_elementTimer->stop();
+    m_squeezed = false;
+    m_physDit.store(false);
+    m_physDah.store(false);
+    m_ditLatch.store(false);
+    m_dahLatch.store(false);
+}
+
+#endif

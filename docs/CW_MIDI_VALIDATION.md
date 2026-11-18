@@ -24,7 +24,11 @@ rely on; note numbers 20/21 alone do not establish it.
   history and evaluates it at scheduled element boundaries, including when
   several edges arrive together after a delay. Old batches are replayed at
   legal element speed with character gaps. A missed timer deadline cannot arm
-  an immediate extra element.
+  an immediate extra element. Pending edges are retained until their boundary
+  is processed; an event within Java's 10-second timestamp window must not be
+  silently dropped by the keyer's old 5-second/256-edge trim.
+- The timestamped keyer is compiled for Android only. Desktop and iOS retain
+  their established upstream-derived paddle latch pending separate validation.
 - Optional raw callback logging records the entire MIDI byte sequence before
   QK4 filters messages. It is for device characterization, not a timing source
   used by the keyer.
@@ -44,10 +48,20 @@ before the element boundary; only an opposite-paddle press is remembered.
 This later correction still needs the HaliKey operator's validation. Preserve
 the reported 30 WPM behavior when changing shared keyer timing and recheck it
 on the same device and Android setup before accepting further changes.
+Keep TinyMIDI touch control in this PR; its profile-gated lookahead is OFF for
+HaliKey. The edge-retention correction does not alter ordinary 30 WPM timing,
+but the merged build still needs physical HaliKey confirmation.
 
 The operator later withdrew the report that the K4 did not key after realizing
 the rig was in TEST mode. The owner subsequently checked ports 9204 and 9205
 and reports that both work; the earlier 9204 failure was not reproduced.
+
+On 2026-11-17, focused native tests passed for the Android timestamped keyer,
+including a six-second-old MIDI batch, and for the retained desktop/iOS latch.
+The merged Android ARM64 Test APK packaged successfully (SHA-256
+`12d5ddd8125f56261e1f2c30c9135e947ee55098d00faadef5384f5915709256`).
+It was not installed or physically tested. Full regression checks belong to CI
+on the updated PR head.
 
 ## TinyMIDI built-in touch capture (2026-10-17)
 

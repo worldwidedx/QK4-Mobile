@@ -153,7 +153,9 @@ private slots:
         keyer.setSpeed(30);
         QSignalSpy elements(&keyer, &IambicKeyer::elementStarted);
         QSignalSpy spaces(&keyer, &IambicKeyer::characterSpace);
-        const qint64 firstPress = monotonicNs() - 600'000'000;
+        // A delayed batch within Java's 10-second accepted age must remain
+        // available until the keyer replays every intended element.
+        const qint64 firstPress = monotonicNs() - 6'000'000'000LL;
         for (int i = 0; i < 3; ++i) {
             keyer.setMidiDitPaddle(true, firstPress + i * 80'000'000);
             keyer.setMidiDitPaddle(false, firstPress + i * 80'000'000 + 20'000'000);
