@@ -6601,51 +6601,9 @@ void MainWindow::onProcessingChangedB() {
 
 void MainWindow::onSpectrumData(int receiver, const QByteArray &data, qint64 centerFreq, qint32 sampleRate,
                                 float noiseFloor) {
-    // AUTO is based on the actual decompressed bins used by this renderer.
-    // The PAN header's noise-floor field is on a different calibration curve
-    // and made the phone waterfall much too bright when used as REF directly.
-    // A low percentile ignores signals while following the visible noise floor.
-    const bool autoRef = m_displayPopup && m_displayPopup->autoRefLevelEnabled();
-    float &smoothedRef = receiver == 0 ? m_autoRefLevelA : m_autoRefLevelB;
-    bool &autoRefValid = receiver == 0 ? m_autoRefLevelAValid : m_autoRefLevelBValid;
-    PanadapterRhiWidget *panadapter = receiver == 0 ? m_panadapterA : m_panadapterB;
-    if (autoRef && !data.isEmpty()) {
-        int histogram[256] = {};
-        for (char bin : data)
-            ++histogram[static_cast<quint8>(bin)];
-        const int percentileCount = qMax(1, static_cast<int>(data.size() / 5)); // 20th percentile
-        int accumulated = 0;
-        int floorBin = 0;
-        for (; floorBin < 255; ++floorBin) {
-            accumulated += histogram[floorBin];
-            if (accumulated >= percentileCount)
-                break;
-        }
-        constexpr float K4BinOffsetDb = 146.0f;
-        const float measuredFloor = static_cast<float>(floorBin) - K4BinOffsetDb;
-        // Put ordinary noise just above black while retaining signal contrast.
-        const float target = qBound(-200.0f, measuredFloor - 4.0f, 60.0f);
-        smoothedRef = autoRefValid ? (0.12f * target + 0.88f * smoothedRef) : target;
-        autoRefValid = true;
-        const int displayedRef = qRound(smoothedRef);
-        panadapter->setRefLevel(displayedRef);
-        if (receiver == 0)
-            m_displayPopup->setRefLevelValueA(displayedRef);
-        else
-            m_displayPopup->setRefLevelValueB(displayedRef);
-    } else if (autoRefValid) {
-        // Leaving AUTO restores the K4's manual REF value immediately.
-        autoRefValid = false;
-        const int manualRef = receiver == 0 ? m_radioState->refLevel() : m_radioState->refLevelB();
-        panadapter->setRefLevel(manualRef);
-        if (receiver == 0)
-            m_displayPopup->setRefLevelValueA(manualRef);
-        else
-            m_displayPopup->setRefLevelValueB(manualRef);
-    }
-
-    // Route spectrum data to appropriate panadapter
-    // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
+    // The K4 is authoritative for REF, including AUTO mode. The RadioState
+    // #REF/#REF$ handlers drive the renderer and the displayed dB scale; do
+    // not derive another reference from the received spectrum bins here.
     if (receiver == 0) {
         m_panadapterA->updateSpectrum(data, centerFreq, sampleRate, noiseFloor);
     } else if (receiver == 1) {

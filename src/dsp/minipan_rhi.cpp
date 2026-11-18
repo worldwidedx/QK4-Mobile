@@ -440,9 +440,9 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Update waterfall texture if needed
-    if (m_waterfallNeedsUpdate && !m_smoothedSpectrum.isEmpty()) {
+    if (m_waterfallNeedsUpdate && !m_waterfallSpectrum.isEmpty()) {
         // Resample spectrum to texture width
-        int dataSize = m_smoothedSpectrum.size();
+        int dataSize = m_waterfallSpectrum.size();
         int row = m_waterfallWriteRow;
         for (int i = 0; i < TEXTURE_WIDTH; ++i) {
             // Average downsampling for waterfall
@@ -454,7 +454,7 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
             float sum = 0.0f;
             int count = endBin - startBin;
             for (int j = startBin; j < endBin; ++j) {
-                sum += m_smoothedSpectrum[j];
+                sum += m_waterfallSpectrum[j];
             }
             float avgDb = sum / count;
 
@@ -886,14 +886,19 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins) {
         m_spectrum = trimmed;
     }
 
-    // Follow #AVG on the miniature trace and waterfall too.
-    if (m_smoothedSpectrum.size() != m_spectrum.size()) {
-        m_smoothedSpectrum = m_spectrum;
-    } else {
-        for (int i = 0; i < m_spectrum.size(); ++i) {
-            const float alpha = m_spectrum[i] > m_smoothedSpectrum[i] ? m_attackAlpha : m_decayAlpha;
-            m_smoothedSpectrum[i] = alpha * m_spectrum[i] + (1.0f - alpha) * m_smoothedSpectrum[i];
-        }
+    // MiniPAN's display units are byte / 10. Average actual dBm power first.
+    QVector<float> frameDbm(m_spectrum.size());
+    for (qsizetype i = 0; i < m_spectrum.size(); ++i)
+        frameDbm[i] = m_spectrum[i] * 10.0f - 118.0f;
+    QVector<float> waterfallDbm;
+    QVector<float> traceDbm;
+    m_waterfallAverager.add(frameDbm, waterfallDbm);
+    m_traceAverager.addEased(frameDbm, traceDbm);
+    m_waterfallSpectrum.resize(waterfallDbm.size());
+    m_smoothedSpectrum.resize(traceDbm.size());
+    for (qsizetype i = 0; i < traceDbm.size(); ++i) {
+        m_waterfallSpectrum[i] = (waterfallDbm[i] + 118.0f) / 10.0f;
+        m_smoothedSpectrum[i] = (traceDbm[i] + 118.0f) / 10.0f;
     }
 
     m_waterfallNeedsUpdate = true;
@@ -903,6 +908,9 @@ void MiniPanRhiWidget::updateSpectrum(const QByteArray &bins) {
 void MiniPanRhiWidget::clear() {
     m_spectrum.clear();
     m_smoothedSpectrum.clear();
+    m_waterfallSpectrum.clear();
+    m_traceAverager.reset();
+    m_waterfallAverager.reset();
     m_waterfallWriteRow = 0;
     m_smoothedBaseline = 0.0f;
     m_waterfallData.fill(0);
@@ -994,9 +1002,9 @@ void MiniPanRhiWidget::setAveraging(int level) {
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    const float t = (level - 1) / 19.0f;
-    m_attackAlpha = 0.52f - t * 0.22f;
-    m_decayAlpha = 0.34f - t * 0.24f;
+    m_traceAverager.setLength(level);
+    m_waterfallAverager.setLength(level);
+    m_smoothedSpectrum.clear();
 }
 
 void MiniPanRhiWidget::mousePressEvent(QMouseEvent *event) {

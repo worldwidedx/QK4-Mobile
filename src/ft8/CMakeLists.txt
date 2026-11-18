@@ -8,7 +8,8 @@ add_library(qk4_ft8 STATIC
     ft8snr.cpp ft8snr.h
     ../ui/logbookdialog.cpp ../ui/logbookdialog.h
     ../ui/ft8screen.cpp ../ui/ft8screen.h ../ui/ft8waterfall.cpp ../ui/ft8waterfall.h
-    ../dsp/panadapter_rhi.cpp ../dsp/panadapter_rhi.h)
+    ../dsp/panadapter_rhi.cpp ../dsp/panadapter_rhi.h
+    ../dsp/poweraverager.cpp ../dsp/poweraverager.h)
 target_include_directories(qk4_ft8 PUBLIC ${CMAKE_CURRENT_LIST_DIR}/..)
 target_link_libraries(qk4_ft8 PUBLIC qk4_ft8_codec Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
 if(TARGET Qt6::GuiPrivate)

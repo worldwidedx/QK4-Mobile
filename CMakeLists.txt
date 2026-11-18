@@ -222,6 +222,7 @@ set(SOURCES
     src/hardware/midiinputrouter.cpp
     src/hardware/ctr2mididevice.cpp
     src/dsp/minipan_rhi.cpp
+    src/dsp/poweraverager.cpp
     src/settings/fnkeymemory.cpp
     src/settings/radiosettings.cpp
     src/models/radiostate.cpp

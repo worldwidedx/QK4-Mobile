@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <QVector>
 #include <memory>
+#include "poweraverager.h"
 
 // Compact Mini-Pan widget for VFO area using Qt RHI
 // GPU-accelerated via Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -130,9 +131,10 @@ private:
     // Spectrum data
     QVector<float> m_spectrum;
     QVector<float> m_smoothedSpectrum;
+    QVector<float> m_waterfallSpectrum;
+    PowerAverager m_traceAverager;
+    PowerAverager m_waterfallAverager;
     int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
 
     // Waterfall data
     static constexpr int WATERFALL_HISTORY = 100;
