@@ -532,10 +532,9 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_colorLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
     m_colorLutTexture->create();
 
-    // Android GPU drivers do not consistently support linearly filtered R32F
-    // textures. RGBA8 is universally supported by QRhi and preserves the
-    // normalized 0..1 value sampled from the red component by the shader.
-#ifdef Q_OS_ANDROID
+    // Mobile GPUs use the same RGBA8 upload for the calibrated trace.
+    // The shader samples its normalized value from the red component.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     m_spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(m_textureWidth, 1)));
 #else
     m_spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::R32F, QSize(m_textureWidth, 1)));
@@ -892,16 +891,15 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         // with changing band conditions, so it could not agree with the K4's
         // REF/SCALE labels. The K4 owns that reference, including AUTO mode.
 
-        // The Android path uses a universally supported normalized RGBA8
-        // texture. Desktop keeps QK4's original R32F upload unchanged.
-#ifdef Q_OS_ANDROID
+        // Android and iOS use the same normalized RGBA8 texture.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         QByteArray normalizedSpectrum(m_textureWidth * 4, '\0');
 #else
         QVector<float> normalizedSpectrum(m_textureWidth, 0.0f);
 #endif
         for (int i = 0; i < specSize; ++i) {
             const float normalized = normalizeDb(m_currentSpectrum[i]);
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
             const int pixelOffset = (offset + i) * 4;
             normalizedSpectrum[pixelOffset] = static_cast<char>(qRound(normalized * 255.0f));
             normalizedSpectrum[pixelOffset + 3] = static_cast<char>(255);
@@ -910,7 +908,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 #endif
         }
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         QRhiTextureSubresourceUploadDescription specDataUpload(normalizedSpectrum.constData(), normalizedSpectrum.size());
 #else
         QRhiTextureSubresourceUploadDescription specDataUpload(normalizedSpectrum.constData(),
