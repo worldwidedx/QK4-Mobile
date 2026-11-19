@@ -5,11 +5,13 @@
 
 #include <QDebug>
 #include <QString>
+#include <QStringList>
 
 #include <utility>
 
 namespace {
 std::function<void()> g_interruptionHandler;
+std::function<void()> g_routeChangeHandler;
 
 // Route changes that our own category/activation calls cause arrive moments
 // later. Ignore a "device lost" within this window of our own session work so
@@ -17,8 +19,38 @@ std::function<void()> g_interruptionHandler;
 constexpr qint64 kSelfRouteChangeGraceMs = 1500;
 qint64 g_lastOwnSessionWorkMs = 0;
 
+// AVAudioSessionCategoryOptionAllowBluetoothHFP is the new name for
+// AllowBluetooth (same value, 0x4); older SDKs, such as the CI toolchain's,
+// only declare the old name, which newer SDKs deprecate.
+constexpr AVAudioSessionCategoryOptions kOptionAllowBluetoothHFP = static_cast<AVAudioSessionCategoryOptions>(0x4);
+
 qint64 nowMs() {
     return static_cast<qint64>([NSDate timeIntervalSinceReferenceDate] * 1000.0);
+}
+
+// One line naming the active input/output port types (BuiltInMic,
+// BluetoothA2DP, BluetoothHFP, ...) plus the session's category, mode and rate.
+// Port types only, not device names, so logs can be shared. This answers "which
+// microphone is the radio transmit audio actually coming from?".
+void logRoute(const char *when) {
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    auto describe = [](NSArray<AVAudioSessionPortDescription *> *ports) {
+        QStringList types;
+        for (AVAudioSessionPortDescription *port in ports)
+            types << QString::fromNSString(port.portType);
+        return types.isEmpty() ? QStringLiteral("none") : types.join(QLatin1Char(','));
+    };
+    AVAudioSessionRouteDescription *route = session.currentRoute;
+    qInfo().noquote() << "IosAudioSession: route" << when << "input" << describe(route.inputs) << "output"
+                      << describe(route.outputs) << "category" << QString::fromNSString(session.category) << "mode"
+                      << QString::fromNSString(session.mode) << "sampleRate" << session.sampleRate;
+}
+
+void notifyRouteChange() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_routeChangeHandler)
+            g_routeChangeHandler();
+    });
 }
 
 // Notifications can arrive on any thread; the handler touches Qt widgets.
@@ -87,6 +119,16 @@ void notifyInterruption() {
 - (void)handleRouteChange:(NSNotification *)note {
     NSNumber *reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
     qInfo() << "IosAudioSession: audio route changed, reason" << (reason ? int(reason.unsignedIntegerValue) : -1);
+    logRoute("after change");
+    // A headset appeared or went away: re-pick the session mode for it, then
+    // have the app rebuild the streams Qt opened, still bound to the old route.
+    if (reason && (reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+                   reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            IosAudioSession::configureForVoice();
+        });
+        notifyRouteChange();
+    }
     // The device in use went away (headset unplugged, Bluetooth lost): the
     // microphone stream is no longer what the operator expects to transmit.
     if (reason && reason.unsignedIntegerValue == AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
@@ -115,24 +157,39 @@ void IosAudioSession::configureForVoice() {
 
     // playAndRecord so the mic can be captured while RX plays. defaultToSpeaker
     // keeps RX on the loudspeaker (playAndRecord otherwise routes to the
-    // earpiece). Only A2DP is allowed for Bluetooth: it is output-only, so the
-    // built-in mic stays at 48 kHz and matches AudioEngine's input format.
-    // HFP (allowBluetooth) would drop the hardware to 8/16 kHz narrowband and
-    // can make QAudioSource's 48 kHz format check fail; add it later as a
-    // deliberate choice.
-    const AVAudioSessionCategoryOptions options =
-        AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+    // earpiece). Voice-chat mode applies Apple's echo cancellation and noise
+    // suppression, and with HFP allowed a Bluetooth headset (AirPods) is used
+    // for both the microphone and RX audio instead of the far-away built-in
+    // mic. HFP is narrowband (typically 16-24 kHz); amateur voice audio is
+    // 2-3 kHz wide, so nothing is lost. A2DP stays allowed for output-only
+    // Bluetooth devices. In this mode the hardware rate follows the headset,
+    // so AudioEngine's 48 kHz mic format is converted by Qt.
+    const AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionDefaultToSpeaker |
+                                                  kOptionAllowBluetoothHFP | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+    // Voice-chat mode only while a Bluetooth headset (HFP) is available: it
+    // brings echo cancellation and noise suppression for the headset mic. On
+    // the loudspeaker it played RX silently (device-verified), so with no
+    // headset use the default mode with the built-in mic and speaker.
+    bool headsetAvailable = false;
+    for (AVAudioSessionPortDescription *input in session.availableInputs) {
+        if ([input.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
+            headsetAvailable = true;
+            break;
+        }
+    }
+    const AVAudioSessionMode mode =
+        headsetAvailable ? AVAudioSessionModeVoiceChat : AVAudioSessionModeDefault;
 
     // This runs on every PTT press, on the main thread, while RX audio plays.
     // Re-applying an unchanged category or sample rate can still reconfigure
     // the route and stall the press, so only touch what actually differs.
     const bool categoryCurrent = [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]
-                                 && session.categoryOptions == options;
+                                 && [session.mode isEqualToString:mode] && session.categoryOptions == options;
     NSError *error = nil;
     if (!categoryCurrent) {
         g_lastOwnSessionWorkMs = nowMs();
         if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
-                             mode:AVAudioSessionModeDefault
+                             mode:mode
                           options:options
                             error:&error]) {
             qWarning() << "IosAudioSession: setCategory failed:"
@@ -150,6 +207,10 @@ void IosAudioSession::configureForVoice() {
     }
 }
 
+void IosAudioSession::setRouteChangeHandler(std::function<void()> handler) {
+    g_routeChangeHandler = std::move(handler);
+}
+
 bool IosAudioSession::activate() {
     g_lastOwnSessionWorkMs = nowMs();
     NSError *error = nil;
@@ -161,6 +222,7 @@ bool IosAudioSession::activate() {
         AVAudioSession *session = [AVAudioSession sharedInstance];
         qInfo() << "IosAudioSession: active, sampleRate" << session.sampleRate
                 << "inputs" << (session.isInputAvailable ? "available" : "none");
+        logRoute("on activate");
     }
     return ok;
 }

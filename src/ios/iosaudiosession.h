@@ -26,6 +26,12 @@ bool activate();
 // can no longer be trusted. Replaces any previous handler.
 void setInterruptionHandler(std::function<void()> handler);
 
+// Register a callback run on the main thread when a device is connected or
+// removed (new or old device route changes). The app rebuilds its playback and
+// capture streams, which Qt leaves on the old route. Replaces any previous
+// handler.
+void setRouteChangeHandler(std::function<void()> handler);
+
 // Deactivate the session, letting other apps resume.
 void deactivate();
 
