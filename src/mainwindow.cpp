@@ -4415,7 +4415,13 @@ void MainWindow::setupUi() {
     connect(m_m2Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M2 activated"); m_tcpClient->sendCAT("SW51;"); });
     connect(m_m3Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M3 activated"); m_tcpClient->sendCAT("SW18;"); });
     connect(m_m4Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M4 activated"); m_tcpClient->sendCAT("SW52;"); });
-    connect(m_recBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE RECORD activated"); m_tcpClient->sendCAT("SW19;"); });
+    connect(m_recBtn, &QPushButton::clicked, this, [this]() {
+        // In CW and data modes REC opens the radio's own text-entry dialog. The K4 has no CAT
+        // command to read or write message text, so the entry happens on the radio itself.
+        const bool textMode = m_radioState->monitorModeCode() != 2;
+        showControlFeedback(textMode ? "MESSAGE RECORD: enter the text on the radio" : "MESSAGE RECORD activated");
+        m_tcpClient->sendCAT("SW19;");
+    });
     connect(m_storeBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE STORE activated"); m_tcpClient->sendCAT("SW20;"); });
     connect(m_rclBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE RECALL activated"); m_tcpClient->sendCAT("SW34;"); });
 
