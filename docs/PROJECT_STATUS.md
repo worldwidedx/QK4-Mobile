@@ -1,8 +1,17 @@
 # Project status
 
-Last updated: 2026-11-17 (CW MIDI candidate merge)
+Last updated: 2026-11-26 (v1.0.8 Android release scope)
 
-## Unreleased: CW MIDI edge accuracy candidate
+## QK4 Mobile v1.0.8: Android release scope
+
+The Android release includes the CW MIDI timing changes from PR #27, clearer
+tablet REC feedback from PR #47, and opt-in CAT tracing from PR #35. See the
+[v1.0.8 release notes](RELEASE_NOTES_v1.0.8.md) for operator-facing changes.
+The earlier HaliKey and TinyMIDI reports below describe test candidates.
+Physical testing of the later same-paddle correction, CTR2 MIDI behavior, and
+reliable sending above 30 WPM is still pending.
+
+## CW MIDI edge accuracy development and validation
 
 The Android CW MIDI path preserves split/running-status messages and offers
 opt-in raw capture. An external HaliKey operator reported that the first test
