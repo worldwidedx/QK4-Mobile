@@ -224,6 +224,7 @@ set(SOURCES
     src/dsp/minipan_rhi.cpp
     src/settings/fnkeymemory.cpp
     src/settings/radiosettings.cpp
+    src/settings/k4macrobackup.cpp
     src/models/radiostate.cpp
     src/models/menumodel.cpp
     src/ui/radiomanagerdialog.cpp
@@ -352,6 +353,7 @@ set(HEADERS
     src/dsp/minipan_rhi.h
     src/settings/fnkeymemory.h
     src/settings/radiosettings.h
+    src/settings/k4macrobackup.h
     src/models/radiostate.h
     src/models/menumodel.h
     src/ui/radiomanagerdialog.h

@@ -116,6 +116,9 @@ public:
     void setMacro(const QString &functionId, const QString &label, const QString &command);
     void clearMacro(const QString &functionId);
     void replaceMacros(const QMap<QString, MacroEntry> &macros);
+    // Merge: writes each non-empty entry, leaves other slots alone. One save and one
+    // macrosChanged for the whole batch. Returns the number written.
+    int setMacros(const QMap<QString, MacroEntry> &macros);
 
     // HaliKey CW Keyer settings
     QString halikeyPortName() const;
