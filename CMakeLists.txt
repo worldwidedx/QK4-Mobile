@@ -400,6 +400,7 @@ set(HEADERS
     src/ui/k4popupbase.h
     src/ui/inwindowpopup.h
     src/ui/inwindowdialog.h
+    src/ui/accessibilityteardown.h
     src/ui/kpa1500panel.h
     src/ui/kpa1500window.h
     src/ui/sidecontroloverlay.h

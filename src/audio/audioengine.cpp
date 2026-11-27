@@ -1211,6 +1211,39 @@ void AudioEngine::setOutputDevice(const QString &deviceId) {
 #endif
 }
 
+void AudioEngine::rebuildForRouteChange() {
+#ifdef Q_OS_IOS
+    if (!m_audioSink)
+        return; // not started
+
+    m_replacingAudioOutput = true;
+    QAudioSink *const retiredSink = m_audioSink;
+    m_audioSink = nullptr;
+    m_audioSinkDevice = nullptr;
+    m_activeOutputDeviceId.clear();
+    retiredSink->stop();
+    delete retiredSink;
+    // Partial writes were sized for the retired sink; keep the undecoded RX
+    // jitter buffer so the new sink is primed with real receive audio.
+    m_writeBuffer.clear();
+    if (setupAudioOutput(false))
+        qDebug() << "AudioEngine: rebuilt playback for the new audio route";
+    m_replacingAudioOutput = false;
+
+    if (m_audioSource) {
+        const bool wasOpen = m_micEnabled.load(std::memory_order_relaxed);
+        if (wasOpen)
+            closeMic();
+        delete m_audioSource;
+        m_audioSource = nullptr;
+        m_audioSourceDevice = nullptr;
+        m_activeMicDeviceId.clear();
+        if (wasOpen)
+            openMic();
+    }
+#endif
+}
+
 void AudioEngine::onSystemDefaultInputChanged() {
 #ifdef Q_OS_ANDROID
     // Recreate capture only when Android reports an input-device change.  This
