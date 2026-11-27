@@ -12,7 +12,6 @@ qt_add_executable(test_ft8 test_ft8.cpp
     ../src/ui/frequencyentryparser.cpp ../src/ui/frequencyentryparser.h
     ../src/hardware/midimapping.cpp ../src/hardware/midiinputrouter.cpp
     ../src/dsp/minipan_rhi.cpp ../src/dsp/minipan_rhi.h
-    ../src/dsp/poweraverager.cpp ../src/dsp/poweraverager.h
     ../src/ui/wheelaccumulator.cpp ../src/ui/wheelaccumulator.h
     ../src/ui/inwindowdialog.cpp ../src/ui/inwindowdialog.h
     ../src/ui/k4styles.cpp ../src/ui/k4styles.h

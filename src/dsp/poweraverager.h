@@ -9,7 +9,6 @@ public:
     void setLength(int frames);
     void reset();
     void add(const QVector<float> &frameDbm, QVector<float> &outDbm);
-    void addEased(const QVector<float> &frameDbm, QVector<float> &shownDbm);
 
 private:
     void restart(int bins);
@@ -20,7 +19,6 @@ private:
     int m_sinceSum = 0;
     QVector<double> m_ring;
     QVector<double> m_sum;
-    QVector<float> m_average;
 };
 
 #endif

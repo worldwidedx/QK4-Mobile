@@ -28,7 +28,6 @@ public:
     void updateSpectrum(const QByteArray &bins, qint64 centerFreq, qint32 sampleRate, float noiseFloor);
 
     // Update from MiniPAN packet (simpler format)
-    void updateMiniSpectrum(const QByteArray &bins);
 
     // Audio tools use the same GPU spectrum, waterfall, palette and history.
     // Frequencies are audio Hz; amplitudes are relative, never radio dBm.
@@ -199,8 +198,7 @@ private:
     QVector<float> m_rawSpectrum;
     int m_calibrationFrames = 0;
     QVector<float> m_waterfallSpectrum;
-    PowerAverager m_traceAverager;
-    PowerAverager m_waterfallAverager;
+    PowerAverager m_powerAverager;
     QVector<float> m_peakHold;
     qint64 m_peakGeometryCenterFreq = 0;
     qint32 m_peakGeometrySampleRate = 0;

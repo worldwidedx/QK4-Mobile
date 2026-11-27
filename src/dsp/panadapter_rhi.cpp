@@ -2,6 +2,7 @@
 #include "rhi_utils.h"
 #include "ui/k4styles.h"
 #include <QFile>
+#include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -11,6 +12,26 @@
 #include <algorithm>
 #include <functional>
 #include <vector>
+
+namespace {
+
+// Enable with QT_LOGGING_RULES="qk4.pan.calibration.debug=true".
+Q_LOGGING_CATEGORY(panCalibration, "qk4.pan.calibration", QtInfoMsg)
+
+template <typename DrawTick>
+void forEachDbTick(float minDb, float maxDb, DrawTick drawTick) {
+    const float range = maxDb - minDb;
+    if (range <= 0.0f)
+        return;
+
+    const int step = range <= 25.0f ? 5 : range <= 80.0f ? 10 : 20;
+    const int first = static_cast<int>(std::floor(maxDb / step)) * step;
+    const int last = static_cast<int>(std::ceil(minDb));
+    for (int value = first; value >= last; value -= step)
+        drawTick(value, (maxDb - value) / range);
+}
+
+}
 
 // Transparent overlay widget for dBm/S-unit scale labels
 class DbmScaleOverlay : public QWidget {
@@ -42,26 +63,20 @@ protected:
         painter.setFont(scaleFont);
         painter.setPen(Qt::white);
 
-        const float dbRange = m_maxDb - m_minDb;
         const int leftMargin = 4;
         const int h = height();
 
         QFontMetrics fm(scaleFont);
         int textHeight = fm.height();
 
-        if (dbRange <= 0.0f)
-            return;
-        const int step = dbRange <= 25.0f ? 5 : dbRange <= 80.0f ? 10 : 20;
-        const int first = static_cast<int>(std::floor(m_maxDb / step)) * step;
-        for (int value = first; value >= static_cast<int>(std::ceil(m_minDb)); value -= step) {
-            const float dbValue = static_cast<float>(value);
-            const int yPos = qRound(h * (m_maxDb - dbValue) / dbRange);
+        forEachDbTick(m_minDb, m_maxDb, [&](int value, float fractionFromTop) {
+            const int yPos = qRound(h * fractionFromTop);
             if (yPos < textHeight / 2 || yPos > h - textHeight / 2)
-                continue;
+                return;
 
             QString label;
             if (m_useSUnits) {
-                label = dbmToSUnits(dbValue);
+                label = dbmToSUnits(value);
             } else {
                 label = QString("%1 dBm").arg(value);
             }
@@ -70,7 +85,7 @@ protected:
             int textY = yPos + textHeight / 3;
 
             painter.drawText(leftMargin, textY, label);
-        }
+        });
     }
 
 private:
@@ -861,7 +876,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Update waterfall texture if needed
-    if (m_waterfallNeedsUpdate && !m_currentSpectrum.isEmpty()) {
+    if (m_waterfallNeedsUpdate && !m_waterfallSpectrum.isEmpty()) {
         updateWaterfallData();
         QRhiTextureSubresourceUploadDescription rowUpload(
             m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
@@ -970,15 +985,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     if (m_gridEnabled && m_overlayLinePipeline) {
         QVector<float> gridVerts;
 
-        const float dbRange = m_maxDb - m_minDb;
-        if (dbRange > 0.0f) {
-            const int step = dbRange <= 25.0f ? 5 : dbRange <= 80.0f ? 10 : 20;
-            for (int value = static_cast<int>(std::floor(m_maxDb / step)) * step;
-                 value >= static_cast<int>(std::ceil(m_minDb)); value -= step) {
-                const float y = spectrumHeight * (m_maxDb - value) / dbRange;
-                gridVerts << 0.0f << y << w << y;
-            }
-        }
+        forEachDbTick(m_minDb, m_maxDb, [&](int, float fractionFromTop) {
+            const float y = spectrumHeight * fractionFromTop;
+            gridVerts << 0.0f << y << w << y;
+        });
 
         // Vertical lines (frequency) - 10 divisions in spectrum area
         for (int i = 1; i < 10; ++i) {
@@ -1416,23 +1426,27 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
 
     // Decompress bins to dB values
     decompressBins(binsToUse, m_rawSpectrum);
-    if (++m_calibrationFrames >= 120 && !m_rawSpectrum.isEmpty()) {
+    if (panCalibration().isDebugEnabled() && !m_rawSpectrum.isEmpty() && ++m_calibrationFrames >= 120) {
         m_calibrationFrames = 0;
         QVector<float> sorted = m_rawSpectrum;
         const qsizetype floorIndex = sorted.size() / 5;
         std::nth_element(sorted.begin(), sorted.begin() + floorIndex, sorted.end());
         const float binFloor = sorted[floorIndex];
-        qDebug("PAN calibration: bin floor %.1f dBm, K4 header %.1f dBm, delta %.1f dB",
-               binFloor, noiseFloor, binFloor - noiseFloor);
+        qCDebug(panCalibration, "PAN calibration: bin floor %.1f dBm, K4 header %.1f dBm, delta %.1f dB",
+                binFloor, noiseFloor, binFloor - noiseFloor);
     }
 
     if (peakGeometryChanged) {
-        m_traceAverager.reset();
-        m_waterfallAverager.reset();
+        m_powerAverager.reset();
         m_currentSpectrum.clear();
     }
-    m_waterfallAverager.add(m_rawSpectrum, m_waterfallSpectrum);
-    m_traceAverager.addEased(m_rawSpectrum, m_currentSpectrum);
+    m_powerAverager.add(m_rawSpectrum, m_waterfallSpectrum);
+    if (m_averagingLevel == 1 || m_currentSpectrum.size() != m_waterfallSpectrum.size()) {
+        m_currentSpectrum = m_waterfallSpectrum;
+    } else {
+        for (qsizetype i = 0; i < m_waterfallSpectrum.size(); ++i)
+            m_currentSpectrum[i] += 0.5f * (m_waterfallSpectrum[i] - m_currentSpectrum[i]);
+    }
 
     // Update peak hold
     if (m_peakHoldEnabled) {
@@ -1447,7 +1461,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
         }
     }
 
-    m_waterfallNeedsUpdate = true;
+    m_waterfallNeedsUpdate = !m_waterfallSpectrum.isEmpty();
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
     update();
 }
@@ -1517,19 +1531,6 @@ void PanadapterRhiWidget::updateAudioSpectrum(const QVector<float> &db, double f
     // upload also preserves every row when several arrive before a UI frame.
     m_waterfallNeedsFullClear = true;
     m_waterfallNeedsUpdate = false;
-    update();
-}
-
-void PanadapterRhiWidget::updateMiniSpectrum(const QByteArray &bins) {
-    m_rawSpectrum.resize(bins.size());
-    for (int i = 0; i < bins.size(); ++i) {
-        m_rawSpectrum[i] = static_cast<quint8>(bins[i]) * 10.0f - 160.0f;
-    }
-
-    m_waterfallAverager.add(m_rawSpectrum, m_waterfallSpectrum);
-    m_traceAverager.addEased(m_rawSpectrum, m_currentSpectrum);
-
-    m_waterfallNeedsUpdate = true;
     update();
 }
 
@@ -1706,8 +1707,8 @@ void PanadapterRhiWidget::clear() {
     m_rawSpectrum.clear();
     m_calibrationFrames = 0;
     m_waterfallSpectrum.clear();
-    m_traceAverager.reset();
-    m_waterfallAverager.reset();
+    m_waterfallNeedsUpdate = false;
+    m_powerAverager.reset();
     m_peakHold.clear();
     m_peakGeometryValid = false;
     m_waterfallWriteRow = 0;
@@ -1845,9 +1846,10 @@ void PanadapterRhiWidget::setAveraging(int level) {
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    m_traceAverager.setLength(level);
-    m_waterfallAverager.setLength(level);
+    m_powerAverager.setLength(level);
     m_currentSpectrum.clear();
+    m_waterfallSpectrum.clear();
+    m_waterfallNeedsUpdate = false;
 }
 
 // Secondary VFO setters

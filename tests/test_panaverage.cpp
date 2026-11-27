@@ -24,9 +24,10 @@ private slots:
         QCOMPARE(fast.m_currentSpectrum.size(), 64);
         QCOMPARE(slow.m_currentSpectrum.size(), 64);
         QCOMPARE(fast.m_currentSpectrum[0], -52.0f);
-        QVERIFY(slow.m_currentSpectrum[0] > -62.0f);
-        QVERIFY(slow.m_currentSpectrum[0] < -52.0f);
-        QVERIFY(fast.m_currentSpectrum[0] > slow.m_currentSpectrum[0]);
+        QCOMPARE(fast.m_waterfallSpectrum, fast.m_currentSpectrum);
+        // Equal numbers of -62 and -52 dBm frames averaged in linear power.
+        QVERIFY(qAbs(slow.m_waterfallSpectrum[0] - (-54.5964f)) < 0.001f);
+        QCOMPARE(slow.m_currentSpectrum[0], (-62.0f + slow.m_waterfallSpectrum[0]) / 2.0f);
     }
 
     void miniPanFollowsRadioAverage() {
@@ -44,10 +45,52 @@ private slots:
 
         QCOMPARE(fast.m_smoothedSpectrum.size(), 64);
         QCOMPARE(slow.m_smoothedSpectrum.size(), 64);
-        QCOMPARE(fast.m_smoothedSpectrum[0], 12.0f);
-        QVERIFY(slow.m_smoothedSpectrum[0] > 10.0f);
-        QVERIFY(slow.m_smoothedSpectrum[0] < 12.0f);
+        QVERIFY(qAbs(fast.m_smoothedSpectrum[0] - 11.04f) < 0.01f);
+        QVERIFY(qAbs(slow.m_smoothedSpectrum[0] - 10.60f) < 0.01f);
         QVERIFY(fast.m_smoothedSpectrum[0] > slow.m_smoothedSpectrum[0]);
+    }
+
+    void avgChangeDiscardsOnlyPendingWaterfallRow() {
+        PanadapterRhiWidget panadapter;
+        const QByteArray base(64, char(100));
+        const QByteArray signal(64, char(110));
+        panadapter.updateSpectrum(base, 14074000, 0, -120);
+        // Simulate already displayed history without opening a GPU surface.
+        panadapter.m_waterfallWriteRow = 1;
+        panadapter.m_waterfallData = {42};
+        QVERIFY(panadapter.m_waterfallNeedsUpdate);
+
+        panadapter.setAveraging(8);
+        QVERIFY(!panadapter.m_waterfallNeedsUpdate);
+        QVERIFY(panadapter.m_waterfallSpectrum.isEmpty());
+        QCOMPARE(panadapter.m_waterfallWriteRow, 1);
+        QCOMPARE(panadapter.m_waterfallData[0], quint8(42));
+
+        panadapter.updateSpectrum(signal, 14074000, 0, -120);
+        QVERIFY(panadapter.m_waterfallNeedsUpdate);
+        QCOMPARE(panadapter.m_waterfallSpectrum[0], -52.0f);
+        QCOMPARE(panadapter.m_currentSpectrum, panadapter.m_waterfallSpectrum);
+    }
+
+    void averagingRestartsAfterPassThroughBinCountChanges() {
+        PowerAverager average;
+        QVector<float> output;
+        average.setLength(2);
+        average.add(QVector<float>{-70.0f}, output);
+
+        average.setLength(1);
+        const QVector<float> widerFrame{-60.0f, -70.0f, -80.0f};
+        average.add(widerFrame, output);
+        QCOMPARE(output, widerFrame);
+
+        average.setLength(2);
+        const QVector<float> freshFrame{-90.0f, -100.0f, -110.0f};
+        average.add(freshFrame, output);
+        QCOMPARE(output, freshFrame);
+        average.add(widerFrame, output);
+        QCOMPARE(output.size(), widerFrame.size());
+        for (qsizetype i = 0; i < output.size(); ++i)
+            QVERIFY(qAbs(output[i] - (widerFrame[i] - 3.00596f)) < 0.001f);
     }
 
     void averagingDropsExpiredCarrier() {

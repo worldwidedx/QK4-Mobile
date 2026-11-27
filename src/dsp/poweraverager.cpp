@@ -22,17 +22,21 @@ void PowerAverager::restart(int bins) {
     m_sinceSum = 0;
     m_ring.fill(0.0, static_cast<qsizetype>(m_length) * bins);
     m_sum.fill(0.0, bins);
-    m_average.clear();
 }
 
 void PowerAverager::add(const QVector<float> &frameDbm, QVector<float> &outDbm) {
     const int bins = static_cast<int>(frameDbm.size());
     if (m_length == 1) {
+        m_bins = bins;
         outDbm = frameDbm;
         return;
     }
     if (bins != m_bins)
         restart(bins);
+    if (bins == 0) {
+        outDbm.clear();
+        return;
+    }
 
     double *slot = m_ring.data() + static_cast<qsizetype>(m_head) * bins;
     const bool full = m_count == m_length;
@@ -59,18 +63,4 @@ void PowerAverager::add(const QVector<float> &frameDbm, QVector<float> &outDbm) 
     outDbm.resize(bins);
     for (int i = 0; i < bins; ++i)
         outDbm[i] = static_cast<float>(10.0 * std::log10(std::max(m_sum[i] / m_count, 1e-300)));
-}
-
-void PowerAverager::addEased(const QVector<float> &frameDbm, QVector<float> &shownDbm) {
-    if (m_length == 1) {
-        shownDbm = frameDbm;
-        return;
-    }
-    add(frameDbm, m_average);
-    if (shownDbm.size() != m_average.size()) {
-        shownDbm = m_average;
-        return;
-    }
-    for (qsizetype i = 0; i < m_average.size(); ++i)
-        shownDbm[i] += 0.5f * (m_average[i] - shownDbm[i]);
 }
