@@ -20,6 +20,7 @@
 #include "ui/filterindicatorwidget.h"
 #include "ui/k4styles.h"
 #include "ui/inwindowdialog.h"
+#include "ui/accessibilityteardown.h"
 #include "ui/digitalaudiosetupdialog.h"
 #include "ui/inwindowpopup.h"
 #include "ui/antennacfgpopup.h"
@@ -585,6 +586,18 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
 
 #ifdef Q_OS_IOS
+    // A headset connected or removed leaves Qt's playback and capture streams
+    // on the old route, silent. Rebuild them on the audio thread once the burst
+    // of route notifications has settled.
+    {
+        auto *routeDebounce = new QTimer(this);
+        routeDebounce->setSingleShot(true);
+        routeDebounce->setInterval(400);
+        connect(routeDebounce, &QTimer::timeout, this,
+                [this]() { QMetaObject::invokeMethod(m_audioEngine, "rebuildForRouteChange", Qt::QueuedConnection); });
+        IosAudioSession::setRouteChangeHandler([routeDebounce]() { routeDebounce->start(); });
+    }
+
     // A call, Siri, an alarm or a lost audio device breaks the microphone
     // stream while the K4 may still be keyed. Unkey and say why.
     {
@@ -2959,6 +2972,12 @@ MainWindow::~MainWindow() {
         disconnect(m_kpa1500Client, nullptr, this, nullptr);
         m_kpa1500Client->disconnectFromHost();
     }
+
+    // MainWindow is destroyed only when main() returns. On iOS with VoiceOver
+    // (or another assistive client) active, Qt 6.11.1 would otherwise crash
+    // reporting each destroyed button while ~QWidget tears down the console.
+    // See issue #42 and accessibilityteardown.h.
+    suspendAccessibilityForShutdown();
 }
 
 void MainWindow::setupMenuBar() {
@@ -4434,7 +4453,13 @@ void MainWindow::setupUi() {
     connect(m_m2Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M2 activated"); m_tcpClient->sendCAT("SW51;"); });
     connect(m_m3Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M3 activated"); m_tcpClient->sendCAT("SW18;"); });
     connect(m_m4Btn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE M4 activated"); m_tcpClient->sendCAT("SW52;"); });
-    connect(m_recBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE RECORD activated"); m_tcpClient->sendCAT("SW19;"); });
+    connect(m_recBtn, &QPushButton::clicked, this, [this]() {
+        // In CW and data modes REC opens the radio's own text-entry dialog. The K4 has no CAT
+        // command to read or write message text, so the entry happens on the radio itself.
+        const bool textMode = m_radioState->monitorModeCode() != 2;
+        showControlFeedback(textMode ? "MESSAGE RECORD: enter the text on the radio" : "MESSAGE RECORD activated");
+        m_tcpClient->sendCAT("SW19;");
+    });
     connect(m_storeBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE STORE activated"); m_tcpClient->sendCAT("SW20;"); });
     connect(m_rclBtn, &QPushButton::clicked, this, [this]() { showControlFeedback("MESSAGE RECALL activated"); m_tcpClient->sendCAT("SW34;"); });
 
