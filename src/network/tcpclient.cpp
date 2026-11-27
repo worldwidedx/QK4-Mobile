@@ -4,6 +4,38 @@
 #include <QHostInfo>
 #include <QDateTime>
 #include <cmath>
+#ifdef Q_OS_ANDROID
+#include <sys/system_properties.h>
+#endif
+
+namespace {
+bool catTraceEnabled() {
+    static const bool enabled = [] {
+        if (qEnvironmentVariableIntValue("QK4_TRACE_CAT") == 1)
+            return true;
+#ifdef Q_OS_ANDROID
+        char value[PROP_VALUE_MAX] = {};
+        return __system_property_get("debug.qk4.trace_cat", value) > 0
+                && qstrcmp(value, "1") == 0;
+#else
+        return false;
+#endif
+    }();
+    return enabled;
+}
+
+void traceCatWrite(const QString &command, const QByteArray &packet, qint64 acceptedBytes,
+                   bool encrypted) {
+    if (!catTraceEnabled())
+        return;
+    qInfo().noquote() << "CAT trace" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                      << "OUT CAT -> K4:" << command;
+    qInfo().noquote() << "CAT trace" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                      << "OUT framed bytes queued:" << packet.toHex(' ')
+                      << "accepted" << acceptedBytes << "of" << packet.size() << "bytes"
+                      << "TLS" << encrypted;
+}
+} // namespace
 
 TcpClient::TcpClient(QObject *parent)
     : QObject(parent), m_socket(new PskTlsSocket(this)), m_protocol(new Protocol(this)), m_connectTimer(new QTimer(this)),
@@ -184,8 +216,9 @@ void TcpClient::sendCAT(const QString &command) {
         return;
     }
     if (m_state.load(std::memory_order_acquire) == Connected) {
-        QByteArray packet = Protocol::buildCATPacket(command);
-        m_socket->write(packet);
+        const QByteArray packet = Protocol::buildCATPacket(command);
+        const qint64 acceptedBytes = m_socket->write(packet);
+        traceCatWrite(command, packet, acceptedBytes, m_socket->isEncrypted());
         m_socket->flush(); // Ensure immediate send
     }
 }
@@ -293,7 +326,10 @@ void TcpClient::beginDigitalAudioTransmit(int mode, quint64 generation) {
         m_digitalGuard.stop();
         return;
     }
-    m_socket->write(Protocol::buildCATPacket(QStringLiteral("TM1;TM;TX;")));
+    const QString catCommand = QStringLiteral("TM1;TM;TX;");
+    const QByteArray catPacket = Protocol::buildCATPacket(catCommand);
+    const qint64 acceptedBytes = m_socket->write(catPacket);
+    traceCatWrite(catCommand, catPacket, acceptedBytes, m_socket->isEncrypted());
     m_socket->flush();
     m_sstvAudioGate = true;
     m_sstvAudioGeneration = generation;
@@ -375,7 +411,10 @@ void TcpClient::stopDigitalAudioAndUnkey() {
     m_digitalTimer->stop();
     ++m_sstvAudioGeneration;
     if (m_socket->state() == QAbstractSocket::ConnectedState) {
-        m_socket->write(Protocol::buildCATPacket(QStringLiteral("RX;")));
+        const QString catCommand = QStringLiteral("RX;");
+        const QByteArray catPacket = Protocol::buildCATPacket(catCommand);
+        const qint64 acceptedBytes = m_socket->write(catPacket);
+        traceCatWrite(catCommand, catPacket, acceptedBytes, m_socket->isEncrypted());
         m_socket->flush();
     }
 }
@@ -498,6 +537,12 @@ void TcpClient::onPingTimer() {
 }
 
 void TcpClient::onCatResponse(const QString &response) {
+    if (catTraceEnabled()) {
+        qInfo().noquote() << "CAT trace" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                          << "IN CAT <- K4:" << response;
+        qInfo().noquote() << "CAT trace" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                          << "IN CAT payload bytes:" << response.toLatin1().toHex(' ');
+    }
     for (const auto &part : response.split(';', Qt::SkipEmptyParts)) {
         const auto command = part.trimmed();
         if (command == "TS0" || command == "TS1") {

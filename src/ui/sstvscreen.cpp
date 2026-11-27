@@ -1,4 +1,5 @@
 #include "sstvscreen.h"
+#include "touchtextedit.h"
 
 #include "k4styles.h"
 #include "sstv/sstvencoder.h"
@@ -1253,6 +1254,7 @@ void SstvScreen::setupUi() {
                 button->setDown(false);
         });
     }
+    TouchTextEdit::enableNativeEditMenu(controlsScroll);
 #endif
     auto *controlsWidget = new QWidget(controlsScroll);
     auto *controls = new QVBoxLayout(controlsWidget);

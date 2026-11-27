@@ -265,6 +265,10 @@ private:
 
     // PTT state
     bool m_pttActive = false;
+    // iOS: the K4 has reported TX for the current latched press, and a counter
+    // that lets a stale "did the radio key?" check ignore a newer press.
+    bool m_pttRadioConfirmed = false;
+    quint32 m_pttPressSerial = 0;
     int m_phoneTuneStepAHz = -1;
     int m_phoneTuneStepBHz = -1;
     QString m_pendingControlFeedback;

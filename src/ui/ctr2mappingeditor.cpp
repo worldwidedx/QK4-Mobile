@@ -1,4 +1,5 @@
 #include "ctr2mappingeditor.h"
+#include "touchtextedit.h"
 
 #include "inwindowdialog.h"
 #include "k4styles.h"
@@ -501,6 +502,7 @@ Ctr2MappingEditor::Ctr2MappingEditor(Ctr2MidiDevice *device, QWidget *parent)
                 button->setDown(false);
         });
     }
+    TouchTextEdit::enableNativeEditMenu(m_scroll);
 #endif
     ensureLoaded();
     loadControls();

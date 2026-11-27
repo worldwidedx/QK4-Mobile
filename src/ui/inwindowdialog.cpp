@@ -1,5 +1,6 @@
 #include "inwindowdialog.h"
 
+#include "accessibilityteardown.h"
 #include "k4styles.h"
 
 #include <QApplication>
@@ -14,6 +15,12 @@
 #include <QPointer>
 #include <QVBoxLayout>
 #include <QWindow>
+
+// See accessibilityteardown.h: avoids the Qt 6.11.1 iOS accessibility crash
+// when the dialog's buttons are destroyed.
+InWindowDialog::~InWindowDialog() {
+    releaseAccessibilityInterfaces(this);
+}
 
 InWindowDialog::InWindowDialog(QWidget *parent)
     : QWidget(parent) {

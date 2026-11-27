@@ -1,6 +1,8 @@
 #ifndef IOSAUDIOSESSION_H
 #define IOSAUDIOSESSION_H
 
+#include <functional>
+
 // iOS AVAudioSession configuration for the K4 audio path.
 //
 // RX playback works under iOS's default session, but capturing the microphone
@@ -17,6 +19,18 @@ void configureForVoice();
 
 // Activate the session. Returns false and logs the underlying error on failure.
 bool activate();
+
+// Register a callback run on the main thread when the session is interrupted
+// (call, Siri, alarm) or the active audio device disappears (e.g. a headset is
+// unplugged). The app uses it to unkey the radio, since the microphone stream
+// can no longer be trusted. Replaces any previous handler.
+void setInterruptionHandler(std::function<void()> handler);
+
+// Register a callback run on the main thread when a device is connected or
+// removed (new or old device route changes). The app rebuilds its playback and
+// capture streams, which Qt leaves on the old route. Replaces any previous
+// handler.
+void setRouteChangeHandler(std::function<void()> handler);
 
 // Deactivate the session, letting other apps resume.
 void deactivate();
