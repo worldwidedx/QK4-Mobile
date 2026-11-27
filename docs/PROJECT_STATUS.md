@@ -1,6 +1,70 @@
 # Project status
 
-Last updated: 2026-10-21 (v1.0.7 Android device acceptance clarification)
+Last updated: 2026-11-17 (CW MIDI candidate merge)
+
+## Unreleased: CW MIDI edge accuracy candidate
+
+The Android CW MIDI path preserves split/running-status messages and offers
+opt-in raw capture. An external HaliKey operator reported that the first test
+build accumulated delay, then sounded several characters in a burst at 25 WPM,
+worse than QK4 Mobile 1.0.5. The report did not separate local sidetone from
+K4-returned audio. A new candidate retains MIDI callback timestamps, reads CW
+and CTR2 session events on the keyer thread, evaluates paddle history at each scheduled
+element boundary, replays delayed character gaps, and prevents zero-delay
+catch-up elements. The 10 ms paddle release debounce remains. An external
+operator has physically tested an Android HaliKey PR candidate and reports
+successful sending at 30 WPM. The exact test-build SHA and scored copy are not
+available; later shared-keyer changes still need a HaliKey regression check.
+TinyMIDI and CTR2-MIDI MoMIDI support remains unconfirmed. All three devices
+use the shared boundary-aware keyer; device acceptance remains separate. See the
+[CW MIDI validation plan](CW_MIDI_VALIDATION.md) for capture and acceptance.
+
+The HaliKey operator reported that the revised test app no longer stacks
+characters, its local sidetone is usable to about 30 WPM, and they successfully
+sent at 30 WPM on Android. They still heard an extra final dit, especially
+above 30 WPM. A focused keyer regression test reproduced an extra element
+when a brief same-paddle re-press was released before the current element
+boundary; the candidate correction remembers only opposite-paddle presses.
+The operator has not yet tested that correction. They later withdrew the
+report that the K4 did not key after realizing the rig was in TEST mode.
+The owner subsequently checked ports 9204 and 9205 and reports that both work;
+the earlier 9204 failure was not reproduced.
+The CW candidate did not change TCP/TLS, authentication, or radio-profile code.
+Preserve the reported 30 WPM HaliKey result when changing the shared keyer:
+recheck the same setup at 30 WPM before accepting further timing changes.
+
+On 2026-11-17, the PR branch incorporated current `main`, including its CTR2
+desktop/iOS MIDI support and existing Test app packaging. The timestamped keyer
+is now Android-only; desktop and iOS retain their previous paddle latch.
+Android pending MIDI edges are retained until their element boundary is
+processed, covering delayed batches within Java's 10-second timestamp window.
+Focused native tests for the Android path, a six-second delayed batch, and the
+legacy desktop/iOS behavior passed. The Android ARM64 Test APK packaged
+successfully (SHA-256
+`12d5ddd8125f56261e1f2c30c9135e947ee55098d00faadef5384f5915709256`);
+it was not installed. The current merged build still needs CI and physical
+HaliKey 30 WPM regression validation. TinyMIDI touch control remains in PR #27.
+
+On 2026-10-16, the native iambic-keyer tests, including delayed MIDI batches,
+passed. The Java stream-parser test previously passed, and the current Android
+ARM64 test APK packaged successfully. These checks use synthetic inputs;
+TinyMIDI and CTR2-MIDI acceptance, the HaliKey same-paddle correction and
+speeds above 30 WPM remain pending despite the physical HaliKey 30 WPM report.
+
+On 2026-10-17, a controlled TinyMIDI built-in touch capture at 20 WPM showed
+that two of ten intended single-DIT taps lasted past the 120 ms repeat
+boundary. The MIDI stream contained no duplicate press events. A selectable
+TinyMIDI touch lookahead candidate now delays the first element while keeping
+held-paddle cadence. Its Android control offers 0-100 ms in 5 ms steps;
+OFF (0 ms) remains the default and supports the external key jack. With
+test build `f97f098` on the Samsung Galaxy S26 Ultra, the owner reported that
+20 ms worked well for CQ at 20 WPM and approximately 30-35 ms helped at
+25 WPM, although the owner found the capacitive touch very sensitive and
+difficult at that speed. No setting gave the owner a reliable 30 WPM result.
+This is a preliminary operator report, not a scored copy test; the owner does
+not send 30 WPM reliably, so a proficient operator must determine whether the
+device and app can reach that speed accurately. No 30 WPM touch acceptance is
+recorded.
 
 ## QK4 Mobile v1.0.7: Android device acceptance
 
