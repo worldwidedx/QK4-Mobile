@@ -25,9 +25,9 @@ inline QShader loadShader(const QString &path) {
     return QShader();
 }
 
-// K4 spectrum calibration constant (shared between panadapter and minipan)
+// Calibration offset for the K4 main PAN stream.
 // dBm = raw_byte - K4_DBM_OFFSET
-constexpr float K4_DBM_OFFSET = 146.0f;
+constexpr float K4_DBM_OFFSET = 162.0f;
 
 } // namespace RhiUtils
 

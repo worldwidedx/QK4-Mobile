@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <QVector>
 #include <memory>
+#include "poweraverager.h"
 #include "../ui/wheelaccumulator.h"
 
 // Forward declarations for overlay widgets
@@ -27,7 +28,6 @@ public:
     void updateSpectrum(const QByteArray &bins, qint64 centerFreq, qint32 sampleRate, float noiseFloor);
 
     // Update from MiniPAN packet (simpler format)
-    void updateMiniSpectrum(const QByteArray &bins);
 
     // Audio tools use the same GPU spectrum, waterfall, palette and history.
     // Frequencies are audio Hz; amplitudes are relative, never radio dBm.
@@ -196,6 +196,9 @@ private:
     float m_audioFloor = -90;
     bool m_audioFloorValid = false;
     QVector<float> m_rawSpectrum;
+    int m_calibrationFrames = 0;
+    QVector<float> m_waterfallSpectrum;
+    PowerAverager m_powerAverager;
     QVector<float> m_peakHold;
     qint64 m_peakGeometryCenterFreq = 0;
     qint32 m_peakGeometrySampleRate = 0;
@@ -205,7 +208,6 @@ private:
 
     // K4 spectrum calibration: dBm = raw_byte - K4_DBM_OFFSET
     // Calibrated by comparing peak signals with K4 display
-    static constexpr float K4_DBM_OFFSET = 146.0f;
 
     // Waterfall data - sized for 4K/HiDPI displays
     // Memory: 4096 × 1024 × 1 byte = 4 MB (trivial for modern GPUs)
@@ -242,7 +244,6 @@ private:
     // Landscape phone console: spectrum and waterfall are deliberately equal
     // height so the live trace stays readable while retaining useful history.
     float m_spectrumRatio = 0.50f;
-    float m_smoothedBaseline = 0.0f;
     bool m_gridEnabled = true;
     // Follow the radio's #PKM state; connection sync enables this when Peak is on.
     bool m_peakHoldEnabled = false;
@@ -250,8 +251,6 @@ private:
     int m_scale = 75; // 10-150, default 75 (neutral)
     int m_spanHz = 10000;
     int m_averagingLevel = 1;
-    float m_attackAlpha = 0.52f;
-    float m_decayAlpha = 0.34f;
     bool m_notchEnabled = false;
     int m_notchPitchHz = 0;
     bool m_cursorVisible = true;

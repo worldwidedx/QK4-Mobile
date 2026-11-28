@@ -2,6 +2,7 @@
 #include "rhi_utils.h"
 #include "ui/k4styles.h"
 #include <QFile>
+#include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -11,6 +12,26 @@
 #include <algorithm>
 #include <functional>
 #include <vector>
+
+namespace {
+
+// Enable with QT_LOGGING_RULES="qk4.pan.calibration.debug=true".
+Q_LOGGING_CATEGORY(panCalibration, "qk4.pan.calibration", QtInfoMsg)
+
+template <typename DrawTick>
+void forEachDbTick(float minDb, float maxDb, DrawTick drawTick) {
+    const float range = maxDb - minDb;
+    if (range <= 0.0f)
+        return;
+
+    const int step = range <= 25.0f ? 5 : range <= 80.0f ? 10 : 20;
+    const int first = static_cast<int>(std::floor(maxDb / step)) * step;
+    const int last = static_cast<int>(std::ceil(minDb));
+    for (int value = first; value >= last; value -= step)
+        drawTick(value, (maxDb - value) / range);
+}
+
+}
 
 // Transparent overlay widget for dBm/S-unit scale labels
 class DbmScaleOverlay : public QWidget {
@@ -42,34 +63,29 @@ protected:
         painter.setFont(scaleFont);
         painter.setPen(Qt::white);
 
-        const int labelCount = 9; // Keep 9 divisions for grid alignment
-        const float dbRange = m_maxDb - m_minDb;
         const int leftMargin = 4;
         const int h = height();
 
         QFontMetrics fm(scaleFont);
         int textHeight = fm.height();
 
-        for (int i = 0; i < labelCount; ++i) {
-            // Skip top and bottom labels for breathing room
-            if (i == 0 || i == labelCount - 1)
-                continue;
-
-            float dbValue = m_maxDb - (static_cast<float>(i) / 8.0f) * dbRange;
-            int yPos = h * i / 8;
+        forEachDbTick(m_minDb, m_maxDb, [&](int value, float fractionFromTop) {
+            const int yPos = qRound(h * fractionFromTop);
+            if (yPos < textHeight / 2 || yPos > h - textHeight / 2)
+                return;
 
             QString label;
             if (m_useSUnits) {
-                label = dbmToSUnits(dbValue);
+                label = dbmToSUnits(value);
             } else {
-                label = QString("%1 dBm").arg(static_cast<int>(dbValue));
+                label = QString("%1 dBm").arg(value);
             }
 
             // Vertically center on grid line
             int textY = yPos + textHeight / 3;
 
             painter.drawText(leftMargin, textY, label);
-        }
+        });
     }
 
 private:
@@ -531,10 +547,9 @@ void PanadapterRhiWidget::initialize(QRhiCommandBuffer *cb) {
     m_colorLutTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 1)));
     m_colorLutTexture->create();
 
-    // Android GPU drivers do not consistently support linearly filtered R32F
-    // textures. RGBA8 is universally supported by QRhi and preserves the
-    // normalized 0..1 value sampled from the red component by the shader.
-#ifdef Q_OS_ANDROID
+    // Mobile GPUs use the same RGBA8 upload for the calibrated trace.
+    // The shader samples its normalized value from the red component.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
     m_spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(m_textureWidth, 1)));
 #else
     m_spectrumDataTexture.reset(m_rhi->newTexture(QRhiTexture::R32F, QSize(m_textureWidth, 1)));
@@ -861,7 +876,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     }
 
     // Update waterfall texture if needed
-    if (m_waterfallNeedsUpdate && !m_currentSpectrum.isEmpty()) {
+    if (m_waterfallNeedsUpdate && !m_waterfallSpectrum.isEmpty()) {
         updateWaterfallData();
         QRhiTextureSubresourceUploadDescription rowUpload(
             m_waterfallData.constData() + m_waterfallWriteRow * m_textureWidth, m_textureWidth);
@@ -881,44 +896,34 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         m_audioView ? float(m_audioSpanHz / (binCount * m_audioBinHz)) : 1.0f, 0.0f, 0.0f};
     rub->updateDynamicBuffer(m_waterfallUniformBuffer.get(), 0, sizeof(waterfallUniforms), &waterfallUniforms);
 
-    // Calculate smoothed baseline for spectrum normalization
     if (!m_currentSpectrum.isEmpty()) {
-        float frameMinNormalized = 1.0f;
-        for (int i = 0; i < m_currentSpectrum.size(); ++i) {
-            float normalized = normalizeDb(m_currentSpectrum[i]);
-            if (normalized < frameMinNormalized)
-                frameMinNormalized = normalized;
-        }
-        const float baselineAlpha = 0.05f;
-        if (m_smoothedBaseline < 0.001f)
-            m_smoothedBaseline = frameMinNormalized;
-        else
-            m_smoothedBaseline = baselineAlpha * frameMinNormalized + (1.0f - baselineAlpha) * m_smoothedBaseline;
-
         // Upload raw spectrum bins to 1D texture - GPU shader does bilinear interpolation
         int specSize = m_currentSpectrum.size();
         int offset = (m_textureWidth - specSize) / 2;
 
-        // The Android path uses a universally supported normalized RGBA8
-        // texture. Desktop keeps QK4's original R32F upload unchanged.
-#ifdef Q_OS_ANDROID
+        // The trace, waterfall, and dB labels must all use the same fixed
+        // dBm window. A local noise-floor tracker moved the trace vertically
+        // with changing band conditions, so it could not agree with the K4's
+        // REF/SCALE labels. The K4 owns that reference, including AUTO mode.
+
+        // Android and iOS use the same normalized RGBA8 texture.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         QByteArray normalizedSpectrum(m_textureWidth * 4, '\0');
 #else
         QVector<float> normalizedSpectrum(m_textureWidth, 0.0f);
 #endif
         for (int i = 0; i < specSize; ++i) {
-            float normalized = normalizeDb(m_currentSpectrum[i]);
-            float adjusted = qMax(0.0f, normalized - m_smoothedBaseline);
-#ifdef Q_OS_ANDROID
+            const float normalized = normalizeDb(m_currentSpectrum[i]);
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
             const int pixelOffset = (offset + i) * 4;
-            normalizedSpectrum[pixelOffset] = static_cast<char>(qRound(qBound(0.0f, adjusted * 0.95f, 1.0f) * 255.0f));
+            normalizedSpectrum[pixelOffset] = static_cast<char>(qRound(normalized * 255.0f));
             normalizedSpectrum[pixelOffset + 3] = static_cast<char>(255);
 #else
-            normalizedSpectrum[offset + i] = adjusted * 0.95f;
+            normalizedSpectrum[offset + i] = normalized;
 #endif
         }
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
         QRhiTextureSubresourceUploadDescription specDataUpload(normalizedSpectrum.constData(), normalizedSpectrum.size());
 #else
         QRhiTextureSubresourceUploadDescription specDataUpload(normalizedSpectrum.constData(),
@@ -980,11 +985,10 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
     if (m_gridEnabled && m_overlayLinePipeline) {
         QVector<float> gridVerts;
 
-        // Horizontal lines (dB scale) - 8 divisions in spectrum area
-        for (int i = 1; i < 8; ++i) {
-            float y = spectrumHeight * i / 8.0f;
+        forEachDbTick(m_minDb, m_maxDb, [&](int, float fractionFromTop) {
+            const float y = spectrumHeight * fractionFromTop;
             gridVerts << 0.0f << y << w << y;
-        }
+        });
 
         // Vertical lines (frequency) - 10 divisions in spectrum area
         for (int i = 1; i < 10; ++i) {
@@ -1041,8 +1045,7 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
         const float denom = static_cast<float>(m_peakHold.size() - 1);
         for (int i = 0; i < m_peakHold.size(); ++i) {
             const float normalized = normalizeDb(m_peakHold.at(i));
-            const float adjusted = qMax(0.0f, normalized - m_smoothedBaseline) * 0.95f;
-            peakVerts << (w * static_cast<float>(i) / denom) << (spectrumHeight * (1.0f - adjusted));
+            peakVerts << (w * static_cast<float>(i) / denom) << (spectrumHeight * (1.0f - normalized));
         }
         overlayRub->updateDynamicBuffer(m_peakVbo.get(), 0, peakVerts.size() * sizeof(float), peakVerts.constData());
         struct {
@@ -1423,18 +1426,26 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
 
     // Decompress bins to dB values
     decompressBins(binsToUse, m_rawSpectrum);
+    if (panCalibration().isDebugEnabled() && !m_rawSpectrum.isEmpty() && ++m_calibrationFrames >= 120) {
+        m_calibrationFrames = 0;
+        QVector<float> sorted = m_rawSpectrum;
+        const qsizetype floorIndex = sorted.size() / 5;
+        std::nth_element(sorted.begin(), sorted.begin() + floorIndex, sorted.end());
+        const float binFloor = sorted[floorIndex];
+        qCDebug(panCalibration, "PAN calibration: bin floor %.1f dBm, K4 header %.1f dBm, delta %.1f dB",
+                binFloor, noiseFloor, binFloor - noiseFloor);
+    }
 
-    // Follow the K4's #AVG setting for the locally rendered trace and waterfall.
-    const float attackAlpha = m_attackAlpha;
-    const float decayAlpha = m_decayAlpha;
-
-    if (m_currentSpectrum.size() != m_rawSpectrum.size()) {
-        m_currentSpectrum = m_rawSpectrum;
+    if (peakGeometryChanged) {
+        m_powerAverager.reset();
+        m_currentSpectrum.clear();
+    }
+    m_powerAverager.add(m_rawSpectrum, m_waterfallSpectrum);
+    if (m_averagingLevel == 1 || m_currentSpectrum.size() != m_waterfallSpectrum.size()) {
+        m_currentSpectrum = m_waterfallSpectrum;
     } else {
-        for (int i = 0; i < m_rawSpectrum.size(); ++i) {
-            float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_currentSpectrum[i] = alpha * m_rawSpectrum[i] + (1.0f - alpha) * m_currentSpectrum[i];
-        }
+        for (qsizetype i = 0; i < m_waterfallSpectrum.size(); ++i)
+            m_currentSpectrum[i] += 0.5f * (m_waterfallSpectrum[i] - m_currentSpectrum[i]);
     }
 
     // Update peak hold
@@ -1450,7 +1461,7 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
         }
     }
 
-    m_waterfallNeedsUpdate = true;
+    m_waterfallNeedsUpdate = !m_waterfallSpectrum.isEmpty();
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
     update();
 }
@@ -1523,52 +1534,35 @@ void PanadapterRhiWidget::updateAudioSpectrum(const QVector<float> &db, double f
     update();
 }
 
-void PanadapterRhiWidget::updateMiniSpectrum(const QByteArray &bins) {
-    m_rawSpectrum.resize(bins.size());
-    for (int i = 0; i < bins.size(); ++i) {
-        m_rawSpectrum[i] = static_cast<quint8>(bins[i]) * 10.0f - 160.0f;
-    }
-
-    // Use the same K4 averaging level for MiniPAN packets rendered here.
-    const float attackAlpha = m_attackAlpha;
-    const float decayAlpha = m_decayAlpha;
-
-    if (m_currentSpectrum.size() != m_rawSpectrum.size()) {
-        m_currentSpectrum = m_rawSpectrum;
-    } else {
-        for (int i = 0; i < m_rawSpectrum.size(); ++i) {
-            float alpha = (m_rawSpectrum[i] > m_currentSpectrum[i]) ? attackAlpha : decayAlpha;
-            m_currentSpectrum[i] = alpha * m_rawSpectrum[i] + (1.0f - alpha) * m_currentSpectrum[i];
-        }
-    }
-
-    m_waterfallNeedsUpdate = true;
-    update();
-}
-
 void PanadapterRhiWidget::decompressBins(const QByteArray &bins, QVector<float> &out) {
     // K4 spectrum bins: dBm = raw_byte - K4_DBM_OFFSET
     out.resize(bins.size());
     for (int i = 0; i < bins.size(); ++i) {
-        out[i] = static_cast<quint8>(bins[i]) - K4_DBM_OFFSET;
+        out[i] = static_cast<quint8>(bins[i]) - RhiUtils::K4_DBM_OFFSET;
     }
 }
 
 void PanadapterRhiWidget::updateWaterfallData() {
-    if (m_currentSpectrum.isEmpty())
+    if (m_waterfallSpectrum.isEmpty())
         return;
 
     // Upload raw bins centered in texture for shader sampling
     int row = m_waterfallWriteRow;
-    int specSize = m_currentSpectrum.size();
+    int specSize = m_waterfallSpectrum.size();
     int offset = (m_textureWidth - specSize) / 2;
 
     // Clear row (zeros outside bin region = no signal)
     std::memset(&m_waterfallData[row * m_textureWidth], 0, m_textureWidth);
 
-    // Copy raw bins (no interpolation - GPU handles it)
+    // Keep the waterfall's quiet-band colors visible around the radio's REF.
+    // Its color contrast is independent of the trace's dBm grid height.
+    constexpr float waterfallBelowRefDb = 20.0f;
+    constexpr float waterfallColorRangeDb = 55.0f;
     for (int i = 0; i < specSize; ++i) {
-        float normalized = normalizeDb(m_currentSpectrum[i]);
+        const float normalized = qBound(0.0f,
+                                        (m_waterfallSpectrum[i] - m_refLevel + waterfallBelowRefDb) /
+                                            waterfallColorRangeDb,
+                                        1.0f);
         m_waterfallData[row * m_textureWidth + offset + i] =
             static_cast<quint8>(qBound(0, static_cast<int>(normalized * 255), 255));
     }
@@ -1711,6 +1705,10 @@ void PanadapterRhiWidget::clear() {
     m_audioFloorValid = false;
     m_currentSpectrum.clear();
     m_rawSpectrum.clear();
+    m_calibrationFrames = 0;
+    m_waterfallSpectrum.clear();
+    m_waterfallNeedsUpdate = false;
+    m_powerAverager.reset();
     m_peakHold.clear();
     m_peakGeometryValid = false;
     m_waterfallWriteRow = 0;
@@ -1848,9 +1846,10 @@ void PanadapterRhiWidget::setAveraging(int level) {
     if (m_averagingLevel == level)
         return;
     m_averagingLevel = level;
-    const float t = (level - 1) / 19.0f;
-    m_attackAlpha = 0.52f - t * 0.22f;
-    m_decayAlpha = 0.34f - t * 0.24f;
+    m_powerAverager.setLength(level);
+    m_currentSpectrum.clear();
+    m_waterfallSpectrum.clear();
+    m_waterfallNeedsUpdate = false;
 }
 
 // Secondary VFO setters
